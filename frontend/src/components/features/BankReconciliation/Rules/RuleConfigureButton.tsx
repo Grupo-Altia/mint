@@ -31,6 +31,7 @@ import {
     useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 const RuleConfigureButton = () => {
 
@@ -50,12 +51,19 @@ const RuleConfigureButton = () => {
 
     return (
         <Sheet open={isOpen} onOpenChange={onOpenChange}>
-            <SheetTrigger asChild>
-                <Button size='icon' variant='outline' title={_("Transaction Matching Rules")}>
-                    <ZapIcon />
-                </Button>
-            </SheetTrigger>
-            <SheetContent className="min-w-xl">
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <SheetTrigger asChild>
+                        <Button size='icon' variant='outline' title={_("Transaction Matching Rules")}>
+                            <ZapIcon />
+                        </Button>
+                    </SheetTrigger>
+                </TooltipTrigger>
+                <TooltipContent>
+                    {_("Transaction Matching Rules")}
+                </TooltipContent>
+            </Tooltip>
+            <SheetContent className="min-w-3xl">
                 <SheetHeader>
                     <div className="flex items-center gap-2">
                         {(selectedRule || isNewRule) && <Button variant='ghost' size='icon' className="p-0" onClick={() => {
@@ -100,7 +108,9 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
     )
 
     const onDeleteRule = (ruleID: string) => {
-        toast.promise(db.deleteDoc("Mint Bank Transaction Rule", ruleID), {
+        toast.promise(db.deleteDoc("Mint Bank Transaction Rule", ruleID).then(() => {
+            mutate()
+        }), {
             loading: _("Deleting rule..."),
             success: _("Rule deleted."),
             error: _("Failed to delete rule.")
@@ -172,7 +182,7 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => handleRunRules(true)} disabled={isRunningRules} title={_("Force re-evaluate all unreconciled transactions, even if they were previously evaluated")}>
                                 <RefreshCw className="w-4 h-4 mr-2" />
-                                {_("Force Evaluate All")}
+                                {_("Force evaluate all")}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
 
@@ -326,7 +336,7 @@ const SortableRuleItem = ({
                                 {rule.rule_name}
                             </Button>
                             <div title={rule.transaction_type === "Any" ? _("Any") : rule.transaction_type === "Withdrawal" ? _("Withdrawal") : _("Deposit")}>
-                                {rule.transaction_type === "Any" ? <ArrowDownUp className="text-muted-foreground w-4 h-4" /> : rule.transaction_type === "Withdrawal" ? <ArrowUpRight className="text-destructive w-5 h-5" /> : <ArrowDownRight className="text-green-500 w-5 h-5" />}
+                                {rule.transaction_type === "Any" ? <ArrowDownUp className="text-muted-foreground w-4 h-4" /> : rule.transaction_type === "Withdrawal" ? <ArrowUpRight className="text-destructive w-5 h-5" /> : <ArrowDownRight className="text-green-600 w-5 h-5" />}
                             </div>
                         </div>
                         <span className="text-sm text-muted-foreground">

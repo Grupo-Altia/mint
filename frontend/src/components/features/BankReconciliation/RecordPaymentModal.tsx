@@ -2,7 +2,7 @@ import { atom, useAtom, useAtomValue, useSetAtom } from "jotai"
 import { bankRecRecordPaymentModalAtom, bankRecSelectedTransactionAtom, bankRecUnreconcileModalAtom, SelectedBank, selectedBankAccountAtom } from "./bankRecAtoms"
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogHeader, DialogFooter, DialogClose, DialogTrigger } from "@/components/ui/dialog"
 import _ from "@/lib/translate"
-import { UnreconciledTransaction, useGetRuleForTransaction, useRefreshUnreconciledTransactions } from "./utils"
+import { UnreconciledTransaction, useGetRuleForTransaction, useRefreshUnreconciledTransactions, useUpdateActionLog } from "./utils"
 import { useFieldArray, useForm, useFormContext, useWatch } from "react-hook-form"
 import { getCompanyCostCenter, getCompanyCurrency } from "@/lib/company"
 import { FrappeConfig, FrappeContext, useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk"
@@ -31,6 +31,10 @@ import { PaymentEntryDeduction } from "@/types/Accounts/PaymentEntryDeduction"
 import { TableLoader } from "@/components/ui/loaders"
 import SelectedTransactionsTable from "./SelectedTransactionsTable"
 import { useCurrentCompany } from "@/hooks/useCurrentCompany"
+import { Label } from "@/components/ui/label"
+import { FileDropzone } from "@/components/ui/file-dropzone"
+import { BankTransaction } from "@/types/Accounts/BankTransaction"
+import FileUploadBanner from "@/components/common/FileUploadBanner"
 
 const RecordPaymentModal = () => {
 
@@ -89,9 +93,11 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
         mode_of_payment: PaymentEntry['mode_of_payment']
     }>()
 
-    const { call: createPaymentEntry, loading, error } = useFrappePostCall('mint.apis.bank_reconciliation.create_bulk_payment_entry_and_reconcile')
+    const { call: createPaymentEntry, loading, error } = useFrappePostCall<{ message: { transaction: BankTransaction, payment_entry: PaymentEntry }[] }>('mint.apis.bank_reconciliation.create_bulk_payment_entry_and_reconcile')
 
     const onReconcile = useRefreshUnreconciledTransactions()
+
+    const addToActionLog = useUpdateActionLog()
 
     const onSubmit = (data: { party_type: PaymentEntry['party_type'], party: PaymentEntry['party'], account: string, mode_of_payment: PaymentEntry['mode_of_payment'] }) => {
 
@@ -100,7 +106,32 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
             party_type: data.party_type,
             party: data.party,
             account: data.account
-        }).then(() => {
+        }).then(({ message }) => {
+
+            addToActionLog({
+                type: 'payment',
+                timestamp: (new Date()).getTime(),
+                isBulk: true,
+                items: message.map((item) => ({
+                    bankTransaction: item.transaction,
+                    voucher: {
+                        reference_doctype: "Payment Entry",
+                        reference_name: item.payment_entry.name,
+                        reference_no: item.payment_entry.reference_no,
+                        reference_date: item.payment_entry.reference_date,
+                        posting_date: item.payment_entry.posting_date,
+                        party_type: item.payment_entry.party_type,
+                        party: item.payment_entry.party,
+                        doc: item.payment_entry,
+                    }
+                })),
+                bulkCommonData: {
+                    party_type: data.party_type,
+                    party: data.party,
+                    account: data.account,
+                }
+            })
+
             toast.success(_("Payment Recorded"), {
                 duration: 4000,
                 closeButton: true,
@@ -252,7 +283,7 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
     const form = useForm<PaymentEntry>({
         defaultValues: {
             payment_type: isWithdrawal ? 'Pay' : 'Receive',
-            bank_account: selectedBankAccount.account,
+            bank_account: selectedTransaction.bank_account,
             company: selectedTransaction?.company,
             // If the money is paid, it's usually to a supplier. If it's received, it's usually from a customer
             party_type: rule?.party_type ?? (isWithdrawal ? 'Supplier' : 'Customer'),
@@ -285,9 +316,18 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
 
     }, [rule, setUnpaidInvoiceOpen])
 
-    const { call: createPaymentEntry, loading, error } = useFrappePostCall('mint.apis.bank_reconciliation.create_payment_entry_and_reconcile')
+    const { call: createPaymentEntry, loading, error, isCompleted } = useFrappePostCall<{ message: { transaction: BankTransaction, payment_entry: PaymentEntry } }>('mint.apis.bank_reconciliation.create_payment_entry_and_reconcile')
 
     const setBankRecUnreconcileModalAtom = useSetAtom(bankRecUnreconcileModalAtom)
+
+    const addToActionLog = useUpdateActionLog()
+
+    const { file: frappeFile } = useContext(FrappeContext) as FrappeConfig
+
+    const [isUploading, setIsUploading] = useState(false)
+    const [uploadProgress, setUploadProgress] = useState(0)
+
+    const [files, setFiles] = useState<File[]>([])
 
     const onSubmit = (data: PaymentEntry) => {
 
@@ -297,7 +337,25 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                 ...data,
                 custom_remarks: data.remarks ? true : false
             }
-        }).then(() => {
+        }).then(async ({ message }) => {
+            addToActionLog({
+                type: 'payment',
+                timestamp: (new Date()).getTime(),
+                isBulk: false,
+                items: [
+                    {
+                        bankTransaction: message.transaction,
+                        voucher: {
+                            reference_doctype: "Payment Entry",
+                            reference_name: message.payment_entry.name,
+                            reference_no: message.payment_entry.reference_no,
+                            reference_date: message.payment_entry.reference_date,
+                            posting_date: message.payment_entry.posting_date,
+                            doc: message.payment_entry,
+                        }
+                    }
+                ]
+            })
             toast.success(_("Payment Entry Created"), {
                 duration: 4000,
                 closeButton: true,
@@ -309,9 +367,43 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                     backgroundColor: "rgb(0, 138, 46)"
                 }
             })
+
+            if (files.length > 0) {
+                setIsUploading(true)
+
+                const uploadPromises = files.map(f => {
+                    return frappeFile.uploadFile(f, {
+                        isPrivate: true,
+                        doctype: "Payment Entry",
+                        docname: message.payment_entry.name,
+                    }, (_bytesUploaded, _totalBytes, progress) => {
+
+                        setUploadProgress((currentProgress) => {
+                            //If there are multiple files, we need to add the progress to the current progress
+                            return currentProgress + ((progress?.progress ?? 0) / files.length)
+                        })
+
+                    })
+                })
+
+                return Promise.all(uploadPromises).then(() => {
+                    setUploadProgress(0)
+                    setIsUploading(false)
+                })
+            } else {
+                return Promise.resolve()
+            }
+
+        }).then(() => {
+            setUploadProgress(0)
+            setIsUploading(false)
             onReconcile(selectedTransaction)
             onClose()
         })
+    }
+
+    if (isUploading && isCompleted) {
+        return <FileUploadBanner uploadProgress={uploadProgress} />
     }
 
     return <Form {...form}>
@@ -320,7 +412,6 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                 {error && <ErrorBanner error={error} />}
                 <div className='grid grid-cols-2 gap-4 items-start'>
                     <SelectedTransactionDetails transaction={selectedTransaction} />
-
                     <div className='flex flex-col gap-2'>
                         <H4 className="text-base">{isWithdrawal ? _("Paid to") : _("Received from")}</H4>
                         <div className='grid grid-cols-4 gap-4'>
@@ -388,7 +479,14 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                                 inputProps={{ autoFocus: false }}
                             />
                         </div>
-                        <DataField name='reference_no' label={_("Reference No")} isRequired inputProps={{ autoFocus: false }} />
+                        <DataField name='reference_no' label={_("Reference")} isRequired inputProps={{ autoFocus: false }} />
+                        <div
+                            data-slot="form-item"
+                            className="flex flex-col gap-2"
+                        >
+                            <Label>{_("Attachments")}</Label>
+                            <FileDropzone files={files} setFiles={setFiles} />
+                        </div>
                     </div>
                     <SmallTextField
                         name='remarks'
@@ -401,7 +499,7 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                     <DialogClose asChild>
                         <Button variant={'outline'} disabled={loading}>{_("Cancel")}</Button>
                     </DialogClose>
-                    <Button type='submit' disabled={loading}>{_("Submit")}</Button>
+                    <Button type='submit' disabled={loading || isUploading}>{_("Submit")}</Button>
                 </DialogFooter>
             </div>
         </form>
