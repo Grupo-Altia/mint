@@ -1,0 +1,17 @@
+name: Changelog Automático
+
+on:
+  push:
+    branches:
+      - 'development'
+
+permissions:
+  contents: write
+
+jobs:
+  call-changelog-workflow:
+    uses: Grupo-Altia/shared-actions/.github/workflows/changelog-reusable.yml@main
+    secrets:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GH_PAT: ${{ secrets.GH_PAT }}
+
