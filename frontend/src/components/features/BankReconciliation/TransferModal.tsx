@@ -15,7 +15,7 @@ import { cn } from '@/lib/utils'
 import { ArrowRight, Banknote, Landmark, BadgeCheck, Calendar, ArrowUpRight, ArrowDownRight, CheckIcon, CheckCircle } from 'lucide-react'
 import { Separator } from '@/components/ui/separator'
 import { Form } from '@/components/ui/form'
-import { AccountFormField, DataField, DateField, SmallTextField } from '@/components/ui/form-elements'
+import { AccountFormField, DataField, DateField, LinkFormField, SmallTextField } from '@/components/ui/form-elements'
 import SelectedTransactionsTable from './SelectedTransactionsTable'
 import { useCurrentCompany } from '@/hooks/useCurrentCompany'
 import { formatDate } from '@/lib/date'
@@ -69,9 +69,19 @@ const TransferModalContent = () => {
 
 const BulkInternalTransferForm = ({ transactions }: { transactions: UnreconciledTransaction[] }) => {
 
+    if (!transactions || transactions.length === 0) {
+        return <div className='p-4 text-center text-muted-foreground'>{_("No transactions selected")}</div>
+    }
+
     const form = useForm<{
-        bank_account: string
-    }>()
+        bank_account: string,
+        branch?: string,
+        mode_of_payment?: string
+    }>({
+        defaultValues: {
+            mode_of_payment: ''
+        }
+    })
 
     const setIsOpen = useSetAtom(bankRecTransferModalAtom)
 
@@ -84,7 +94,9 @@ const BulkInternalTransferForm = ({ transactions }: { transactions: Unreconciled
 
         createPaymentEntry({
             bank_transaction_names: transactions.map((transaction) => transaction.name),
-            bank_account: data.bank_account
+            bank_account: data.bank_account,
+            branch: data.branch,
+            mode_of_payment: data.mode_of_payment
         }).then(({ message }) => {
             addToActionLog({
                 type: 'transfer',
@@ -133,6 +145,19 @@ const BulkInternalTransferForm = ({ transactions }: { transactions: Unreconciled
 
                 <BankOrCashPicker company={company} bankAccount={transactions[0].bank_account ?? ''} onAccountChange={onAccountChange} selectedAccount={selectedAccount} />
 
+                <div className='grid grid-cols-2 gap-4'>
+                    <LinkFormField
+                        name='branch'
+                        label={_("VE Branch")}
+                        doctype='VE Branch'
+                    />
+                    <LinkFormField
+                        name='mode_of_payment'
+                        label={_("Mode of Payment")}
+                        doctype='Mode of Payment'
+                    />
+                </div>
+
                 <DialogFooter>
                     <DialogClose asChild>
                         <Button variant={'outline'} disabled={loading}>{_("Cancel")}</Button>
@@ -147,6 +172,8 @@ const BulkInternalTransferForm = ({ transactions }: { transactions: Unreconciled
 
 interface InternalTransferFormFields extends PaymentEntry {
     mirror_transaction_name?: string
+    branch?: string
+    mode_of_payment?: string
 }
 
 const InternalTransferForm = ({ selectedBankAccount, selectedTransaction }: { selectedBankAccount: SelectedBank, selectedTransaction: UnreconciledTransaction }) => {
@@ -176,6 +203,7 @@ const InternalTransferForm = ({ selectedBankAccount, selectedTransaction }: { se
             reference_date: selectedTransaction.date,
             posting_date: selectedTransaction.date,
             reference_no: (selectedTransaction.reference_number || selectedTransaction.description || '').slice(0, 140),
+            mode_of_payment: ''
         }
     })
 
@@ -309,6 +337,19 @@ const InternalTransferForm = ({ selectedBankAccount, selectedTransaction }: { se
                             />
                         </div>
                         <DataField name='reference_no' label={_("Reference")} isRequired inputProps={{ autoFocus: false }} />
+
+                        <div className='grid grid-cols-2 gap-4'>
+                            <LinkFormField
+                                name='branch'
+                                label={_("VE Branch")}
+                                doctype='VE Branch'
+                            />
+                            <LinkFormField
+                                name='mode_of_payment'
+                                label={_("Mode of Payment")}
+                                doctype='Mode of Payment'
+                            />
+                        </div>
                     </div>
                 </div>
 

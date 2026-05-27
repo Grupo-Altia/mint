@@ -5,6 +5,7 @@ import datetime
 from erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool import create_payment_entry_bts, create_journal_entry_bts
 from erpnext.accounts.party import get_party_account
 from erpnext import get_default_cost_center
+import re
 
 @frappe.whitelist()
 def clear_clearing_date(voucher_type: str, voucher_name: str):
@@ -94,9 +95,28 @@ def undo_reconciliation_action(bank_transaction_id: str | int, voucher_type: str
     }
 
 
+def clean_reference_for_ve(reference_no):
+    """
+    Cleans the reference number to be alphanumeric and at least 4 characters long
+    as required by the Venezuelan localization (l10n_ve).
+    """
+    if not reference_no:
+        return "MINT0001"
+    
+    # Remove all non-alphanumeric characters
+    clean = re.sub(r'[^a-zA-Z0-9]', '', str(reference_no))
+    
+    # Ensure minimum length of 4
+    if len(clean) < 4:
+        clean = clean.rjust(4, '0')
+        
+    return clean
+
 @frappe.whitelist(methods=["POST"])
 def create_bulk_internal_transfer(bank_transaction_names: list[str|int], 
-                                  bank_account: str):
+                                  bank_account: str,
+                                  branch: str = None,
+                                  mode_of_payment: str = None):
     """
         Create an internal transfer for multiple bank transactions
     """
@@ -124,7 +144,9 @@ def create_bulk_internal_transfer(bank_transaction_names: list[str|int],
                                  reference_date=bank_transaction.date,
                                  reference_no=reference_no,
                                  paid_from=paid_from,
-                                 paid_to=paid_to,)
+                                 paid_to=paid_to,
+                                 branch=branch,
+                                 mode_of_payment=mode_of_payment)
         
         output.append(final_transaction)
     
@@ -140,7 +162,9 @@ def create_internal_transfer(bank_transaction_name: str|int,
                              custom_remarks: bool = False,
                              remarks: str = None,
                              mirror_transaction_name: str | int = None,
-                             dimensions: dict = None):
+                             dimensions: dict = None,
+                             branch: str = None,
+                             mode_of_payment: str = None):
     """
     Create an internal transfer payment entry
     """
@@ -158,10 +182,21 @@ def create_internal_transfer(bank_transaction_name: str|int,
     pe.payment_type = "Internal Transfer"
     pe.posting_date = posting_date
     pe.reference_date = reference_date
-    pe.reference_no = reference_no
     pe.custom_remarks = custom_remarks
     pe.paid_amount = bank_transaction.unallocated_amount
     pe.received_amount = bank_transaction.unallocated_amount
+
+    # l10n_ve compatibility: clean reference number
+    pe.reference_no = clean_reference_for_ve(reference_no)
+
+    # l10n_ve compatibility: mandatory fields
+    pe.paid_currency_amount = pe.paid_amount
+    pe.branch = branch
+    pe.mode_of_payment = mode_of_payment or "Transferencia"
+    
+    # Set currency fields if available
+    from_account_currency = frappe.get_cached_value("Account", pe.paid_from or bank_account, "account_currency")
+    pe.paid_on_currency = from_account_currency
 
     # TODO: Support multi-currency transactions
     pe.target_exchange_rate = 1.0
