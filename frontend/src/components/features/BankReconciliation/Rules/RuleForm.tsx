@@ -236,9 +236,9 @@ const RuleAction = () => {
             return party_type === "Supplier" ? ["Payable"] : ["Receivable"]
         }
 
-//        if (classify_as === "Transferencia") {
-//            return ["Bank", "Cash", "Temporary"]
-//        }
+        if (classify_as === "Transfer") {
+            return ["Bank", "Cash", "Temporary"]
+        }
 
         return undefined
 
@@ -257,11 +257,12 @@ const RuleAction = () => {
                     required: _("This is required")
                 }}
             >
-                <SelectItem value="Registro de Banco"><LandmarkIcon /> {_("Registro de Banco")}</SelectItem>
-                <SelectItem value="Payment Entry"><ReceiptIcon /> {_("Payment Entry")}</SelectItem>
+                <SelectItem value="Bank Entry"><LandmarkIcon /> {_("Registro de Banco")}</SelectItem>
+                <SelectItem value="Payment Entry"><ReceiptIcon /> {_("Registro de Pago")}</SelectItem>
+                <SelectItem value="Transfer"><ArrowRightLeftIcon /> {_("Transferencia")}</SelectItem>
             </SelectFormField>
 
-            {classify_as === "Registro de Banco" && (<SelectFormField
+            {classify_as === "Bank Entry" && (<SelectFormField
                 name='bank_entry_type'
                 isRequired
                 label={_("Create Bank Entry against")}
@@ -297,7 +298,7 @@ const RuleAction = () => {
                 </div>
             )}
 
-            {(((bank_entry_type === "Single Account" || !bank_entry_type) && classify_as === "Registro de Banco") || classify_as !== "Registro de Banco") && (<AccountFormField
+            {(((bank_entry_type === "Single Account" || !bank_entry_type) && classify_as === "Bank Entry") || classify_as !== "Bank Entry") && (<AccountFormField
                 name='account'
                 label={_("Account")}
                 isRequired
@@ -307,7 +308,7 @@ const RuleAction = () => {
                 account_type={accountType}
             />)}
 
-            {bank_entry_type === "Multiple Accounts" && classify_as === "Registro de Banco" && <MultipleAccountsSelection />}
+            {bank_entry_type === "Multiple Accounts" && classify_as === "Bank Entry" && <MultipleAccountsSelection />}
         </div>
     )
 }
