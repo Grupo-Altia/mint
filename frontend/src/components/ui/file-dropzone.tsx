@@ -33,7 +33,7 @@ export const FileDropzone = ({ files, setFiles, accept, multiple = true, onDrop,
     return (
         <div {...getRootProps()} className={cn('border border-border border-dashed p-4 rounded-sm bg-muted/20', className)}>
             <input {...getInputProps()} />
-            {files.length === 0 ? <p className='text-sm text-muted-foreground text-center h-8 flex items-center justify-center'>{multiple ? _("Drop some files here, or click to select files") : _("Drop a file here, or click to select a file")}</p> : null}
+            {files.length === 0 ? <p className='text-sm text-muted-foreground text-center h-8 flex items-center justify-center'>{multiple ? _("Suelta algunos archivos aquí, o haz clic para seleccionar archivos") : _("Suelta un archivo aquí, o haz clic para seleccionar un archivo")}</p> : null}
             <div className='flex flex-col gap-4'>
                 {files.map(f => <div key={f.name} className='flex justify-between items-center'>
                     <div className='flex items-center gap-2'>

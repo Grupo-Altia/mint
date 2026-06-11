@@ -1,6 +1,6 @@
 import { useAtom, useSetAtom } from "jotai"
 import { SelectedBank, selectedBankAccountAtom } from "./bankRecAtoms"
-import { useCallback } from "react"
+import { useCallback, useState } from "react"
 import { useGetBankAccounts, useGetUnreconciledTransactions } from "./utils"
 import { cn } from "@/lib/utils"
 import { Landmark } from "lucide-react"
@@ -56,6 +56,7 @@ const BankPicker = ({ className, size = 'base' }: { className?: string, size?: '
 const BankPickerItem = ({ bank, size = 'base' }: { bank: SelectedBank, size?: 'base' | 'sm' }) => {
 
     const [selectedBank, setSelectedBank] = useAtom(selectedBankAccountAtom)
+    const [imgError, setImgError] = useState(false)
 
     const isSelected = selectedBank?.name === bank.name
 
@@ -77,9 +78,10 @@ const BankPickerItem = ({ bank, size = 'base' }: { bank: SelectedBank, size?: 'b
             }
         )}
     >
-        {bank.logo ? <img
+        {bank.logo && !imgError ? <img
             src={`/assets/mint/mint/${bank.logo}`}
             alt={bank.bank || bank.name || ''}
+            onError={() => setImgError(true)}
             className={cn("max-w-24 object-left h-10 object-contain mb-1", {
                 'h-6 max-w-18 mb-2': size === 'sm',
             })}

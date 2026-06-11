@@ -67,7 +67,7 @@ const BankStatementImporter = () => {
                         </BreadcrumbItem>
                         <BreadcrumbSeparator />
                         <BreadcrumbItem>
-                            <BreadcrumbPage className="text-base font-medium tracking-tight text-balance">{_("Import Bank Statement")}</BreadcrumbPage>
+                            <BreadcrumbPage className="text-base font-medium tracking-tight text-balance">{_("Importar Estado de Cuenta")}</BreadcrumbPage>
                         </BreadcrumbItem>
                     </BreadcrumbList>
                 </Breadcrumb>
@@ -89,7 +89,7 @@ const BankStatementImporter = () => {
                                 </div>
                             </div>
                             {selectedCompany && <div className="flex flex-col gap-2">
-                                <Label>{_("Bank Account")}<span className="text-destructive">*</span></Label>
+                                <Label>{_("Cuenta Bancaria")}<span className="text-destructive">*</span></Label>
                                 <div className="">
                                     <BankPicker className="w-full flex-wrap" size="sm" />
                                 </div>

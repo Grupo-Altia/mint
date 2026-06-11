@@ -15,6 +15,7 @@ export interface MintBankTransactionRule{
 	/**	Rule Name : Data	*/
 	rule_name: string
 	/**	Transaction Type : Select	*/
+	bank?: string
 	transaction_type: "Any" | "Withdrawal" | "Deposit"
 	/**	Priority : Int	*/
 	priority: number
@@ -29,7 +30,7 @@ export interface MintBankTransactionRule{
 	/**	Description Rules : Table - Mint Bank Transaction Description Rules	*/
 	description_rules: MintBankTransactionDescriptionRules[]
 	/**	Classify As : Select	*/
-	classify_as: "Bank Entry" | "Payment Entry" | "Transfer"
+	classify_as: "Registro de Banco" | "Payment Entry" | "Transferencia"
 	/**	Account : Link - Account	*/
 	account?: string
 	/**	Bank Entry Type : Select	*/

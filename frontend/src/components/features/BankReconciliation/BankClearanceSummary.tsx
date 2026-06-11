@@ -31,11 +31,11 @@ const BankClearanceSummary = () => {
     const dates = useAtomValue(bankRecDateAtom)
 
     if (!bankAccount) {
-        return <MissingFiltersBanner text={_("Please select a bank account to view the bank clearance summary.")} />
+        return <MissingFiltersBanner text={_("Por favor selecciona una cuenta bancaria para ver el resumen de cambios bancarios.")} />
     }
 
     if (!dates) {
-        return <MissingFiltersBanner text={_("Please select dates to view the bank clearance summary.")} />
+        return <MissingFiltersBanner text={_("Por favor selecciona las fechas para ver el resumen de cambios bancarios.")} />
     }
 
     return <BankClearanceSummaryView />
@@ -88,7 +88,7 @@ const BankClearanceSummaryView = () => {
         <div>
             <Paragraph className="text-sm">
                 <span dangerouslySetInnerHTML={{
-                    __html: _("Below is a list of all accounting entries posted against the bank account {0} between {1} and {2}.", [`<strong>${bankAccount?.account}</strong>`, `<strong>${formattedFromDate}</strong>`, `<strong>${formattedToDate}</strong>`])
+                    __html: _("A continuación se muestra una lista de todas las entradas contables registradas contra la cuenta bancaria {0} entre {1} y {2}.", [`<strong>${bankAccount?.account}</strong>`, `<strong>${formattedFromDate}</strong>`, `<strong>${formattedToDate}</strong>`])
                 }} />
             </Paragraph>
         </div>

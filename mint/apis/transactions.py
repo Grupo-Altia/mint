@@ -1,11 +1,16 @@
 import frappe
 
 @frappe.whitelist()
-def get_bank_transactions(bank_account, from_date=None, to_date=None, all_transactions=False):
+def get_bank_transactions(bank_account=None, from_date=None, to_date=None, all_transactions=False):
     # returns bank transactions for a bank account
     filters = []
-    filters.append(["bank_account", "=", bank_account])
+    
+    # 1. Validación de seguridad: Solo agregamos el filtro si existe una cuenta
+    if bank_account:
+        filters.append(["bank_account", "=", bank_account])
+        
     filters.append(["docstatus", "=", 1])
+    
     if not all_transactions:
         filters.append(["unallocated_amount", ">", 0.0])
     if to_date:

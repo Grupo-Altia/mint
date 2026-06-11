@@ -1,0 +1,9 @@
+# Copyright (c) 2026, The Commit Company (Algocode Technologies Pvt. Ltd.) and Contributors
+# See license.txt
+
+# import frappe
+from frappe.tests.utils import FrappeTestCase
+
+
+class TestMintBankTransfer(FrappeTestCase):
+	pass

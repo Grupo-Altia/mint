@@ -29,12 +29,12 @@ const IncorrectlyClearedEntries = () => {
             missingFields.push('Company')
         }
         if (!bankAccount) {
-            missingFields.push('Bank Account')
+            missingFields.push('Cuenta Bancaria')
         }
         if (!dates) {
             missingFields.push('Dates')
         }
-        return <MissingFiltersBanner text={`Please select ${missingFields.join(', ')} to view the incorrectly cleared entries.`} />
+        return <MissingFiltersBanner text={`Por favor selecciona ${missingFields.join(', ')} para ver las entradas liquidadas incorrectamente.`} />
     }
 
     return <IncorrectlyClearedEntriesView />
@@ -94,7 +94,7 @@ const IncorrectlyClearedEntriesView = () => {
         <div>
             <Paragraph className="text-sm">
                 <span dangerouslySetInnerHTML={{
-                    __html: _("This report shows all entries in the system where the <strong>clearance date is before the posting date</strong> which is incorrect.")
+                    __html: _("Este reporte muestra todas las entradas en el sistema donde la <strong>fecha de liquidación es anterior a la fecha de contabilización</strong>, lo cual es incorrecto.")
                 }} />
                 <br />
                 {data && data.message.result.length > 0 && <span>
@@ -147,7 +147,7 @@ const IncorrectlyClearedEntriesView = () => {
         {data && data.message.result.length === 0 &&
             <Alert variant='default'>
                 <PartyPopper />
-                <AlertTitle>{_("It's all good!")}</AlertTitle>
+                <AlertTitle>{_("¡Todo está bien!")}</AlertTitle>
                 <AlertDescription>
                     {_("There are no entries in the system where the clearance date is before the posting date.")}
                 </AlertDescription>

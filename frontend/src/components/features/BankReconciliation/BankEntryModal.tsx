@@ -35,9 +35,9 @@ const BankEntryModal = () => {
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogContent className='min-w-[95vw]'>
                 <DialogHeader>
-                    <DialogTitle>{_("Bank Entry")}</DialogTitle>
+                    <DialogTitle>{_("Registro de Banco")}</DialogTitle>
                     <DialogDescription>
-                        {_("Record a journal entry for expenses, income or split transactions.")}
+                        {_("Registra un asiento de diario para gastos, ingresos o transacciones divididas.")}
                     </DialogDescription>
                 </DialogHeader>
                 <RecordBankEntryModalContent />
@@ -674,7 +674,7 @@ const Entries = ({ company, isWithdrawal, currency }: { company: string, isWithd
                                 label={_("Remarks")}
                                 readOnly={index === 0}
                                 inputProps={{
-                                    placeholder: _("e.g. Bank Charges"),
+                                    placeholder: _("ej. Comisiones Bancarias"),
                                     className: 'min-w-64',
                                     readOnly: index === 0
                                 }}

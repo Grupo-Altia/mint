@@ -59,7 +59,7 @@ const SelectedTransactionDetails = ({ transaction, showAccount = false, account 
                                 <span className='text-sm font-semibold uppercase'>{isWithdrawal ? _('Spent') : _('Received')}</span>
                             </div>
                             <span className='font-semibold font-mono text-lg text-right pr-0.5'>{formatCurrency(amount, currency)}</span>
-                            {transaction.unallocated_amount && transaction.unallocated_amount !== amount ? <span className='text-muted-foreground'>{_("Unallocated")}: {formatCurrency(transaction.unallocated_amount)}</span> : null}
+                            {transaction.unallocated_amount && transaction.unallocated_amount !== amount ? <span className='text-muted-foreground'>{_("Sin asignar")}: {formatCurrency(transaction.unallocated_amount)}</span> : null}
                         </div>
                     </div>
                     <div className='flex flex-col gap-1'>

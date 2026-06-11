@@ -122,13 +122,13 @@ const ActionGroupHeader = ({ action }: { action: ActionLogType }) => {
                 if (action.isBulk) {
                     return _("Bulk Transfer")
                 }
-                return _("Transfer")
+                return _("Transferencia")
 
             case 'bank_entry':
                 if (action.isBulk) {
                     return _("Bulk Bank Entry")
                 }
-                return _("Bank Entry")
+                return _("Registro de Banco")
 
             default:
                 return _("Action")
@@ -345,9 +345,9 @@ const TransferDetails = ({ item, className }: { item: ActionLogItem, className?:
 }
 
 const ACTION_TYPE_MAP = {
-    'bank_entry': _("Bank Entry"),
+    'bank_entry': _("Registro de Banco"),
     'payment': _("Payment"),
-    'transfer': _("Transfer"),
+    'transfer': _("Transferencia"),
     'match': _("Match"),
 }
 

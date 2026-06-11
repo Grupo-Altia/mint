@@ -20,9 +20,9 @@ class MintBankTransactionRule(Document):
 
 		account: DF.Link | None
 		accounts: DF.Table[MintTransactionRuleAccounts]
+		bank: DF.Link
 		bank_entry_type: DF.Literal["Single Account", "Multiple Accounts"]
 		classify_as: DF.Literal["Bank Entry", "Payment Entry", "Transfer"]
-		company: DF.Link
 		description_rules: DF.Table[MintBankTransactionDescriptionRules]
 		max_amount: DF.Currency
 		min_amount: DF.Currency
@@ -87,9 +87,9 @@ class MintBankTransactionRule(Document):
 				except re.error:
 					frappe.throw(_("Invalid regex pattern."))
 		
-		account_company = frappe.db.get_value("Account", self.account, "company")
-		if account_company != self.company:
-			frappe.throw(_("Account company does not match with the rule company."))
+	#	account_company = frappe.db.get_value("Account", self.account, "company")
+	#	if account_company != self.company:
+	#		frappe.throw(_("Account company does not match with the rule company."))
 	
 	def on_trash(self):
 		"""
