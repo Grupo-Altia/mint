@@ -41,7 +41,7 @@ class MintBankTransactionRule(Document):
 			# Get the highest priority for rules in the same company
 			highest_priority = frappe.db.get_value(
 				"Mint Bank Transaction Rule",
-				filters={"company": self.company},
+				filters=None,
 				fieldname="priority",
 				order_by="priority DESC"
 			)
