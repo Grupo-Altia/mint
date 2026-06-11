@@ -126,7 +126,7 @@ const AccountsDropdown = ({ root_type, report_type, account_type, value, onChang
                         className={cn("w-full justify-between font-normal",
                             readOnly ? "bg-muted pointer-events-none" : ""
                             , buttonClassName)}>
-                        {value || _('Select Account')}
+                        {value || _('Seleccionar Cuenta')}
 
                         <ChevronsUpDownIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
@@ -140,7 +140,7 @@ const AccountsDropdown = ({ root_type, report_type, account_type, value, onChang
                         className={cn("w-full justify-between font-normal",
                             readOnly ? "bg-muted" : ""
                         )}>
-                        {value || _('Select Account')}
+                        {value || _('Seleccionar Cuenta')}
 
                         <ChevronsUpDownIcon className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>}

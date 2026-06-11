@@ -29,7 +29,7 @@ const BankTransactions = () => {
     const dates = useAtomValue(bankRecDateAtom)
 
     if (!selectedBank || !dates) {
-        return <MissingFiltersBanner text={_("Please select a bank and set the date range")} />
+        return <MissingFiltersBanner text={_("Por favor selecciona un banco y establece el rango de fechas")} />
     }
 
     return <>
@@ -121,14 +121,14 @@ const BankTransactionListView = () => {
         <div className="flex gap-2 justify-between items-center">
             <Paragraph className="text-sm">
                 <span dangerouslySetInnerHTML={{
-                    __html: _("Below is a list of all bank transactions imported in the system for the bank account {0} between {1} and {2}.", [`<strong>${bankAccount?.account_name}</strong>`, `<strong>${formattedFromDate}</strong>`, `<strong>${formattedToDate}</strong>`])
+                    __html: _("A continuación se muestra una lista de todas las transacciones bancarias importadas en el sistema para la cuenta bancaria {0} entre {1} y {2}.", [`<strong>${bankAccount?.account_name}</strong>`, `<strong>${formattedFromDate}</strong>`, `<strong>${formattedToDate}</strong>`])
                 }} />
             </Paragraph>
 
             <Button size='sm' variant='outline' asChild>
                 <Link to="/statement-importer">
                     <ImportIcon />
-                    {_("Import Bank Statement")}
+                    {_("Importar Estado de Cuenta")}
                 </Link>
             </Button>
         </div>
@@ -158,10 +158,10 @@ const BankTransactionListView = () => {
                 <TableRow>
                     <TableHead>{_("Date")}</TableHead>
                     <TableHead>{_("Description")}</TableHead>
-                    <TableHead>{_("Reference #")}</TableHead>
+                    <TableHead>{_("Nº Referencia")}</TableHead>
                     <TableHead className="text-right">{_("Withdrawal")}</TableHead>
                     <TableHead className="text-right">{_("Deposit")}</TableHead>
-                    <TableHead className="text-right">{_("Unallocated")}</TableHead>
+                    <TableHead className="text-right">{_("Sin asignar")}</TableHead>
                     <TableHead>{_("Type")}</TableHead>
                     <TableHead>{_("Status")}</TableHead>
                     <TableHead>{_("Actions")}</TableHead>
@@ -180,7 +180,7 @@ const BankTransactionListView = () => {
                         {(!row.allocated_amount || (row.allocated_amount && row.allocated_amount === 0)) ?
                             <div className="bg-transparent border border-border flex items-center justify-center gap-1.5 px-2 py-1 text-xs w-fit rounded-md">
                                 <XCircle className="-mt-px text-destructive" size={14} />
-                                {_("Not Reconciled")}</div> :
+                                {_("No Conciliada")}</div> :
                             (row.allocated_amount && row.allocated_amount > 0 && row.unallocated_amount !== 0) ?
                                 <div className="bg-transparent border border-border flex items-center gap-1.5 px-2 py-1 text-xs w-fit rounded-md">
                                     <CheckCircle2 size={14} className="-mt-px text-yellow-500 dark:text-yellow-400" />
@@ -274,7 +274,7 @@ const Filters = ({
             <Input placeholder={_("Search")} type='search' onChange={onSearchChange} defaultValue={search}
                 className="border-none px-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0" />
             <div>
-                <span className="text-sm text-muted-foreground text-nowrap whitespace-nowrap">{results?.length} {_(results?.length === 1 ? "result" : "results")}</span>
+                <span className="text-sm text-muted-foreground text-nowrap whitespace-nowrap">{results?.length} {_(results?.length === 1 ? "resultado" : "resultados")}</span>
             </div>
         </div>
         <div className="w-[25%]">

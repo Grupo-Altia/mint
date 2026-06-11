@@ -34,7 +34,7 @@ const TransferModal = () => {
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogContent className='min-w-7xl'>
                 <DialogHeader>
-                    <DialogTitle>{_("Transfer")}</DialogTitle>
+                    <DialogTitle>{_("Transferencia")}</DialogTitle>
                     <DialogDescription>
                         {_("Record an internal transfer to another bank/credit card/cash account.")}
                     </DialogDescription>
@@ -137,7 +137,7 @@ const BulkInternalTransferForm = ({ transactions }: { transactions: Unreconciled
                     <DialogClose asChild>
                         <Button variant={'outline'} disabled={loading}>{_("Cancel")}</Button>
                     </DialogClose>
-                    <Button type='submit' disabled={loading}>{_("Transfer")}</Button>
+                    <Button type='submit' disabled={loading}>{_("Transferencia")}</Button>
                 </DialogFooter>
             </div>
         </form>
@@ -368,7 +368,7 @@ const InternalTransferForm = ({ selectedBankAccount, selectedTransaction }: { se
                     <DialogClose asChild>
                         <Button variant={'outline'} disabled={loading}>{_("Cancel")}</Button>
                     </DialogClose>
-                    <Button type='submit' disabled={loading}>{_("Transfer")}</Button>
+                    <Button type='submit' disabled={loading}>{_("Transferencia")}</Button>
                 </DialogFooter>
             </div>
         </form>

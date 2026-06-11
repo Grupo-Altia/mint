@@ -25,11 +25,11 @@ const BankReconciliationStatement = () => {
     const dates = useAtomValue(bankRecDateAtom)
 
     if (!bankAccount) {
-        return <MissingFiltersBanner text={_("Please select a bank account to view the bank reconciliation statement.")} />
+        return <MissingFiltersBanner text={_("Por favor selecciona una cuenta bancaria para ver el estado de conciliación.")} />
     }
 
     if (!dates) {
-        return <MissingFiltersBanner text={_("Please select dates to view the bank reconciliation statement.")} />
+        return <MissingFiltersBanner text={_("Por favor selecciona las fechas para ver el estado de conciliación.")} />
     }
 
     return <BankReconciliationStatementView />
@@ -83,7 +83,7 @@ const BankReconciliationStatementView = () => {
         <div>
             <Paragraph className="text-sm">
                 <span dangerouslySetInnerHTML={{
-                    __html: _("Below is a list of all entries posted against the bank account {0} which have not been cleared till {1}.", [`<strong>${bankAccount?.account}</strong>`, `<strong>${formatDate(dates.toDate)}</strong>`])
+                    __html: _("A continuación se muestra una lista de todas las entradas registradas contra la cuenta bancaria {0} que no han sido liquidadas hasta el {1}.", [`<strong>${bankAccount?.account}</strong>`, `<strong>${formatDate(dates.toDate)}</strong>`])
                 }} />
             </Paragraph>
         </div>
@@ -103,7 +103,7 @@ const BankReconciliationStatementView = () => {
                         <TableHead className="text-right">{_("Debit")}</TableHead>
                         <TableHead className='text-right'>{_("Credit")}</TableHead>
                         <TableHead>{_("Against Account")}</TableHead>
-                        <TableHead>{_("Reference #")}</TableHead>
+                        <TableHead>{_("Nº Referencia")}</TableHead>
                         <TableHead>{_("Reference Date")}</TableHead>
                         <TableHead>{_("Clearance Date")}</TableHead>
                     </TableRow>
@@ -212,12 +212,12 @@ const SummarySection = ({ data }: { data: { message: QueryReportReturnType } }) 
 
     return <div className="flex gap-4 items-start justify-between">
         <StatContainer>
-            <StatLabel>{_("Bank Statement Balance as per General Ledger")}</StatLabel>
+            <StatLabel>{_("Saldo de estado de cuenta según Libro Mayor")}</StatLabel>
             <StatValue className="font-mono">{formatCurrency(bankStatementBalanceAsPerGL, currency)}</StatValue>
         </StatContainer>
 
         <StatContainer>
-            <StatLabel>{_("Outstanding Checks and Deposits to clear")}</StatLabel>
+            <StatLabel>{_("Cheques y depósitos pendientes por liquidar")}</StatLabel>
             <StatValue className="font-mono">{formatCurrency(outstandingChecksDebit - outstandingChecksCredit, currency)}</StatValue>
         </StatContainer>
 
@@ -230,7 +230,7 @@ const SummarySection = ({ data }: { data: { message: QueryReportReturnType } }) 
             </div> */}
         </StatContainer>}
         <StatContainer>
-            <StatLabel>{_("Calculated Bank Statement Balance")}</StatLabel>
+            <StatLabel>{_("Saldo calculado del estado de cuenta")}</StatLabel>
             <StatValue className="font-mono">{formatCurrency(calculatedBankStatementBalance)}</StatValue>
         </StatContainer>
 

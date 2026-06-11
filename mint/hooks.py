@@ -137,11 +137,7 @@ after_install = "mint.setup.install.after_install"
 # ---------------
 # Hook on document methods and events
 
-doc_events = {
-	"Bank Account": {
-		"on_trash": "mint.overrides.bank_account.on_trash",
-	}
-}
+doc_events = {}
 
 # Scheduled Tasks
 # ---------------

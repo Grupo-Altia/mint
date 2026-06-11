@@ -44,9 +44,9 @@ const RecordPaymentModal = () => {
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogContent className='min-w-[95vw]'>
                 <DialogHeader>
-                    <DialogTitle>{_("Record Payment")}</DialogTitle>
+                    <DialogTitle>{_("Registro de Pago")}</DialogTitle>
                     <DialogDescription>
-                        {_("Record a payment entry against a customer or supplier")}
+                        {_("Registrar un pago contra un cliente o proveedor")}
                     </DialogDescription>
                 </DialogHeader>
                 <RecordPaymentModalContent />
@@ -83,7 +83,7 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
 
 
     const setIsOpen = useSetAtom(bankRecRecordPaymentModalAtom)
-
+ 
     const form = useForm<{
         party_type: PaymentEntry['party_type'],
         party: PaymentEntry['party'],
@@ -297,6 +297,7 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
             base_paid_amount: selectedTransaction.unallocated_amount,
             received_amount: selectedTransaction.unallocated_amount,
             base_received_amount: selectedTransaction.unallocated_amount,
+            paid_on_currency: selectedTransaction.currency ?? getCompanyCurrency(selectedTransaction.company ?? ''),
             reference_date: selectedTransaction.date,
             posting_date: selectedTransaction.date,
             reference_no: (selectedTransaction.reference_number || selectedTransaction.description || '').slice(0, 140),
@@ -413,7 +414,7 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                 <div className='grid grid-cols-2 gap-4 items-start'>
                     <SelectedTransactionDetails transaction={selectedTransaction} />
                     <div className='flex flex-col gap-2'>
-                        <H4 className="text-base">{isWithdrawal ? _("Paid to") : _("Received from")}</H4>
+                        <H4 className="text-base">{isWithdrawal ? _("Pagado a") : _("Recibido de")}</H4>
                         <div className='grid grid-cols-4 gap-4'>
                             <div className="col-span-1">
                                 <PartyTypeFormField
@@ -439,6 +440,18 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                                 <AccountDropdown isWithdrawal={isWithdrawal} />
                             </div>
 
+                            
+                            <div className="col-span-2">
+                                <LinkFormField
+                                    name="paid_on_currency"
+                                    label={_("Moneda de Pago")}
+                                    doctype="Currency"
+                                    isRequired
+                                    rules={{ required: _("La moneda es requerida") }}
+                                />
+                            </div>
+                            
+                            
                             <div className="col-span-2">
                                 <LinkFormField
                                     name='mode_of_payment'
@@ -491,7 +504,7 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                     <SmallTextField
                         name='remarks'
                         label={_("Custom Remarks")}
-                        formDescription={"This will be auto-populated if not set."}
+                        formDescription={_("Se completará automáticamente si no se establece.")}
                     />
 
                 </div>
@@ -616,7 +629,7 @@ const AccountDropdown = ({ isWithdrawal }: { isWithdrawal: boolean }) => {
     if (isWithdrawal) {
         return <AccountFormField
             name='paid_to'
-            label={_("Paid To (GL Account)")}
+            label={_("Pagado a (Cuenta Contable)")}
             isRequired
             rules={{
                 required: 'Paid To is required',
@@ -628,7 +641,7 @@ const AccountDropdown = ({ isWithdrawal }: { isWithdrawal: boolean }) => {
     } else {
         return <AccountFormField
             name='paid_from'
-            label={_("Paid From (GL Account)")}
+            label={_("Pagado desde (Cuenta Contable)")}
             isRequired
             rules={{
                 required: 'Paid From is required',
@@ -863,7 +876,7 @@ const Summary = ({ currency }: { currency: string }) => {
         </div>
 
         {(unallocatedAmount && unallocatedAmount !== 0) ? <div className="flex gap-2 justify-between">
-            <TextComponent>{_("Unallocated")}</TextComponent>
+            <TextComponent>{_("Sin asignar")}</TextComponent>
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button type='button' variant='link' className="p-0 text-destructive underline h-fit" role='button' onClick={() => onAddRow(unallocatedAmount ?? 0)}>
@@ -871,7 +884,7 @@ const Summary = ({ currency }: { currency: string }) => {
                     </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                    {_("Add a charge to the payment entry with the unallocated amount")}
+                    {_("Agregar un cargo al pago con el monto sin asignar")}
                 </TooltipContent>
             </Tooltip>
 
@@ -911,12 +924,12 @@ const GetUnpaidInvoicesButton = () => {
 
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
             {partyType && party && <DialogTrigger asChild>
-                <Button variant='outline' size='sm' type='button'>Get Unpaid Invoices</Button>
+                <Button variant='outline' size='sm' type='button'>{_("Obtener Facturas Pendientes")}</Button>
             </DialogTrigger>}
             <DialogContent className="min-w-[75vw]">
                 <DialogHeader>
-                    <DialogTitle>Select Invoices</DialogTitle>
-                    <DialogDescription>Unpaid invoices from {partyName} for {formatCurrency(amount)}.</DialogDescription>
+                    <DialogTitle>{_("Seleccionar Facturas")}</DialogTitle>
+                    <DialogDescription>{_("Facturas pendientes de {0} por {1}", [partyName || party || '', formatCurrency(amount) || ''])}</DialogDescription>
                 </DialogHeader>
                 <FetchInvoicesModal onClose={() => setIsOpen(false)} />
             </DialogContent>
@@ -1044,7 +1057,7 @@ const FetchInvoicesModal = ({ onClose }: { onClose: () => void }) => {
                         Name
                     </TableHead>
                     <TableHead>
-                        Invoice No
+                        {_("Nº de Factura")}
                     </TableHead>
                     <TableHead>
                         Due Date
@@ -1107,14 +1120,14 @@ const FetchInvoicesModal = ({ onClose }: { onClose: () => void }) => {
         </Table> : null}
         <div className="flex justify-between items-center">
             <div className="flex gap-2">
-                <span className="text-muted-foreground">Invoices: <span className="text-foreground font-mono font-medium">{selectedInvoices.length}</span></span> /
-                <span className="text-muted-foreground">Total: <span className="text-foreground font-mono font-medium">{formatCurrency(selectedInvoices.reduce((acc, invoice) => acc + invoice.outstanding_amount, 0))}</span></span>
+                <span className="text-muted-foreground">{_("Facturas")}: <span className="text-foreground font-mono font-medium">{selectedInvoices.length}</span></span> /
+                <span className="text-muted-foreground">{_("Total")}: <span className="text-foreground font-mono font-medium">{formatCurrency(selectedInvoices.reduce((acc, invoice) => acc + invoice.outstanding_amount, 0))}</span></span>
             </div>
             <DialogFooter className="pt-2">
                 <DialogClose asChild>
-                    <Button variant='ghost' disabled={allocateAmountToReferencesLoading}>Cancel</Button>
+                    <Button variant='ghost' disabled={allocateAmountToReferencesLoading}>{_("Cancelar")}</Button>
                 </DialogClose>
-                <Button onClick={onSelect} disabled={allocateAmountToReferencesLoading}>Select</Button>
+                <Button onClick={onSelect} disabled={allocateAmountToReferencesLoading}>{_("Seleccionar")}</Button>
             </DialogFooter>
         </div>
 
@@ -1174,7 +1187,7 @@ const OtherChargesSection = ({ currency }: { currency: string }) => {
 
     return <div className="flex flex-col gap-2">
         <div className="flex gap-2 items-center">
-            <H4 className="text-base">Other Charges / Deductions</H4>
+            <H4 className="text-base">{_("Otros Cargos / Deducciones")}</H4>
             <TotalDeductions currency={currency} />
         </div>
         <Table>
@@ -1241,7 +1254,7 @@ const OtherChargesSection = ({ currency }: { currency: string }) => {
                                 name={`entries.${index}.user_remark`}
                                 label={_("Remarks")}
                                 inputProps={{
-                                    placeholder: _("e.g. Bank Charges"),
+                                    placeholder: _("ej. Comisiones Bancarias"),
                                     className: 'min-w-64'
                                 }}
                                 hideLabel

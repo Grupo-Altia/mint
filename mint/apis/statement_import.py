@@ -201,8 +201,8 @@ def get_header_row_index(data: list[list[str]]):
             # If cell is a string, then we need to check if it contains any of the keywords
             if not isinstance(cell, str):
                 continue
-
-            if any(keyword in cell.lower() for keyword in ["date", "amount", "description", "reference", "transaction", "type", "cr", "dr", "deposit", "withdrawal", "balance"]):
+#buscamos todo el diccionario contable si es posible en español, ingles, chino
+            if any(keyword in cell.lower() for keyword in ["date", "amount", "description", "reference", "transaction", "type", "cr", "dr", "deposit", "withdrawal", "balance", "fecha", "concepto", "referencia", "débito", "debito", "crédito", "credito", "saldo"]):
                 valid_columns += 1
         if valid_columns > max_valid_columns:
             max_valid_columns = valid_columns
@@ -215,16 +215,15 @@ def get_column_mapping(header_row: list[str]):
     Given the header row, try to map each column index to a standard variable, or set it to "Do not import"
     """
     standard_variables = {
-        "Date": ["date", "transaction date"], 
-        "Withdrawal": ["withdrawal", "debit"],
-        "Deposit": ["deposit", "credit"],
-        "Amount": ["amount"], 
-        "Description": ["description", "particulars", "remarks", "narration", "detail", "reference"], 
-        "Reference": ["reference", "ref", "tran id", "transaction id", "cheque", "check", "id", "chq"], 
-        "Transaction Type": ["transaction type", "cr/dr", "dr/cr", "debit/credit", "credit/debit"], 
-        "Balance": ["balance"],
+        "Date": ["date", "transaction date", "fecha"], 
+        "Withdrawal": ["withdrawal", "debit", "débito", "debito"],
+        "Deposit": ["deposit", "credit", "crédito", "credito"],
+        "Amount": ["amount", "monto", "importe"], 
+        "Description": ["description", "particulars", "remarks", "narration", "detail", "reference", "concepto", "descripción", "descripcion"], 
+        "Reference": ["reference", "ref", "tran id", "transaction id", "cheque", "check", "id", "chq", "referencia", "nro"], 
+        "Transaction Type": ["transaction type", "cr/dr", "dr/cr", "debit/credit", "credit/debit", "tipo"], 
+        "Balance": ["balance", "saldo"],
     }
-
     # A standard variable can be represented by multiple names
 
     column_mapping = {}

@@ -54,13 +54,13 @@ const RuleConfigureButton = () => {
             <Tooltip>
                 <TooltipTrigger asChild>
                     <SheetTrigger asChild>
-                        <Button size='icon' variant='outline' title={_("Transaction Matching Rules")}>
+                        <Button size='icon' variant='outline' title={_("Reglas de Emparejamiento")}>
                             <ZapIcon />
                         </Button>
                     </SheetTrigger>
                 </TooltipTrigger>
                 <TooltipContent>
-                    {_("Transaction Matching Rules")}
+                    {_("Reglas de Emparejamiento")}
                 </TooltipContent>
             </Tooltip>
             <SheetContent className="min-w-3xl">
@@ -73,11 +73,11 @@ const RuleConfigureButton = () => {
                             <ArrowLeftIcon />
                         </Button>}
 
-                        <SheetTitle>{selectedRule ? selectedRule : isNewRule ? _("New Rule") : _("Transaction Matching Rules")}</SheetTitle>
+                        <SheetTitle>{selectedRule ? selectedRule : isNewRule ? _("Nueva Regla") : _("Reglas de Emparejamiento")}</SheetTitle>
                     </div>
 
                     <SheetDescription className={selectedRule ? "sr-only" : ""}>
-                        {selectedRule ? _("Edit this rule") : isNewRule ? _("Create a new rule to automatically classify transactions.") : _("Set up rules to automatically classify transactions. Drag and drop rules to reorder their priority.")}
+                        {selectedRule ? _("Edit this rule") : isNewRule ? _("Crea una nueva regla para clasificar transacciones automáticamente.") : _("Configura reglas para clasificar transacciones automáticamente. Arrastra y suelta para reordenar su prioridad.")}
                     </SheetDescription>
                 </SheetHeader>
                 {selectedRule ? <EditRule onClose={() => setSelectedRule(null)} ruleID={selectedRule} /> : isNewRule ? <CreateNewRule onCreate={() => setIsNewRule(false)} /> : <RuleList setSelectedRule={setSelectedRule} setIsNewRule={setIsNewRule} />}
@@ -171,7 +171,7 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
                                 ) : (
                                     <Play className="w-4 h-4 mr-2" />
                                 )}
-                                {isRunningRules ? _("Running...") : _("Run Rules")}
+                                {isRunningRules ? _("Running...") : _("Ejecutar Reglas")}
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
@@ -206,7 +206,7 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
                     {_("No rules found")}
 
                     <Button type='button' onClick={() => setIsNewRule(true)}>
-                        {_("Create a new rule")}
+                        {_("Crear una nueva regla")}
                     </Button>
                 </div>}
 
@@ -236,7 +236,7 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
             </div>
             <SheetFooter>
                 <Button type='button' onClick={() => setIsNewRule(true)}>
-                    {_("Create a new rule")}
+                    {_("Crear una nueva regla")}
                 </Button>
                 <SheetClose asChild>
                     <Button type='button' variant='outline'>

@@ -88,6 +88,7 @@ const StatementDetails = ({ data, bank, onBack }: Props) => {
     }
 
     const [progress, setProgress] = useState(0)
+    const [imgError, setImgError] = useState(false)
 
     useFrappeEventListener("mint-statement-import-progress", (event) => {
         setProgress(event.progress)
@@ -128,12 +129,13 @@ const StatementDetails = ({ data, bank, onBack }: Props) => {
                 <Table>
                     <TableBody>
                         <TableRow>
-                            <TableHead className='bg-muted/70'>{_("Bank Account")}</TableHead>
+                            <TableHead className='bg-muted/70'>{_("Cuenta Bancaria")}</TableHead>
                             <TableCell>
                                 <div className='flex items-center gap-2'>
-                                    {bank?.logo ? <img
+                                    {bank?.logo && !imgError ? <img
                                         src={`/assets/mint/mint/${bank.logo}`}
                                         alt={bank.bank || bank.name || ''}
+                                        onError={() => setImgError(true)}
                                         className="max-w-24 object-left h-8 object-contain"
                                     /> : <div className="rounded-md flex items-center h-8 gap-2">
                                         <Landmark size={'30px'} />

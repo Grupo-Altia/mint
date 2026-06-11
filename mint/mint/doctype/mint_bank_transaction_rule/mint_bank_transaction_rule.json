@@ -13,7 +13,7 @@
   "max_amount",
   "column_break_zcez",
   "rule_description",
-  "company",
+  "bank",
   "section_break_licn",
   "description_rules",
   "action_section",
@@ -116,13 +116,6 @@
    "reqd": 1
   },
   {
-   "fieldname": "company",
-   "fieldtype": "Link",
-   "label": "Company",
-   "options": "Company",
-   "reqd": 1
-  },
-  {
    "fieldname": "bank_entry_type",
    "fieldtype": "Select",
    "label": "Bank Entry Type",
@@ -137,12 +130,19 @@
    "fieldtype": "Table",
    "label": "Accounts",
    "options": "Mint Transaction Rule Accounts"
+  },
+  {
+   "fieldname": "bank",
+   "fieldtype": "Link",
+   "label": "Bank",
+   "options": "Bank",
+   "reqd": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-01-20 14:12:57.950499",
+ "modified": "2026-06-06 10:44:35.247633",
  "modified_by": "Administrator",
  "module": "Mint",
  "name": "Mint Bank Transaction Rule",

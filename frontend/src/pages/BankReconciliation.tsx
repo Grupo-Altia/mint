@@ -7,6 +7,7 @@ import BankTransactions from "@/components/features/BankReconciliation/BankTrans
 import BankTransactionUnreconcileModal from "@/components/features/BankReconciliation/BankTransactionUnreconcileModal"
 import CompanySelector from "@/components/features/BankReconciliation/CompanySelector"
 import IncorrectlyClearedEntries from "@/components/features/BankReconciliation/IncorrectlyClearedEntries"
+import BankTransferList from "@/components/features/BankReconciliation/BankTransferList"
 import MatchAndReconcile from "@/components/features/BankReconciliation/MatchAndReconcile"
 import RuleConfigureButton from "@/components/features/BankReconciliation/Rules/RuleConfigureButton"
 import Settings from "@/components/features/Settings/Settings"
@@ -52,16 +53,17 @@ const BankReconciliation = () => {
             </div>
             <Tabs defaultValue="Match and Reconcile">
                 <TabsList className="w-full">
-                    <TabsTrigger value="Match and Reconcile">{_("Match and Reconcile")}</TabsTrigger>
-                    <TabsTrigger value="Bank Reconciliation Statement">{_("Bank Reconciliation Statement")}</TabsTrigger>
-                    <TabsTrigger value="Bank Transactions">{_("Bank Transactions")}</TabsTrigger>
-                    <TabsTrigger value="Bank Clearance Summary">{_("Bank Clearance Summary")}</TabsTrigger>
-                    <TabsTrigger value="Incorrectly Cleared Entries">{_("Incorrectly Cleared Entries")}</TabsTrigger>
+                    <TabsTrigger value="Match and Reconcile">{_("Conciliar")}</TabsTrigger>
+                    <TabsTrigger value="Bank Statement">{_("Estados de conciliación bancarios")}</TabsTrigger>
+                    <TabsTrigger value="Bank Transactions">{_("Transacciones Bancarias")}</TabsTrigger>
+                    <TabsTrigger value="Bank Clearance Summary">{_("Resumen de Cambios Bancarios")}</TabsTrigger>
+                    <TabsTrigger value="Incorrectly Cleared Entries">{_("Entradas Liquidadas Incorrectamente")}</TabsTrigger>
+                    <TabsTrigger value="Bank Transfers">{_("Transferencias Bancarias")}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="Match and Reconcile">
                     <MatchAndReconcile contentHeight={remainingHeightAfterTabs} />
                 </TabsContent>
-                <TabsContent value="Bank Reconciliation Statement">
+                <TabsContent value="Bank Statement">
                     <BankReconciliationStatement />
                 </TabsContent>
                 <TabsContent value="Bank Transactions">
@@ -72,6 +74,9 @@ const BankReconciliation = () => {
                 </TabsContent>
                 <TabsContent value="Incorrectly Cleared Entries">
                     <IncorrectlyClearedEntries />
+                </TabsContent>
+                <TabsContent value="Bank Transfers">
+                    <BankTransferList />
                 </TabsContent>
             </Tabs>
 

@@ -16,7 +16,7 @@ export interface JournalEntry{
 	/**	Title : Data	*/
 	title?: string
 	/**	Entry Type : Select	*/
-	voucher_type: "Journal Entry" | "Inter Company Journal Entry" | "Bank Entry" | "Cash Entry" | "Credit Card Entry" | "Debit Note" | "Credit Note" | "Contra Entry" | "Excise Entry" | "Write Off Entry" | "Opening Entry" | "Depreciation Entry" | "Exchange Rate Revaluation" | "Exchange Gain Or Loss" | "Deferred Revenue" | "Deferred Expense"
+	voucher_type: "Journal Entry" | "Inter Company Journal Entry" | "Registro de Banco" | "Cash Entry" | "Credit Card Entry" | "Debit Note" | "Credit Note" | "Contra Entry" | "Excise Entry" | "Write Off Entry" | "Opening Entry" | "Depreciation Entry" | "Exchange Rate Revaluation" | "Exchange Gain Or Loss" | "Deferred Revenue" | "Deferred Expense"
 	/**	Series : Select	*/
 	naming_series: "ACC-JV-.YYYY.-"
 	/**	Finance Book : Link - Finance Book	*/

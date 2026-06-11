@@ -44,7 +44,7 @@ const MatchAndReconcile = ({ contentHeight }: { contentHeight: number }) => {
                 <EmptyMedia variant="icon">
                     <LandmarkIcon />
                 </EmptyMedia>
-                <EmptyTitle>{_("Select a bank account to reconcile")}</EmptyTitle>
+                <EmptyTitle>{_("Selecciona una cuenta bancaria para conciliar")}</EmptyTitle>
             </EmptyHeader>
         </Empty>
     }
@@ -52,12 +52,12 @@ const MatchAndReconcile = ({ contentHeight }: { contentHeight: number }) => {
     return <>
         <div className={`flex items-start space-x-2`} >
             <div className="flex-1">
-                <H4 className="text-sm font-medium">{_("Unreconciled Transactions")}</H4>
+                <H4 className="text-sm font-medium">{_("Transacciones no conciliadas")}</H4>
                 <UnreconciledTransactions contentHeight={contentHeight} />
             </div>
             <Separator orientation="vertical" style={{ minHeight: `${contentHeight}px` }} />
             <div className="flex-1 px-1">
-                <H4 className="text-sm font-medium">{_("Match or Create")}</H4>
+                <H4 className="text-sm font-medium">{_("Emparejar o Crear")}</H4>
                 <VouchersSection contentHeight={contentHeight} />
             </div>
         </div>
@@ -153,7 +153,7 @@ const UnreconciledTransactions = ({ contentHeight }: { contentHeight: number }) 
                     ref={inputRef}
                     className="border-none px-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0" />
                 <div>
-                    <span className="text-sm text-muted-foreground text-nowrap whitespace-nowrap">{results?.length} {_(results?.length === 1 ? "result" : "results")}</span>
+                    <span className="text-sm text-muted-foreground text-nowrap whitespace-nowrap">{results?.length} {_(results?.length === 1 ? "resultado" : "resultados")}</span>
                 </div>
             </div>
             <div>
@@ -236,7 +236,7 @@ const NoTransactionsFoundBanner = ({ text, description, onClearFilters }: { text
             {onClearFilters ? <Button type='button' size='sm' variant='outline' onClick={onClearFilters}>Clear Filters</Button> :
                 <Button type='button' asChild size='sm' variant='outline'>
                     <Link to="/statement-importer">
-                        {_("Import Bank Statement")}
+                        {_("Importar Estado de Cuenta")}
                     </Link>
                 </Button>}
         </EmptyContent>
@@ -308,7 +308,7 @@ const UnreconciledTransactionItem = ({ transaction }: { transaction: Unreconcile
                 <div className="gap-1 flex flex-col items-end min-w-36 h-full text-right">
                     {isWithdrawal ? <ArrowUpRight className="w-6 h-6 text-destructive" /> : <ArrowDownRight className="w-6 h-6 text-green-600" />}
                     {amount && amount > 0 && <span className="font-semibold font-mono text-md">{formatCurrency(amount, currency)}</span>}
-                    {amount !== transaction.unallocated_amount && <span className="text-xs text-gray-700">{formatCurrency(transaction.unallocated_amount, currency)}<br />{_("Unallocated")}</span>}
+                    {amount !== transaction.unallocated_amount && <span className="text-xs text-gray-700">{formatCurrency(transaction.unallocated_amount, currency)}<br />{_("Sin asignar")}</span>}
                 </div>
             </div>
         </div>
@@ -328,7 +328,7 @@ const VouchersSection = ({ contentHeight }: { contentHeight: number }) => {
                 <EmptyMedia variant="icon">
                     <ReceiptIcon />
                 </EmptyMedia>
-                <EmptyTitle>{_("Select a transaction to match and reconcile with vouchers")}</EmptyTitle>
+                <EmptyTitle>{_("Selecciona una transacción para emparejar y conciliar con comprobantes")}</EmptyTitle>
             </EmptyHeader>
         </Empty>
     }
@@ -411,11 +411,11 @@ const OptionsForMultipleTransactions = ({ transactions }: { transactions: Unreco
                                             size='lg'
                                             aria-label={_("Record a bank journal entry for expenses, income or split transactions")}
                                             onClick={() => setRecordJournalEntryModalOpen(true)}>
-                                            <Landmark /> {_("Bank Entry")}
+                                            <Landmark /> {_("Registro de Banco")}
                                         </Button>
                                     </TooltipTrigger>
                                     <TooltipContent>
-                                        {_("Record a journal entry for expenses, income or split transactions")}
+                                        {_("Registra un asiento de diario para gastos, ingresos o transacciones divididas")}
                                         <KbdGroup className="ml-2">
                                             <Kbd><KeyboardMetaKeyIcon /></Kbd>
                                             <Kbd>B</Kbd>
@@ -427,35 +427,16 @@ const OptionsForMultipleTransactions = ({ transactions }: { transactions: Unreco
                                         <Button
                                             variant='outline'
                                             size='lg'
-                                            aria-label={_("Record a payment entry against a customer or supplier")}
+                                            aria-label={_("Registrar un pago contra un cliente o proveedor")}
                                             onClick={() => setRecordPaymentModalOpen(true)}>
-                                            <Receipt /> {_("Record Payment")}
+                                            <Receipt /> {_("Registro de Pago")}
                                         </Button>
                                     </TooltipTrigger>
                                     <TooltipContent>
-                                        {_("Record a payment entry against a customer or supplier")}
+                                        {_("Registrar un pago contra un cliente o proveedor")}
                                         <KbdGroup className="ml-2">
                                             <Kbd><KeyboardMetaKeyIcon /></Kbd>
                                             <Kbd>P</Kbd>
-                                        </KbdGroup>
-                                    </TooltipContent>
-                                </Tooltip>
-
-                                <Tooltip >
-                                    <TooltipTrigger asChild>
-                                        <Button
-                                            variant='outline'
-                                            size='lg'
-                                            aria-label={_("Record an internal transfer to another bank/credit card/cash account")}
-                                            onClick={() => setTransferModalOpen(true)}>
-                                            <ArrowRightLeft /> {_("Transfer")}
-                                        </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        {_("Record an internal transfer to another bank/credit card/cash account")}
-                                        <KbdGroup className="ml-2">
-                                            <Kbd><KeyboardMetaKeyIcon /></Kbd>
-                                            <Kbd>I</Kbd>
                                         </KbdGroup>
                                     </TooltipContent>
                                 </Tooltip>
@@ -483,13 +464,13 @@ const OptionsForSingleTransaction = ({ transaction, contentHeight }: { transacti
                         <TooltipTrigger asChild>
                             <Button
                                 variant='outline'
-                                aria-label={_("Record a payment entry against a customer or supplier")}
+                                aria-label={_("Registrar un pago contra un cliente o proveedor")}
                                 onClick={() => setRecordPaymentModalOpen(true)}>
-                                <Receipt /> {_("Record Payment")}
+                                <Receipt /> {_("Registro de Pago")}
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent>
-                            {_("Record a payment entry against a customer or supplier")}
+                            {_("Registrar un pago contra un cliente o proveedor")}
                             <KbdGroup className="ml-2">
                                 <Kbd><KeyboardMetaKeyIcon /></Kbd>
                                 <Kbd>P</Kbd>
@@ -502,34 +483,18 @@ const OptionsForSingleTransaction = ({ transaction, contentHeight }: { transacti
                                 variant='outline'
                                 aria-label={_("Record a bank journal entry for expenses, income or split transactions")}
                                 onClick={() => setRecordJournalEntryModalOpen(true)}>
-                                <Landmark /> {_("Bank Entry")}
+                                <Landmark /> {_("Registro de Banco")}
                             </Button>
                         </TooltipTrigger>
                         <TooltipContent>
-                            {_("Record a journal entry for expenses, income or split transactions")}
+                            {_("Registra un asiento de diario para gastos, ingresos o transacciones divididas")}
                             <KbdGroup className="ml-2">
                                 <Kbd><KeyboardMetaKeyIcon /></Kbd>
                                 <Kbd>B</Kbd>
                             </KbdGroup>
                         </TooltipContent>
                     </Tooltip>
-                    <Tooltip >
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant='outline'
-                                aria-label={_("Record an internal transfer to another bank/credit card/cash account")}
-                                onClick={() => setTransferModalOpen(true)}>
-                                <ArrowRightLeft /> {_("Transfer")}
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                            {_("Record an internal transfer to another bank/credit card/cash account")}
-                            <KbdGroup className="ml-2">
-                                <Kbd><KeyboardMetaKeyIcon /></Kbd>
-                                <Kbd>I</Kbd>
-                            </KbdGroup>
-                        </TooltipContent>
-                    </Tooltip>
+
                 </div>
                 <MatchFilters />
             </div>
@@ -553,11 +518,11 @@ const RuleAction = ({ transaction }: { transaction: UnreconciledTransaction }) =
     const getActionIcon = () => {
         switch (rule.classify_as) {
             case "Bank Entry":
-                return <Landmark className="w-6 h-6" />
+                return <Landmark className="w-5 h-5" />
             case "Payment Entry":
-                return <Receipt className="w-6 h-6" />
+                return <Receipt className="w-5 h-5" />
             case "Transfer":
-                return <ArrowRightLeft className="w-6 h-6" />
+                return <ArrowRightLeft className="w-5 h-5" />
             default:
                 return <ZapIcon className="w-6 h-6" />
         }
@@ -565,7 +530,7 @@ const RuleAction = ({ transaction }: { transaction: UnreconciledTransaction }) =
 
     const getActionStyles = () => {
         switch (rule.classify_as) {
-            case "Bank Entry":
+            case "Registro de Banco":
                 return {
                     border: "border-blue-200",
                     bg: "bg-blue-50/30",
@@ -613,13 +578,13 @@ const RuleAction = ({ transaction }: { transaction: UnreconciledTransaction }) =
     const getActionDescription = () => {
         switch (rule.classify_as) {
             case "Bank Entry":
-                return _("Create a journal entry for expenses, income or split transactions")
+                return _("Crear un asiento de diario para gastos, ingresos o transacciones divididas")
             case "Payment Entry":
-                return _("Record a payment entry against a customer or supplier")
+                return _("Registrar un pago contra un cliente o proveedor")
             case "Transfer":
-                return _("Record an internal transfer to another bank/credit card/cash account")
+                return _("Registrar una transferencia interna a otro banco/tarjeta de crédito/cuenta de efectivo")
             default:
-                return _("Create a new entry based on the rule")
+                return _("Crear una nueva entrada basada en la regla")
         }
     }
 
@@ -635,7 +600,7 @@ const RuleAction = ({ transaction }: { transaction: UnreconciledTransaction }) =
                     <div className="flex flex-col gap-0.5">
                         <span className="font-semibold text-lg">{rule.rule_name}</span>
                         <span className="text-sm text-muted-foreground font-normal">
-                            {rule.rule_description || _("Rule matched based on transaction description and other criteria.")}
+                            {rule.rule_description || _("Regla emparejada según la descripción de la transacción y otros criterios.")}
                         </span>
                     </div>
                 </CardTitle>
@@ -644,10 +609,10 @@ const RuleAction = ({ transaction }: { transaction: UnreconciledTransaction }) =
                 <div className="flex items-center justify-between p-2.5 bg-background/60 rounded-lg border border-border/50">
                     <div className="flex items-center gap-2">
                         <BadgeCheck className="w-4 h-4 text-green-600" />
-                        <span className="text-sm font-medium text-foreground">{_("Recommended Action")}</span>
+                        <span className="text-sm font-medium text-foreground">{_("Acción Recomendada")}</span>
                     </div>
                     <Badge variant="outline" className="text-xs font-medium">
-                        {_("Priority")} {rule.priority}
+                        {_("Prioridad")} {rule.priority}
                     </Badge>
                 </div>
 
@@ -655,7 +620,7 @@ const RuleAction = ({ transaction }: { transaction: UnreconciledTransaction }) =
                     <div className="flex items-center gap-0.5">
                         <span className="text-sm font-medium text-foreground">{_("Action Type")}:</span>
                         <Badge variant="secondary" className={`text-sm font-medium ${styles.text} bg-opacity-10`}>
-                            {rule.classify_as}
+                            {_(rule.classify_as)}
                         </Badge>
                     </div>
 
@@ -682,7 +647,7 @@ const RuleAction = ({ transaction }: { transaction: UnreconciledTransaction }) =
                     >
                         <div className="flex items-center gap-2">
                             {getActionIcon()}
-                            <span>{_("Create")} {rule.classify_as}</span>
+                            <span>{_("Crear")} {_(rule.classify_as)}</span>
                         </div>
                     </Button>
                     <p className="text-sm text-muted-foreground mt-2 text-center leading-relaxed">
@@ -706,7 +671,7 @@ const VouchersForTransaction = ({ transaction, contentHeight }: { transaction: U
         return <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Separator className="flex-1" />
-                <span>or</span>
+                <span>o</span>
                 <Separator className="flex-1" />
             </div>
             <Skeleton className="h-16 w-full" />
@@ -721,7 +686,7 @@ const VouchersForTransaction = ({ transaction, contentHeight }: { transaction: U
     return <div className="relative space-y-2">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Separator className="flex-1" />
-            <span>or</span>
+            <span>o</span>
             <Separator className="flex-1" />
         </div>
         {vouchers?.message.length === 0 && <Empty className="h-64 my-4">
@@ -729,7 +694,7 @@ const VouchersForTransaction = ({ transaction, contentHeight }: { transaction: U
                 <EmptyMedia variant="icon">
                     <ReceiptIcon />
                 </EmptyMedia>
-                <EmptyTitle>{_("No vouchers found for this transaction")}</EmptyTitle>
+                <EmptyTitle>{_("No se encontraron comprobantes para esta transacción")}</EmptyTitle>
             </EmptyHeader>
         </Empty>}
         <Virtuoso
@@ -907,11 +872,11 @@ const OlderUnreconciledTransactionsBanner = () => {
                     </div>
                     <div className="flex flex-col gap-0.5">
                         {data.message.count > 1 ? (
-                            <span className="text-sm font-medium text-amber-600">{_("There are {0} unreconciled transactions before {1}.", [data.message.count.toString(), formatDate(dates.fromDate)])}</span>
+                            <span className="text-sm font-medium text-amber-600">{_("Hay {0} transacciones no conciliadas antes del {1}.", [data.message.count.toString(), formatDate(dates.fromDate)])}</span>
                         ) : (
-                            <span className="text-sm font-medium text-amber-600">{_("There is one unreconciled transaction before {0}.", [formatDate(dates.fromDate)])}</span>
+                            <span className="text-sm font-medium text-amber-600">{_("Hay una transacción no conciliada antes del {0}.", [formatDate(dates.fromDate)])}</span>
                         )}
-                        <span className="text-sm text-amber-600">{_("The opening balance might not match your bank statement. Would you like to reconcile them?")}</span>
+                        <span className="text-sm text-amber-600">{_("El saldo inicial podría no coincidir con tu estado de cuenta. ¿Deseas conciliarlos?")}</span>
                     </div>
 
                 </div>
@@ -922,7 +887,7 @@ const OlderUnreconciledTransactionsBanner = () => {
                         className="shadow-none"
                         onClick={() => setDates({ fromDate: data.message.oldest_date, toDate: dates.toDate })}
                         variant='outline'>
-                        <span>{data.message.count > 1 ? _("View older transactions") : _("View older transaction")}</span>
+                        <span>{data.message.count > 1 ? _("Ver transacciones anteriores") : _("Ver transacción anterior")}</span>
                         <ArrowRightIcon className="w-4 h-4" />
                     </Button>
                 </div>

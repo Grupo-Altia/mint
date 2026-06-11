@@ -30,7 +30,7 @@ export const RuleForm = ({ isEdit = false }: { isEdit?: boolean }) => {
             inputProps={{
                 maxLength: 140,
                 disabled: isEdit,
-                placeholder: _("Bank Charges, Salary, etc."),
+                placeholder: _("Cargos bancarios, Salario, etc."),
                 autoFocus: true
             }}
             rules={{
@@ -38,13 +38,12 @@ export const RuleForm = ({ isEdit = false }: { isEdit?: boolean }) => {
             }}
         />
 
-        <CompanySelector />
-
+        <BankSelector />
         <SmallTextField
             name='rule_description'
             label={_("Rule Description")}
             inputProps={{
-                placeholder: _("Any debit transaction with the keyword 'Bank Fee'.")
+                placeholder: _("Cualquier transacción de retiro con la palabra 'Comisión'.")
             }}
         />
 
@@ -53,12 +52,12 @@ export const RuleForm = ({ isEdit = false }: { isEdit?: boolean }) => {
         <div className="grid grid-cols-2 gap-2 pt-1">
             <CurrencyFormField
                 name='min_amount'
-                label={_("Minimum Amount")}
+                label={_("Monto Mínimo")}
             />
 
             <CurrencyFormField
                 name='max_amount'
-                label={_("Maximum Amount")}
+                label={_("Monto Máximo")}
             />
         </div>
 
@@ -70,23 +69,17 @@ export const RuleForm = ({ isEdit = false }: { isEdit?: boolean }) => {
     </div>
 }
 
-const CompanySelector = () => {
 
-    const { setValue } = useFormContext<MintBankTransactionRule>()
-
-    return <LinkFormField
-        name='company'
-        label={_("Company")}
-        doctype="Company"
-        isRequired
-        rules={{
-            required: _("Company is required"),
-            onChange: () => {
-                setValue('account', '')
-            }
-        }}
-    />
-
+const BankSelector = () => {
+    // Ya no necesitamos useFormContext aquí si usamos el componente personalizado directamente
+    return (
+        <LinkFormField
+            name='bank' 
+            label={_("Banco")}
+            doctype="Bank"
+            // placeholder no parece estar en las propiedades que definieron, se podria añadir pero no es necesario (si funciona no se toca)
+        />
+    )
 }
 
 /** Component to render a radio group as a toggle group with options for All, Withdrawal, Deposit */
@@ -184,7 +177,7 @@ const DescriptionRules = () => {
 
     return (
         <div className="flex flex-col gap-2 pt-1">
-            <span className="text-sm font-medium">{_("Rules to match against the transaction description")} <span className="text-destructive">*</span></span>
+            <span className="text-sm font-medium">{_("Reglas para emparejar con la descripción de la transacción")} <span className="text-destructive">*</span></span>
             {fields.map((field, index) => (
                 <div key={field.id} className="flex w-full items-center gap-2">
                     <div className="min-w-36">
@@ -207,7 +200,7 @@ const DescriptionRules = () => {
                             label={_("Value")}
                             hideLabel
                             inputProps={{
-                                placeholder: _("Bank Fee, Salary, etc."),
+                                placeholder: _("Comisión, Salario, etc."),
                             }}
                         />
                     </div>
@@ -222,7 +215,7 @@ const DescriptionRules = () => {
             <div>
                 <Button variant="outline" type='button' onClick={addRow}>
                     <PlusCircleIcon className="w-4 h-4" />
-                    {_("Add Rule")}
+                    {_("Agregar Regla")}
                 </Button>
             </div>
 
@@ -243,9 +236,9 @@ const RuleAction = () => {
             return party_type === "Supplier" ? ["Payable"] : ["Receivable"]
         }
 
-        if (classify_as === "Transfer") {
-            return ["Bank", "Cash", "Temporary"]
-        }
+//        if (classify_as === "Transferencia") {
+//            return ["Bank", "Cash", "Temporary"]
+//        }
 
         return undefined
 
@@ -253,23 +246,22 @@ const RuleAction = () => {
 
     return (
         <div className="flex flex-col gap-4">
-            <H4 className="text-base font-medium text-foreground">{_("If rule matches, then:")}</H4>
+            <H4 className="text-base font-medium text-foreground">{_("Si la regla coincide, entonces:")}</H4>
 
             <SelectFormField
                 name='classify_as'
                 isRequired
-                label={_("Suggest creating a")}
-                formDescription={_("This will just suggest creating a new entry, and will not automatically create it.")}
+                label={_("Sugerir crear un(a)")}
+                formDescription={_("Esto solo sugerirá crear una nueva entrada, y no la creará automáticamente.")}
                 rules={{
                     required: _("This is required")
                 }}
             >
-                <SelectItem value="Bank Entry"><LandmarkIcon /> {_("Bank Entry")}</SelectItem>
+                <SelectItem value="Registro de Banco"><LandmarkIcon /> {_("Registro de Banco")}</SelectItem>
                 <SelectItem value="Payment Entry"><ReceiptIcon /> {_("Payment Entry")}</SelectItem>
-                <SelectItem value="Transfer"><ArrowRightLeftIcon /> {_("Transfer")}</SelectItem>
             </SelectFormField>
 
-            {classify_as === "Bank Entry" && (<SelectFormField
+            {classify_as === "Registro de Banco" && (<SelectFormField
                 name='bank_entry_type'
                 isRequired
                 label={_("Create Bank Entry against")}
@@ -305,7 +297,7 @@ const RuleAction = () => {
                 </div>
             )}
 
-            {(((bank_entry_type === "Single Account" || !bank_entry_type) && classify_as === "Bank Entry") || classify_as !== "Bank Entry") && (<AccountFormField
+            {(((bank_entry_type === "Single Account" || !bank_entry_type) && classify_as === "Registro de Banco") || classify_as !== "Registro de Banco") && (<AccountFormField
                 name='account'
                 label={_("Account")}
                 isRequired
@@ -315,7 +307,7 @@ const RuleAction = () => {
                 account_type={accountType}
             />)}
 
-            {bank_entry_type === "Multiple Accounts" && classify_as === "Bank Entry" && <MultipleAccountsSelection />}
+            {bank_entry_type === "Multiple Accounts" && classify_as === "Registro de Banco" && <MultipleAccountsSelection />}
         </div>
     )
 }
@@ -697,7 +689,7 @@ const ConfigureAccountsModalContent = () => {
                                     name={`accounts.${index}.user_remark`}
                                     label={_("Remarks")}
                                     inputProps={{
-                                        placeholder: _("e.g. Bank Charges"),
+                                        placeholder: _("ej. Comisiones Bancarias"),
                                         className: 'min-w-64',
                                     }}
                                     hideLabel

@@ -302,9 +302,12 @@ export const useGetBankAccounts = (onSuccess?: (data?: Omit<SelectedBank, 'logo'
         // Match the bank account to the logo
         const banksWithLogos = data?.message.map((bank) => {
             const logo = BANK_LOGOS.find((logo) => logo.keywords.some((keyword) => bank.bank?.toLowerCase().includes(keyword.toLowerCase())))
+            
+            const dynamicLogoName = bank.bank ? bank.bank.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '.png' : ''
+            
             return {
                 ...bank,
-                logo: logo?.logo
+                logo: logo?.logo || `assets/bank-logos/${dynamicLogoName}`
             }
         }) ?? []
 

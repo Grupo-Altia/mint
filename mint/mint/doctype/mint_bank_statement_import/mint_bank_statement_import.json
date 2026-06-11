@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_import": 1,
  "allow_rename": 1,
  "creation": "2025-08-06 15:28:35.870320",
  "doctype": "DocType",
@@ -86,7 +87,7 @@
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2026-02-25 15:26:09.288999",
+ "modified": "2026-06-05 20:20:57.207985",
  "modified_by": "Administrator",
  "module": "Mint",
  "name": "Mint Bank Statement Import",

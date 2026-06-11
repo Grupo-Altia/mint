@@ -65,14 +65,14 @@ const ClosingBalance = () => {
         <StatContainer className="min-w-48">
             <div className="flex items-start gap-1">
                 <StatLabel>
-                    {_("Closing Balance as per system")}
+                    {_("Saldo de Cierre según el sistema")}
                 </StatLabel>
                 <HoverCard openDelay={100}>
                     <HoverCardTrigger>
                         <Info size='14px' className="text-secondary-foreground/80" />
                     </HoverCardTrigger>
                     <HoverCardContent className="w-96" align="start" side="right">
-                        <H4 className="text-base">{_("Closing balance as per system")}</H4>
+                        <H4 className="text-base">{_("Saldo de cierre según el sistema")}</H4>
                         <Paragraph className="mt-2 text-sm">
                             {_("This is what the system expects the closing balance to be in your bank statement.")}
                             <br />
@@ -134,7 +134,7 @@ const ReconcileProgress = () => {
 
     return <div className="w-[18%] flex flex-col gap-1 items-end">
         <div>
-            <span className="text-right font-medium text-sm">{_("Your Progress")}: {reconciledCount} / {totalCount} {_("reconciled")}</span>
+            <span className="text-right font-medium text-sm">{_("Tu Progreso")}: {reconciledCount} / {totalCount} {_("conciliados")}</span>
         </div>
         <div className="w-full">
             <Progress value={progress} max={100} />
@@ -165,7 +165,7 @@ const ClosingBalanceAsPerStatement = () => {
 
 
     return <StatContainer className="min-w-48">
-        <StatLabel>{_("Closing Balance as per statement")}</StatLabel>
+        <StatLabel>{_("Saldo de Cierre según el estado de cuenta")}</StatLabel>
         <div className="flex flex-col gap-2 items-start">
             <Dialog open={isOpen} onOpenChange={setIsOpen}>
                 <DialogTrigger>
@@ -242,7 +242,7 @@ const ClosingBalanceForm = ({ defaultBalance, date, bankAccount, onClose }: { de
     return <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
             <DialogHeader>
-                <DialogTitle>{_("Set closing balance as per bank statement")}</DialogTitle>
+                <DialogTitle>{_("Establecer el saldo de cierre según el estado de cuenta")}</DialogTitle>
                 <DialogDescription>
                     {_("Enter the closing balance you see in your bank statement for {0} as of the {1}", [bankAccount?.account_name ?? bankAccount?.name ?? '', formatDate(date, 'Do MMM YYYY')])}
                 </DialogDescription>
@@ -251,7 +251,7 @@ const ClosingBalanceForm = ({ defaultBalance, date, bankAccount, onClose }: { de
             <div className="py-4">
                 <CurrencyFormField
                     name="balance"
-                    label={_("Closing balance on bank statement as of {0}", [formatDate(date, 'Do MMM YYYY')])}
+                    label={_("Saldo de cierre en el estado de cuenta al {0}", [formatDate(date, 'Do MMM YYYY')])}
                     isRequired
                     currency={currency}
                 />

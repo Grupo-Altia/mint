@@ -54,10 +54,17 @@ def evaluate_transaction(transaction, rule_docs):
 
     for rule in rule_docs:
 
-        if rule.company != transaction.company:
-            continue
+       
+        # Si la regla tiene un banco asignado, verificamos que coincida con el banco de la transacción.
+        if rule.bank:
+            # Buscamos a qué institución pertenece la cuenta bancaria de esta transacción
+            transaction_bank = frappe.db.get_value("Bank Account", transaction.bank_account, "bank")
+            
+            if rule.bank != transaction_bank:
+                continue
+       
 
-        # Run the rules
+
 
         # Type rule - we continue searching for a rule if the transaction type does not match
         if rule.transaction_type == "Withdrawal":
