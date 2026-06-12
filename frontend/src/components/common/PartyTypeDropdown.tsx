@@ -72,7 +72,7 @@ const PartyTypeDropdown = ({ value, onChange, readOnly, disabled, type, hideOpti
             }
             <SelectContent>
                 {filteredData.map((option) => (
-                    <SelectItem key={option.name} value={option.name}>{option.name}</SelectItem>
+                    <SelectItem key={option.name} value={option.name}>{_(option.name)}</SelectItem>
                 ))}
             </SelectContent>
         </Select>
