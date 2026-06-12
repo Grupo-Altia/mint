@@ -200,7 +200,7 @@ const Row = ({ item, index, isLast, action }: { item: ActionLogItem, index: numb
                             {["Payment Entry", "Journal Entry"].includes(item.voucher.reference_doctype) ? "" : _("{} :", [item.voucher.reference_doctype])} {item.voucher.reference_name}
                         </a>
                         {item.voucher.reference_doctype === "Payment Entry" && item.voucher.doc && <PaymentEntryDetails item={item} />}
-                        {item.voucher.reference_doctype === "Journal Entry" && <JournalEntryDetails item={item} bank={bank} />}
+                        {item.voucher.reference_doctype === "Journal Entry" && item.voucher.doc && <JournalEntryDetails item={item} bank={bank} />}
                     </div>
                 </div>
             </div>
