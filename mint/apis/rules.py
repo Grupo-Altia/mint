@@ -118,8 +118,10 @@ def evaluate_transaction(transaction, rule_docs):
 @frappe.whitelist()
 def delete_rule(rule_name):
     """
-    Deletes a Mint Bank Transaction Rule bypassing LinkExistsError
-    The on_trash method in the rule controller handles the cleanup.
+    Deletes a Mint Bank Transaction Rule by manually unlinking it first.
     """
-    frappe.delete_doc("Mint Bank Transaction Rule", rule_name, ignore_links=True)
+    # Unlink transactions manually before deletion to avoid LinkExistsError
+    frappe.db.sql("""UPDATE `tabBank Transaction` SET matched_rule = NULL WHERE matched_rule = %s""", rule_name)
+    
+    frappe.delete_doc("Mint Bank Transaction Rule", rule_name)
 
