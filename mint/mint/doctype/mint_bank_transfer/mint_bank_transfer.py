@@ -2,6 +2,7 @@
 # For license information, please see license.txt
 
 # import frappe
+from frappe import _
 from frappe.model.document import Document
 
 
@@ -28,7 +29,7 @@ class MintBankTransfer(Document):
 	def validate(self):
 		if self.from_bank_account == self.to_bank_account:
 			import frappe
-			frappe.throw("From Bank Account and To Bank Account cannot be the same.")
+			frappe.throw(_("From Bank Account and To Bank Account cannot be the same."))
 
 	def before_submit(self):
 		self.status = "Submitted"
@@ -64,9 +65,9 @@ class MintBankTransfer(Document):
 		to_account = frappe.db.get_value("Bank Account", self.to_bank_account, "account")
 
 		if not from_account:
-			frappe.throw(f"Bank Account '{self.from_bank_account}' does not have a linked GL Account.")
+			frappe.throw(_("Bank Account '{0}' does not have a linked GL Account.").format(self.from_bank_account))
 		if not to_account:
-			frappe.throw(f"Bank Account '{self.to_bank_account}' does not have a linked GL Account.")
+			frappe.throw(_("Bank Account '{0}' does not have a linked GL Account.").format(self.to_bank_account))
 
 		# Credit source bank account
 		gl_entries.append(
