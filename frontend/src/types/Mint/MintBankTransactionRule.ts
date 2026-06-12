@@ -30,7 +30,7 @@ export interface MintBankTransactionRule{
 	/**	Description Rules : Table - Mint Bank Transaction Description Rules	*/
 	description_rules: MintBankTransactionDescriptionRules[]
 	/**	Classify As : Select	*/
-	classify_as: "Registro de Banco" | "Payment Entry" | "Transferencia"
+	classify_as: "Bank Entry" | "Payment Entry"
 	/**	Account : Link - Account	*/
 	account?: string
 	/**	Bank Entry Type : Select	*/
