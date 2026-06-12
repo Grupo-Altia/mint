@@ -20,7 +20,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { getCurrencySymbol } from "@/lib/currency"
 import { cn } from "@/lib/utils"
 import { useDebounceValue } from "usehooks-ts"
-import { useMemo, useState } from "react"
+import React, { useMemo, useState } from "react"
 import { Link } from "react-router"
 import { TableVirtuoso } from "react-virtuoso"
 
@@ -35,6 +35,22 @@ const BankTransactions = () => {
     return <>
         <BankTransactionListView />
     </>
+}
+
+const VirtuosoTable = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>((props, ref) => (
+    <table {...props} ref={ref} className={cn("w-full caption-bottom text-sm", props.className)} style={{ tableLayout: 'fixed', ...props.style }} />
+))
+VirtuosoTable.displayName = "VirtuosoTable"
+
+const VirtuosoTableBody = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>((props, ref) => (
+    <tbody {...props} ref={ref} className={cn("[&_tr:last-child]:border-0", props.className)} />
+))
+VirtuosoTableBody.displayName = "VirtuosoTableBody"
+
+const virtuosoComponents = {
+    Table: VirtuosoTable,
+    TableBody: VirtuosoTableBody,
+    TableRow: TableRow,
 }
 
 const BankTransactionListView = () => {
@@ -149,29 +165,25 @@ const BankTransactionListView = () => {
 
         <TableVirtuoso
             data={filteredResults}
-            components={{
-                Table: Table,
-                TableBody: TableBody,
-                TableRow: TableRow,
-            }}
+            components={virtuosoComponents}
             fixedHeaderContent={() => (
-                <TableRow>
-                    <TableHead>{_("Date")}</TableHead>
-                    <TableHead>{_("Description")}</TableHead>
-                    <TableHead>{_("Nº Referencia")}</TableHead>
-                    <TableHead className="text-right">{_("Withdrawal")}</TableHead>
-                    <TableHead className="text-right">{_("Deposit")}</TableHead>
-                    <TableHead className="text-right">{_("Sin asignar")}</TableHead>
-                    <TableHead>{_("Type")}</TableHead>
-                    <TableHead>{_("Status")}</TableHead>
-                    <TableHead>{_("Actions")}</TableHead>
+                <TableRow className="bg-background">
+                    <TableHead style={{ width: '10%' }}>{_("Date")}</TableHead>
+                    <TableHead style={{ width: '25%' }}>{_("Description")}</TableHead>
+                    <TableHead style={{ width: '12%' }}>{_("Nº Referencia")}</TableHead>
+                    <TableHead className="text-right" style={{ width: '12%' }}>{_("Withdrawal")}</TableHead>
+                    <TableHead className="text-right" style={{ width: '12%' }}>{_("Deposit")}</TableHead>
+                    <TableHead className="text-right" style={{ width: '12%' }}>{_("Sin asignar")}</TableHead>
+                    <TableHead style={{ width: '8%' }}>{_("Type")}</TableHead>
+                    <TableHead style={{ width: '14%' }}>{_("Status")}</TableHead>
+                    <TableHead style={{ width: '15%' }}>{_("Actions")}</TableHead>
                 </TableRow>
             )}
             itemContent={(_index, row) => (
                 <>
                     <TableCell>{formatDate(row.date)}</TableCell>
-                    <TableCell className="max-w-[300px] overflow-hidden text-ellipsis whitespace-nowrap"><span title={row.description}>{row.description}</span></TableCell>
-                    <TableCell>{row.reference_number}</TableCell>
+                    <TableCell className="overflow-hidden text-ellipsis whitespace-nowrap"><span title={row.description}>{row.description}</span></TableCell>
+                    <TableCell className="overflow-hidden text-ellipsis whitespace-nowrap" title={row.reference_number}>{row.reference_number}</TableCell>
                     <TableCell className="text-right">{formatCurrency(row.withdrawal, bankAccount?.account_currency ?? getCompanyCurrency(bankAccount?.company ?? ''))}</TableCell>
                     <TableCell className="text-right">{formatCurrency(row.deposit, bankAccount?.account_currency ?? getCompanyCurrency(bankAccount?.company ?? ''))}</TableCell>
                     <TableCell className="text-right">{formatCurrency(row.unallocated_amount, bankAccount?.account_currency ?? getCompanyCurrency(bankAccount?.company ?? ''))}</TableCell>
@@ -192,7 +204,7 @@ const BankTransactionListView = () => {
                     <TableCell>
                         <div className="flex gap-2">
                             <div>
-                                <Button variant='link' size='sm' asChild>
+                                <Button variant='link' size='sm' asChild className="px-1">
                                     <a
                                         href={`/app/bank-transaction/${row.name}`}
                                         target="_blank"
@@ -205,7 +217,7 @@ const BankTransactionListView = () => {
                                 variant='link'
                                 onClick={() => onUndo(row)}
                                 size='sm'
-                                className="text-destructive px-0">
+                                className="text-destructive px-1">
                                 <Undo2 />
                                 {_("Undo")}
                             </Button> : null}
