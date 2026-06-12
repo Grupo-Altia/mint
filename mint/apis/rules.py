@@ -114,4 +114,12 @@ def evaluate_transaction(transaction, rule_docs):
         "is_rule_evaluated": 1,
         "matched_rule": matched_rule.name if matched_rule else None
     })
-        
+
+@frappe.whitelist()
+def delete_rule(rule_name):
+    """
+    Deletes a Mint Bank Transaction Rule bypassing LinkExistsError
+    The on_trash method in the rule controller handles the cleanup.
+    """
+    frappe.delete_doc("Mint Bank Transaction Rule", rule_name, ignore_links=True)
+
