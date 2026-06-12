@@ -300,3 +300,7 @@ Clearance date updated,Fecha de liquidación actualizada,
 "Bank Entry Created","Registro de Banco Creado"
 "Import {0} transactions","Importar {0} transacciones"
 "Importing...","Importando..."
+
+"There was an error.","Hubo un error."
+"There was an error while importing the bank statement.","Hubo un error al importar el estado de cuenta bancario."
+"There was an error while performing the action.","Hubo un error al realizar la acción."
