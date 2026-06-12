@@ -184,3 +184,119 @@ Voucher Type,Tipo de Comprobante,
 Voucher Name,Nombre de Comprobante,
 Transfer Account,Cuenta de Transferencia,
 Payment Details,Detalles de Pago,
+Document Type,Tipo de Documento,
+Payment Document,Documento de Pago,
+Posting Date,Fecha de Contabilización,
+Cheque/Reference Number,Nº Cheque/Referencia,
+Clearance Date,Fecha de Liquidación,
+Against Account,Contra la cuenta,
+Amount,Monto,
+Status,Estado,
+Cleared,Liquidado,
+Not Cleared,No Liquidado,
+"Set the clearance date for this voucher without reconciling with a bank transaction.","Establecer la fecha de liquidación para este comprobante sin conciliar con una transacción bancaria.",
+Force Clear Voucher,Forzar Liquidación de Comprobante,
+Force Clear,Forzar Liquidación,
+Cancel,Cancelar,
+Submit,Enviar,
+Copy to clipboard,Copiar al portapapeles,
+Copied to clipboard,Copiado al portapapeles,
+No entries found,No se encontraron entradas,
+"There are no accounting entries in the system for the selected account and dates.","No hay entradas contables en el sistema para la cuenta y fechas seleccionadas.",
+"A continuación se muestra una lista de todas las entradas contables registradas contra la cuenta bancaria {0} entre {1} y {2}.","A continuación se muestra una lista de todas las entradas contables registradas contra la cuenta bancaria {0} entre {1} y {2}.",
+Por favor selecciona una cuenta bancaria para ver el resumen de cambios bancarios.,Por favor selecciona una cuenta bancaria para ver el resumen de cambios bancarios.,
+Por favor selecciona las fechas para ver el resumen de cambios bancarios.,Por favor selecciona las fechas para ver el resumen de cambios bancarios.,
+Clearance date updated,Fecha de liquidación actualizada,
+"No unreconciled transactions found","No se encontraron transacciones no conciliadas",
+"Import your bank statement to get started.","Importa tu estado de cuenta bancario para comenzar.",
+"Bank Statement","Estado de Cuenta",
+"Upload your bank statement file to start the import process. We support CSV, and XLSX files.","Sube tu archivo de estado de cuenta para iniciar el proceso de importación. Soportamos archivos CSV y XLSX.",
+"View Instructions","Ver instrucciones",
+"Statement Import Instructions","Instrucciones de Importación de Estado de Cuenta",
+"We support uploading CSV, XLSX and XLS files. Please make sure the file contains the correct columns.","Soportamos la carga de archivos CSV, XLSX y XLS. Asegúrate de que el archivo contenga las columnas correctas.",
+"The file should contain the following columns with a distinct header row. You can upload most bank statements as is without changing the columns.","El archivo debe contener las siguientes columnas con una fila de encabezado distintiva. Puedes subir la mayoría de los estados de cuenta tal cual sin cambiar las columnas.",
+"The date of the transaction","La fecha de la transacción",
+"This can contain ""CR""/""DR"" values or positive/negative values. You could also have a separate column for CR/DR.","Puede contener valores ""CR""/""DR"" o valores positivos/negativos. También podría tener una columna separada para CR/DR.",
+"The withdrawal or deposit amounts - only required if there's no amount column.","Los montos de retiro o depósito - solo es requerido si no hay columna de monto.",
+"The description of the transaction","La descripción de la transacción",
+"The reference number of the transaction","El número de referencia de la transacción",
+"No bank statements imported yet","Aún no hay estados de cuenta importados",
+"Maps To","Equivale a",
+"Imported On","Importado el",
+"Transaction Dates","Fechas de las Transacciones",
+"Number of Transactions","Número de Transacciones",
+"Previous Imports","Importaciones Anteriores",
+"No outstanding {0} found for the {1} {2} which qualify the filters you have specified.","No se encontraron {0} pendientes para el/la {1} {2} que cumplan con los filtros especificados."
+"invoices","facturas"
+"orders","órdenes"
+"invoices or orders","facturas u órdenes"
+"Please upload a file","Por favor sube un archivo"
+"Invalid file type","Tipo de archivo inválido"
+"All rows must have an amount and a type. Missing in row {0}","Todas las filas deben tener un monto y un tipo. Falta en la fila {0}"
+"No transactions found","No se encontraron transacciones"
+"From Bank Account and To Bank Account cannot be the same.","La Cuenta Bancaria Origen y la Cuenta Bancaria Destino no pueden ser la misma."
+"Bank Account '{0}' does not have a linked GL Account.","La Cuenta Bancaria '{0}' no tiene una Cuenta Contable enlazada."
+"Min amount cannot be greater than max amount.","El monto mínimo no puede ser mayor que el monto máximo."
+"Party type is required to create a payment entry.","El tipo de parte es requerido para crear un registro de pago."
+"Party is required create a payment entry.","La parte es requerida para crear un registro de pago."
+"Party account is required to create a payment entry.","La cuenta de la parte es requerida para crear un registro de pago."
+"Please add an account for the Bank Entry rule.","Por favor agrega una cuenta para la regla del Registro Bancario."
+"Please configure accounts for the Bank Entry rule.","Por favor configura las cuentas para la regla del Registro Bancario."
+"The last account row must not have any debit or credit amounts set.","La última fila de cuenta no debe tener montos de débito o crédito establecidos."
+"Invalid regex pattern.","Patrón regex inválido."
+"This method is only meant for developer mode","Este método solo está destinado para el modo desarrollador"
+"{0} {1} does not exist","{0} {1} no existe"
+"You do not have permission to import bank transactions","No tienes permiso para importar transacciones bancarias"
+"You do not have permission to import and submit bank transactions","No tienes permiso para importar y enviar transacciones bancarias"
+"The bank account is not a company account. Please select a company account","La cuenta bancaria no es una cuenta de empresa. Por favor selecciona una cuenta de empresa"
+"The bank account is disabled. Please enable it","La cuenta bancaria está deshabilitada. Por favor habilítala"
+"Import template should be of type .csv, .xlsx or .xls","La plantilla de importación debe ser de tipo .csv, .xlsx o .xls"
+"Google Project ID is not set. Please set it in the Mint Settings.","El ID del Proyecto de Google no está configurado. Por favor configúralo en la Configuración de Mint."
+"Invalid processor type: {0}","Tipo de procesador inválido: {0}"
+"Google APIs are not enabled. Please enable them in Mint Settings.","Las APIs de Google no están habilitadas. Por favor habilítalas en la Configuración de Mint."
+"Failed to create processor","Fallo al crear el procesador"
+"Failed to create document processor","Fallo al crear el procesador de documentos"
+"Google Project ID is not set in Mint Settings","El ID del Proyecto de Google no está configurado en la Configuración de Mint"
+"Google Service Account JSON Key is not set in Mint Settings","La clave JSON de la cuenta de servicio de Google no está configurada en la Configuración de Mint"
+"Bank Statement Processor is not set in Mint Settings","El Procesador de Estado de Cuenta Bancario no está configurado en la Configuración de Mint"
+
+"Closing Balance as of {}","Saldo de cierre al {}"
+"As of {0}","Al {0}"
+"Enter the closing balance you see in your bank statement for {0} as of the {1}","Ingresa el saldo de cierre que ves en tu estado de cuenta para {0} al {1}"
+
+"This is what the system expects the closing balance to be in your bank statement.","Esto es lo que el sistema espera que sea el saldo de cierre en tu estado de cuenta."
+"It takes into account all the transactions that have been posted and subtracts the transactions that have not cleared yet.","Toma en cuenta todas las transacciones que han sido registradas y resta las transacciones que aún no han sido liquidadas."
+"If your bank statement shows a different closing balance, it is because all transactions have not reconciled yet.","Si tu estado de cuenta muestra un saldo de cierre diferente, es porque no todas las transacciones han sido conciliadas."
+"For more information, click on the <strong>Bank Reconciliation Statement</strong> tab below.","Para más información, haz clic en la pestaña <strong>Estados de conciliación bancarios</strong> de abajo."
+"Click to set the closing balance as per statement","Haz clic para establecer el saldo de cierre según el estado de cuenta"
+"Closing balance set.","Saldo de cierre establecido."
+"Closing balance is required.","El saldo de cierre es requerido."
+"Deleting closing balance...","Eliminando saldo de cierre..."
+"Closing balance deleted.","Saldo de cierre eliminado."
+"Failed to delete closing balance.","Fallo al eliminar saldo de cierre."
+"Balances as per bank statement before {0}","Saldos según el estado de cuenta antes del {0}"
+
+"Payment Entry Created","Registro de Pago Creado"
+"Amount matches the selected transaction","El monto coincide con la transacción seleccionada"
+"Amount does not match the selected transaction","El monto no coincide con la transacción seleccionada"
+"Posting date matches the transaction date","La fecha de contabilización coincide con la fecha de la transacción"
+"Posting date does not match the transaction date","La fecha de contabilización no coincide con la fecha de la transacción"
+"Reference date matches the transaction date","La fecha de referencia coincide con la fecha de la transacción"
+"Reference date does not match the transaction date","La fecha de referencia no coincide con la fecha de la transacción"
+"Complete Match","Coincidencia Exacta"
+"Partial Match","Coincidencia Parcial"
+"No Match","Sin coincidencias"
+"Reference matches the selected transaction","La referencia coincide con la transacción seleccionada"
+"Reference matches the selected transaction partially","La referencia coincide parcialmente con la transacción seleccionada"
+"Reference does not match the selected transaction","La referencia no coincide con la transacción seleccionada"
+"Reconciling","Conciliando"
+"Reconcile","Conciliar"
+"Suggested","Sugerido"
+"Action Type","Tipo de Acción"
+"Account","Cuenta"
+"Party","Parte"
+"Crear","Crear"
+
+"Bank Entry Created","Registro de Banco Creado"
+"Import {0} transactions","Importar {0} transacciones"
+"Importing...","Importando..."

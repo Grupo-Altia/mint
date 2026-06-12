@@ -166,7 +166,7 @@ export const useRefreshUnreconciledTransactions = () => {
     const onReconcileTransaction = (transaction: UnreconciledTransaction, updatedTransaction?: BankTransaction) => {
 
         // If the updated transaction has an unallocated amount of 0, then we need to select the next unreconciled transaction
-        if (updatedTransaction && updatedTransaction?.unallocated_amount !== 0) {
+        if (updatedTransaction && Number(updatedTransaction?.unallocated_amount) !== 0) {
             mutate(`bank-reconciliation-unreconciled-transactions-${selectedBank?.name}-${dates.fromDate}-${dates.toDate}`)
             mutate(`bank-reconciliation-account-closing-balance-${selectedBank?.name}-${dates.toDate}`)
             // Update the matching vouchers for the selected transaction

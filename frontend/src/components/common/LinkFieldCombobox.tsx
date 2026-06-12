@@ -110,7 +110,7 @@ const LinkFieldCombobox = ({
     readOnly,
     disabled,
     filterFn,
-    placeholder = _("Select {0}", [doctype]),
+    placeholder = _("Select {0}", [_(doctype)]),
     customQuery,
     searchfield,
     searchAPIPath = "frappe.desk.search.search_link",
@@ -273,7 +273,7 @@ const LinkFieldCombobox = ({
                                 <a href={`/app/${slug(doctype)}/new-${slug(doctype)}-1`}
                                     target="_blank"
                                     className="hover:underline underline-offset-4 cursor-pointer flex justify-between items-center">
-                                    {_("Create New {0}", [doctype])}
+                                    {_("Create New {0}", [_(doctype)])}
 
                                     <ExternalLink />
                                 </a>

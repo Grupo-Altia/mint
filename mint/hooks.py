@@ -224,5 +224,14 @@ export_python_type_annotations = True
 # 	"Logging DocType Name": 30  # days to retain logs
 # }
 
+fixtures = [
+    {
+        "dt": "Property Setter",
+        "filters": [
+            ["doc_type", "=", "Bank Transaction"],
+            ["property", "=", "track_changes"]
+        ]
+    }
+]
 
 website_route_rules = [{'from_route': '/mint/<path:app_path>', 'to_route': 'mint'}]

@@ -84,7 +84,7 @@
    "fieldname": "classify_as",
    "fieldtype": "Select",
    "label": "Classify As",
-   "options": "Bank Entry\nPayment Entry\nTransfer",
+   "options": "Bank Entry\nPayment Entry",
    "reqd": 1
   },
   {

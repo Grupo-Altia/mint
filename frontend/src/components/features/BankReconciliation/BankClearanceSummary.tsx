@@ -151,9 +151,9 @@ const BankClearanceSummaryView = () => {
         {data && data.message.result.length === 0 &&
             <Alert variant='default'>
                 <AlertCircle />
-                <AlertTitle>No entries found</AlertTitle>
+                <AlertTitle>{_("No entries found")}</AlertTitle>
                 <AlertDescription>
-                    There are no accounting entries in the system for the selected account and dates.
+                    {_("There are no accounting entries in the system for the selected account and dates.")}
                 </AlertDescription>
             </Alert>
         }

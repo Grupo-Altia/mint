@@ -99,6 +99,7 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
 
     const { db } = useContext(FrappeContext) as FrappeConfig
     const { call: runRuleEvaluation, loading: isRunningRules } = useFrappePostCall('mint.apis.rules.run_rule_evaluation')
+    const { call: deleteRuleCall } = useFrappePostCall('mint.apis.rules.delete_rule')
 
     const sensors = useSensors(
         useSensor(PointerSensor),
@@ -108,7 +109,7 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
     )
 
     const onDeleteRule = (ruleID: string) => {
-        toast.promise(db.deleteDoc("Mint Bank Transaction Rule", ruleID).then(() => {
+        toast.promise(deleteRuleCall({ rule_name: ruleID }).then(() => {
             mutate()
         }), {
             loading: _("Deleting rule..."),
