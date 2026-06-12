@@ -296,3 +296,7 @@ Clearance date updated,Fecha de liquidación actualizada,
 "Account","Cuenta"
 "Party","Parte"
 "Crear","Crear"
+
+"Bank Entry Created","Registro de Banco Creado"
+"Import {0} transactions","Importar {0} transacciones"
+"Importing...","Importando..."
