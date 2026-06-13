@@ -125,3 +125,15 @@ def delete_rule(rule_name):
     
     frappe.delete_doc("Mint Bank Transaction Rule", rule_name)
 
+@frappe.whitelist()
+def has_rule_manage_permission():
+    user = frappe.session.user
+    if user == "Administrator":
+        return True
+    roles = frappe.get_roles(user)
+    allowed_roles = ["System Manager", "Soporte 1", "ISP Support Level 1", "ISP Support"]
+    for role in roles:
+        if role in allowed_roles or "gerente" in role.lower():
+            return True
+    return False
+

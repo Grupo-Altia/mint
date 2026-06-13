@@ -249,11 +249,7 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
                     </div>
 
                     <div className="col-span-2">
-                        <LinkFormField
-                            name='mode_of_payment'
-                            label={_("Mode of Payment")}
-                            doctype="Mode of Payment"
-                        />
+                        <ModeOfPaymentField />
                     </div>
 
                     <div className="col-span-2">
@@ -466,11 +462,7 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                             
                             
                             <div className="col-span-2">
-                                <LinkFormField
-                                    name='mode_of_payment'
-                                    label={_("Mode of Payment")}
-                                    doctype="Mode of Payment"
-                                />
+                                <ModeOfPaymentField />
                             </div>
 
                         </div>
@@ -666,6 +658,33 @@ const AccountDropdown = ({ isWithdrawal }: { isWithdrawal: boolean }) => {
 
 }
 
+
+const ModeOfPaymentField = () => {
+    const { control } = useFormContext<PaymentEntry>()
+    const company = useWatch({ control, name: 'company' })
+    const { data } = useFrappeGetCall('mint.apis.bank_account.get_allowed_mode_of_payments', {
+        company: company ?? ''
+    }, {
+        isPaused() {
+            return !company
+        }
+    })
+
+    const allowedModes = data?.message ?? []
+
+    return <LinkFormField
+        name='mode_of_payment'
+        label={_("Mode of Payment")}
+        doctype="Mode of Payment"
+        query={allowedModes.length > 0 ? () => {
+            return {
+                filters: {
+                    name: ["in", allowedModes]
+                }
+            }
+        } : undefined}
+    />
+}
 
 const InvoicesSection = ({ currency }: { currency: string }) => {
 

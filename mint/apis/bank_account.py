@@ -65,3 +65,23 @@ def set_closing_balance_as_per_statement(bank_account: str, date: str | datetime
         doc.date = date
         doc.balance = balance
         doc.save()
+
+@frappe.whitelist(methods=["GET"])
+@frappe.read_only()
+def get_allowed_mode_of_payments(company: str):
+    # Retrieve Bank Accounts the user is allowed to see in this company
+    filters = {
+        "is_company_account": 1,
+        "company": company,
+        "disabled": 0
+    }
+    allowed_banks = frappe.get_list("Bank Account", filters=filters, pluck="account")
+    
+    if not allowed_banks:
+        return []
+
+    # Get Mode of Payment where default_account matches the bank's account
+    mops = frappe.get_all("Mode of Payment Account", filters={"company": company, "default_account": ["in", allowed_banks]}, pluck="parent")
+    
+    # Return unique modes of payment
+    return list(set(mops))
