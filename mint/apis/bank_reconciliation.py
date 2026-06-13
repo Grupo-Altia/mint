@@ -358,6 +358,7 @@ def create_bulk_payment_entry_and_reconcile(bank_transaction_names: list[str | i
                                             party_type: str, 
                                             party: str | int, 
                                             account: str,
+                                            paid_on_currency: str = None,
                                             mode_of_payment: str | None = None):
     """
         Create a payment entry and reconcile it with the bank transaction
@@ -366,7 +367,7 @@ def create_bulk_payment_entry_and_reconcile(bank_transaction_names: list[str | i
     output = []
 
     for bank_transaction_name in bank_transaction_names:
-        bank_transaction = frappe.db.get_value("Bank Transaction", bank_transaction_name, ["name", "deposit", "withdrawal", "bank_account", "currency", "unallocated_amount", "date", "reference_number", "description"], as_dict=True)
+        bank_transaction = frappe.db.get_value("Bank Transaction", bank_transaction_name, ["name", "deposit", "withdrawal", "bank_account", "currency", "company", "unallocated_amount", "date", "reference_number", "description"], as_dict=True)
 
         transaction_account = frappe.get_cached_value("Bank Account", bank_transaction.bank_account, "account")
 
@@ -389,6 +390,9 @@ def create_bulk_payment_entry_and_reconcile(bank_transaction_names: list[str | i
             "party": party,
             "paid_from": paid_from,
             "paid_to": paid_to,
+            "paid_from_account_currency": paid_on_currency,
+            "paid_to_account_currency": paid_on_currency,
+            "paid_on_currency": paid_on_currency,
             "paid_amount": bank_transaction.unallocated_amount,
             "base_paid_amount": bank_transaction.unallocated_amount,
             "received_amount": bank_transaction.unallocated_amount,

@@ -91,6 +91,7 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
         /** GL account that's paid from or paid to */
         account: string
         mode_of_payment: PaymentEntry['mode_of_payment']
+        paid_on_currency: string
     }>()
 
     const { call: createPaymentEntry, loading, error } = useFrappePostCall<{ message: { transaction: BankTransaction, payment_entry: PaymentEntry }[] }>('mint.apis.bank_reconciliation.create_bulk_payment_entry_and_reconcile')
@@ -99,13 +100,15 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
 
     const addToActionLog = useUpdateActionLog()
 
-    const onSubmit = (data: { party_type: PaymentEntry['party_type'], party: PaymentEntry['party'], account: string, mode_of_payment: PaymentEntry['mode_of_payment'] }) => {
+    const onSubmit = (data: { party_type: PaymentEntry['party_type'], party: PaymentEntry['party'], account: string, mode_of_payment: PaymentEntry['mode_of_payment'], paid_on_currency: string }) => {
 
         createPaymentEntry({
             bank_transaction_names: transactions.map((transaction) => transaction.name),
             party_type: data.party_type,
             party: data.party,
-            account: data.account
+            account: data.account,
+            mode_of_payment: data.mode_of_payment,
+            paid_on_currency: data.paid_on_currency
         }).then(({ message }) => {
 
             addToActionLog({
@@ -250,6 +253,16 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
                             name='mode_of_payment'
                             label={_("Mode of Payment")}
                             doctype="Mode of Payment"
+                        />
+                    </div>
+
+                    <div className="col-span-2">
+                        <LinkFormField
+                            name="paid_on_currency"
+                            label={_("Moneda de Pago")}
+                            doctype="Currency"
+                            isRequired
+                            rules={{ required: _("La moneda es requerida") }}
                         />
                     </div>
 
