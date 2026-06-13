@@ -104,7 +104,7 @@ class MintBankTransactionRule(Document):
 		"""
 		Rearrange the priorities of the rules
 		"""
-		rules = frappe.get_all("Mint Bank Transaction Rule", filters={"company": self.company, "name": ["!=", self.name]}, order_by="priority asc")
+		rules = frappe.get_all("Mint Bank Transaction Rule", filters={"name": ["!=", self.name]}, order_by="priority asc")
 		for i, rule in enumerate(rules):
 			frappe.db.set_value("Mint Bank Transaction Rule", rule.name, "priority", i + 1)
 

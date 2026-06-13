@@ -100,6 +100,9 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
     const { db } = useContext(FrappeContext) as FrappeConfig
     const { call: runRuleEvaluation, loading: isRunningRules } = useFrappePostCall('mint.apis.rules.run_rule_evaluation')
     const { call: deleteRuleCall } = useFrappePostCall('mint.apis.rules.delete_rule')
+    
+    const { data: hasManagePermissionData } = useFrappeGetCall('mint.apis.rules.has_rule_manage_permission')
+    const hasManagePermission = hasManagePermissionData?.message ?? false
 
     const sensors = useSensors(
         useSensor(PointerSensor),
@@ -131,6 +134,8 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
     }
 
     const handleDragEnd = async (event: DragEndEvent) => {
+        if (!hasManagePermission) return
+
         const { active, over } = event
 
         if (active.id !== over?.id && data) {
@@ -187,7 +192,7 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
 
-                            <AutoRunRuleItem />
+                            {hasManagePermission && <AutoRunRuleItem />}
 
                         </DropdownMenuContent>
                     </DropdownMenu>}
@@ -206,9 +211,9 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
                 {data && data.length === 0 && <div className="flex flex-col justify-center h-48 gap-4 items-center text-center">
                     {_("No rules found")}
 
-                    <Button type='button' onClick={() => setIsNewRule(true)}>
+                    {hasManagePermission && <Button type='button' onClick={() => setIsNewRule(true)}>
                         {_("Crear una nueva regla")}
-                    </Button>
+                    </Button>}
                 </div>}
 
                 {data && data.length > 0 && (
@@ -221,13 +226,14 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
                             items={data.map(rule => rule.name)}
                             strategy={verticalListSortingStrategy}
                         >
-                            <ul className="space-2 divide-y divide-border">
+                            <ul className="space-y-2 divide-y divide-border">
                                 {data?.map((rule) => (
                                     <SortableRuleItem
                                         key={rule.name}
                                         rule={rule}
                                         setSelectedRule={setSelectedRule}
                                         onDeleteRule={onDeleteRule}
+                                        hasManagePermission={hasManagePermission}
                                     />
                                 ))}
                             </ul>
@@ -236,9 +242,9 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
                 )}
             </div>
             <SheetFooter>
-                <Button type='button' onClick={() => setIsNewRule(true)}>
+                {hasManagePermission && <Button type='button' onClick={() => setIsNewRule(true)}>
                     {_("Crear una nueva regla")}
-                </Button>
+                </Button>}
                 <SheetClose asChild>
                     <Button type='button' variant='outline'>
                         {_("Close")}
@@ -292,11 +298,13 @@ const AutoRunRuleItem = () => {
 const SortableRuleItem = ({
     rule,
     setSelectedRule,
-    onDeleteRule
+    onDeleteRule,
+    hasManagePermission
 }: {
     rule: MintBankTransactionRule
     setSelectedRule: (rule: string) => void
     onDeleteRule: (ruleID: string) => void
+    hasManagePermission: boolean
 }) => {
     const {
         attributes,
@@ -317,14 +325,14 @@ const SortableRuleItem = ({
         <li ref={setNodeRef} style={style}>
             <div className="flex justify-between items-center py-2 h-full">
                 <div className="flex items-center gap-2">
-                    <div
+                    {hasManagePermission && <div
                         {...attributes}
                         {...listeners}
                         className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded"
                         title={_("Drag to reorder")}
                     >
                         <GripVertical className="w-4 h-4 text-muted-foreground" />
-                    </div>
+                    </div>}
                     <Badge variant="secondary" className="w-6 h-6 p-0 flex items-center justify-center text-xs font-mono">
                         {rule.priority}
                     </Badge>
@@ -333,7 +341,11 @@ const SortableRuleItem = ({
                             <Button
                                 variant='link'
                                 className="p-0 h-fit text-foreground text-left font-medium cursor-pointer"
-                                onClick={() => setSelectedRule(rule.name)}>
+                                onClick={() => {
+                                    if(hasManagePermission){
+                                        setSelectedRule(rule.name)
+                                    }
+                                }}>
                                 {rule.rule_name}
                             </Button>
                             <div title={rule.transaction_type === "Any" ? _("Any") : rule.transaction_type === "Withdrawal" ? _("Withdrawal") : _("Deposit")}>
@@ -346,7 +358,7 @@ const SortableRuleItem = ({
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 h-full justify-center">
+                {hasManagePermission && <div className="flex items-center gap-2 h-full justify-center">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button variant='ghost' size='icon'>
@@ -360,7 +372,7 @@ const SortableRuleItem = ({
                             </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>
-                </div>
+                </div>}
             </div>
         </li>
     )

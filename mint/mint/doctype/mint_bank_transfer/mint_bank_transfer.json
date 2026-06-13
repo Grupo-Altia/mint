@@ -11,7 +11,9 @@
   "date",
   "column_break_1",
   "from_bank_account",
+  "from_branch",
   "to_bank_account",
+  "to_branch",
   "section_break_1",
   "amount",
   "reference_number",
@@ -60,6 +62,24 @@
    "label": "To Bank Account",
    "options": "Bank Account",
    "reqd": 1
+  },
+  {
+   "fieldname": "from_branch",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "From Branch",
+   "options": "VE Branch",
+   "fetch_from": "from_bank_account.branch_code",
+   "read_only": 1
+  },
+  {
+   "fieldname": "to_branch",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "To Branch",
+   "options": "VE Branch",
+   "fetch_from": "to_bank_account.branch_code",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_1",
