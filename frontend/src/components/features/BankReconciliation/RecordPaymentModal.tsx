@@ -841,9 +841,9 @@ const DifferenceButton = ({ index, currency }: { index: number, currency: string
                 </Button>
             </TooltipTrigger>
             <TooltipContent>
-                {_("The invoice is not fully allocated as there is a difference of {0}.", [formatCurrency(difference, currency) ?? ''])}
+                {_("La factura no está completamente pagada ya que hay una diferencia de {0}.", [formatCurrency(difference, currency) ?? ''])}
                 <br />
-                {_("Click to pay in full.")}
+                {_("Haz clic para pagar el monto completo.")}
             </TooltipContent>
         </Tooltip>
 
