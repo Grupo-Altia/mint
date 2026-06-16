@@ -5,6 +5,7 @@
   "doc_type": "Bank Transaction",
   "docstatus": 0,
   "doctype": "Property Setter",
+  "doctype_or_field": "DocType",
   "field_name": null,
   "idx": 0,
   "is_system_generated": 0,
