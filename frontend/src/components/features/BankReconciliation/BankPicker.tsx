@@ -71,8 +71,8 @@ const BankPickerItem = ({ bank, size = 'base' }: { bank: SelectedBank, size?: 'b
         role="button"
         title={`Select ${bank.account_name}`}
         onClick={onSelect}
-        className={cn('rounded-md border-2 border-gray-200 min-w-80 relative p-2 bg-card overflow-hidden cursor-pointer',
-            isSelected ? 'border-primary bg-primary-foreground' : 'hover:bg-gray-50',
+        className={cn('rounded-md border-2 border-border min-w-80 relative p-2 bg-card text-card-foreground overflow-hidden cursor-pointer transition-colors',
+            isSelected ? 'border-primary bg-primary/10' : 'hover:bg-accent hover:text-accent-foreground',
             {
                 "max-w-60 min-w-60": size === 'sm',
             }
@@ -106,7 +106,7 @@ const BankPickerItem = ({ bank, size = 'base' }: { bank: SelectedBank, size?: 'b
             "-top-1.5": size === 'sm',
         })}>
             {bank.account_type && <span className={cn("uppercase rounded-bl-sm text-xs tracking-tight font-semibold py-1 px-1.5",
-                isSelected ? 'bg-primary text-primary-foreground' : 'bg-gray-200 text-secondary-foreground/70',
+                isSelected ? 'bg-primary text-primary-foreground' : 'bg-secondary text-secondary-foreground',
                 {
                     'text-[10px]': size === 'sm',
                 }
