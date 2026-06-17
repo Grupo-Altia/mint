@@ -27,3 +27,4 @@ class BankReferenceRule(Document):
 		print(value)
 		#value = eval(str(self.rule))
 		return
+	
