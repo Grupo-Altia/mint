@@ -178,7 +178,8 @@ export const useRefreshUnreconciledTransactions = () => {
 
         const searchIndex = unreconciledTransactions ? new Fuse(unreconciledTransactions.message, {
             keys: ['description', 'reference_number'],
-            threshold: 0.5,
+            threshold: 0.1,
+            ignoreLocation: true,
             includeScore: true
         }) : null
 

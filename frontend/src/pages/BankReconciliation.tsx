@@ -58,7 +58,7 @@ const BankReconciliation = () => {
                     <TabsTrigger value="Bank Transactions">{_("Transacciones Bancarias")}</TabsTrigger>
                     <TabsTrigger value="Bank Clearance Summary">{_("Resumen de Cambios Bancarios")}</TabsTrigger>
                     <TabsTrigger value="Incorrectly Cleared Entries">{_("Entradas Liquidadas Incorrectamente")}</TabsTrigger>
-                    <TabsTrigger value="Bank Transfers">{_("Transferencias Bancarias")}</TabsTrigger>
+                    <TabsTrigger value="Bank Transfers">{_("Transferencias Bancarias Internas")}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="Match and Reconcile">
                     <MatchAndReconcile contentHeight={remainingHeightAfterTabs} />
