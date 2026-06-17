@@ -386,10 +386,14 @@ export const getSearchResults = (
     unreconciledTransactions?: UnreconciledTransaction[]) => {
 
     let r = []
-    if (!searchIndex || !search) {
+    if (!search) {
         r = unreconciledTransactions ?? []
     } else {
-        r = searchIndex.search(search).map((result) => result.item)
+        const searchLower = search.toLowerCase()
+        r = (unreconciledTransactions ?? []).filter((transaction) => {
+            return transaction.description?.toLowerCase().includes(searchLower) ||
+                   transaction.reference_number?.toLowerCase().includes(searchLower)
+        })
     }
 
     if (typeFilter !== 'All') {
