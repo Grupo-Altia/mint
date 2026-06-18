@@ -314,15 +314,27 @@ def reconcile_drafts_with_rules_job(bank_transaction_name: str, reference: str) 
 
 
 def update_referencia_origen_on_reconcile(doc, method=None) -> None:
-    """Si la transaccion bancaria se concilia, calcula la referencia origen y la guarda."""
-    if doc.status != "Reconciled" or doc.custom_referencia_origen:
+    """Si la transaccion bancaria se concilia, calcula la referencia origen y mapea los datos del tercero."""
+    if doc.status != "Reconciled":
         return
 
-    # Validar si tiene entradas vinculadas
+    modified = False    # Validar si tiene entradas vinculadas
     for row in doc.payment_entries:
         if row.payment_document == "Payment Entry" and row.payment_entry:
-            pe_ref = frappe.db.get_value("Payment Entry", row.payment_entry, "reference_no")
-            if not pe_ref:
+            pe = frappe.db.get_value("Payment Entry", row.payment_entry, ["reference_no", "party_type", "party"], as_dict=True)
+            if not pe:
+                continue
+                
+            # Mapeo automatico del tercero si esta vacio
+            if not doc.party_type and pe.party_type:
+                doc.db_set("party_type", pe.party_type, update_modified=False)
+                modified = True
+            if not doc.party and pe.party:
+                doc.db_set("party", pe.party, update_modified=False)
+                modified = True
+
+            pe_ref = pe.reference_no
+            if not pe_ref or doc.custom_referencia_origen:
                 continue
                 
             original_ref = str(doc.reference_number or "").strip()
@@ -337,6 +349,10 @@ def update_referencia_origen_on_reconcile(doc, method=None) -> None:
             for bank in banks_with_rules:
                 mod_ref = apply_format_rule(bank.custom_reference_format_rule, original_ref)
                 if mod_ref == pe_ref:
-                    # Update with modified=True to trigger Frappe UI reload
-                    doc.db_set("custom_referencia_origen", mod_ref, update_modified=True)
-                    return
+                    doc.db_set("custom_referencia_origen", mod_ref, update_modified=False)
+                    modified = True
+                    break
+                    
+    if modified:
+        # Trigger reload in UI by touching modified
+        doc.db_set("modified", frappe.utils.now(), update_modified=True)
