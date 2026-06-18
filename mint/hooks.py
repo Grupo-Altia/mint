@@ -236,6 +236,12 @@ fixtures = [
             ["doc_type", "=", "Bank Transaction"],
             ["property", "=", "track_changes"]
         ]
+    },
+    {
+        "dt": "Custom Field",
+        "filters": [
+            ["name", "in", ["Bank Transaction-custom_referencia_origen"]]
+        ]
     }
 ]
 
