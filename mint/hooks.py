@@ -8,7 +8,9 @@ app_license = "agpl-3.0"
 # Apps
 # ------------------
 
-# required_apps = []
+# mint es ahora el motor de conciliación y usa, en runtime, los métodos fiscales del
+# CustomPaymentEntry de l10n_ve (calculate_igtf_taxes, set_amounts, ...).
+required_apps = ["apps/l10n_ve"]
 
 # Each item in the list will be shown as an app in the apps page
 add_to_apps_screen = [
@@ -138,10 +140,19 @@ after_install = "mint.setup.install.after_install"
 # Hook on document methods and events
 
 doc_events = {
+    "Payment Entry": {
+        # Motor de conciliación (migrado de l10n_ve): compuerta de aprobación y enlace
+        # del depósito. set_ve_branch sigue en l10n_ve (before_submit, se fusiona por app).
+        "before_submit": "mint.apis.reconciliation.before_submit_receive_payment",
+        "on_submit": "mint.apis.reconciliation.on_submit_receive_payment",
+    },
     "Bank Transaction": {
-        "on_submit": "mint.apis.reconciliation.reconcile_drafts_with_rules_for_deposit",
-        "on_update": "mint.apis.reconciliation.update_referencia_origen_on_reconcile"
-    }
+        "validate": "mint.apis.reconciliation.validate_bank_transaction_duplicate",
+        "on_submit": "mint.apis.reconciliation.reconcile_drafts_for_deposit",
+        "on_update_after_submit": "mint.apis.reconciliation.update_referencia_origen_on_reconcile",
+    },
+    # NOTA: modify_venezuela_reference (before_insert) queda INACTIVO a propósito
+    # (decisión pendiente de revisión — ver TODO de integración mint↔l10n_ve).
 }
 
 # Scheduled Tasks
@@ -232,24 +243,21 @@ export_python_type_annotations = True
 fixtures = [
     {
         "dt": "Property Setter",
-        "filters": [
-            ["doc_type", "=", "Bank Transaction"],
-            ["property", "=", "track_changes"]
-        ]
     },
     {
         "dt": "Custom Field",
         "filters": [
-            ["name", "in", ["Bank Transaction-custom_referencia_origen", "Payment Entry-custom_banco_origen", "Bank-custom_regla_formato_referencia"]]
+            ["name", "in", [
+                "Payment Entry-source_bank",
+                "Bank Transaction-source_bank_reference_rule",
+                "Bank-bank_reference_rule",
+                "Payment Entry-custom_reconciliation_status",
+            ]]
         ]
     }
 ]
 
-doc_events = {
-    "Bank Transaction": {
-        "on_update_after_submit": "mint.apis.reconciliation.update_referencia_origen_on_reconcile"
-    }
-}
+# (doc_events unificado más arriba; el bloque duplicado que pisaba al primero se eliminó.)
 
 after_install = "mint.setup.after_install"
 after_migrate = "mint.setup.after_migrate"
