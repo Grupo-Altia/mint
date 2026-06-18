@@ -240,7 +240,7 @@ fixtures = [
     {
         "dt": "Custom Field",
         "filters": [
-            ["name", "in", ["Bank Transaction-custom_referencia_origen"]]
+            ["name", "in", ["Bank Transaction-custom_referencia_origen", "Payment Entry-custom_banco_origen"]]
         ]
     }
 ]
