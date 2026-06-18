@@ -137,7 +137,12 @@ after_install = "mint.setup.install.after_install"
 # ---------------
 # Hook on document methods and events
 
-doc_events = {}
+doc_events = {
+    "Bank Transaction": {
+        "on_submit": "mint.apis.reconciliation.reconcile_drafts_with_rules_for_deposit",
+        "on_update": "mint.apis.reconciliation.update_referencia_origen_on_reconcile"
+    }
+}
 
 # Scheduled Tasks
 # ---------------
@@ -233,5 +238,11 @@ fixtures = [
         ]
     }
 ]
+
+doc_events = {
+    "Bank Transaction": {
+        "on_update_after_submit": "mint.apis.reconciliation.update_referencia_origen_on_reconcile"
+    }
+}
 
 website_route_rules = [{'from_route': '/mint/<path:app_path>', 'to_route': 'mint'}]

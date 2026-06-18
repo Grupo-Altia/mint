@@ -27,11 +27,11 @@ const CSVRawDataPreview = ({ data }: { data: GetStatementDetailsResponse }) => {
                         className={cn({
                             // "bg-yellow-100": isHeaderRow,
                             // "hover:bg-yellow-100": isHeaderRow,
-                            "bg-green-50": isTransactionRow,
-                            "hover:bg-green-50": isTransactionRow,
+                            "bg-green-50 dark:bg-green-900/20": isTransactionRow,
+                            "hover:bg-green-50 dark:hover:bg-green-900/20": isTransactionRow,
                             "text-muted-foreground/70": !isTransactionRow && !isHeaderRow,
                         })}>
-                        {isHeaderRow ? <TableHead className="bg-yellow-100 hover:bg-yellow-100 text-center">
+                        {isHeaderRow ? <TableHead className="bg-yellow-100 hover:bg-yellow-100 dark:bg-yellow-900/50 dark:hover:bg-yellow-900/50 text-center">
                             {index + 1}
                         </TableHead> :
                             <TableCell className="text-center px-1 py-0.5">
@@ -46,7 +46,7 @@ const CSVRawDataPreview = ({ data }: { data: GetStatementDetailsResponse }) => {
 
                             if (isHeaderRow) {
                                 return <TableHead key={cellIndex} className={cn("max-w-[250px] w-fit overflow-hidden text-ellipsis py-0.5",
-                                    isValidColumn ? "bg-yellow-100 hover:bg-yellow-100" : "bg-muted",
+                                    isValidColumn ? "bg-yellow-100 hover:bg-yellow-100 dark:bg-yellow-900/50 dark:hover:bg-yellow-900/50" : "bg-muted",
                                 )}>
                                     <div className={cn("flex items-center text-xs gap-1 px-1", {
                                         "justify-end": isAmountColumn && isValidColumn
@@ -66,8 +66,8 @@ const CSVRawDataPreview = ({ data }: { data: GetStatementDetailsResponse }) => {
                             } else {
                                 return <TableCell key={cellIndex} className={cn("max-w-[200px] w-fit overflow-hidden text-ellipsis py-0.5",
                                     {
-                                        "bg-green-100": isValidColumn && isTransactionRow,
-                                        "hover:bg-green-100": isValidColumn && isTransactionRow,
+                                        "bg-green-100 dark:bg-green-900/50": isValidColumn && isTransactionRow,
+                                        "hover:bg-green-100 dark:hover:bg-green-900/50": isValidColumn && isTransactionRow,
                                         "text-muted-foreground": !isValidColumn && isTransactionRow,
                                     }
                                 )} >

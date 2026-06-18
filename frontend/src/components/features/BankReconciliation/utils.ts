@@ -107,7 +107,8 @@ export interface LinkedPayment {
     posting_date: string,
     party_type?: string,
     party?: string,
-    currency: string
+    currency: string,
+    matched_by_rule?: boolean
 }
 
 export const useGetBankTransactions = () => {
