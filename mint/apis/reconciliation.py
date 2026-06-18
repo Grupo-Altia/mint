@@ -345,9 +345,9 @@ def update_referencia_origen_on_reconcile(doc, method=None) -> None:
             if pe_ref == original_ref:
                 continue
 
-            banks_with_rules = frappe.get_all("Bank", filters={"custom_reference_format_rule": ["!=", ""]}, fields=["name", "custom_reference_format_rule"])
+            banks_with_rules = frappe.get_all("Bank", filters={"custom_regla_formato_referencia": ["!=", ""]}, fields=["name", "custom_regla_formato_referencia"])
             for bank in banks_with_rules:
-                mod_ref = apply_format_rule(bank.custom_reference_format_rule, original_ref)
+                mod_ref = apply_format_rule(bank.custom_regla_formato_referencia, original_ref)
                 if mod_ref == pe_ref:
                     doc.db_set("custom_referencia_origen", mod_ref, update_modified=False)
                     modified = True

@@ -240,7 +240,7 @@ fixtures = [
     {
         "dt": "Custom Field",
         "filters": [
-            ["name", "in", ["Bank Transaction-custom_referencia_origen", "Payment Entry-custom_banco_origen", "Bank-custom_reference_format_rule"]]
+            ["name", "in", ["Bank Transaction-custom_referencia_origen", "Payment Entry-custom_banco_origen", "Bank-custom_regla_formato_referencia"]]
         ]
     }
 ]
@@ -250,5 +250,8 @@ doc_events = {
         "on_update_after_submit": "mint.apis.reconciliation.update_referencia_origen_on_reconcile"
     }
 }
+
+after_install = "mint.setup.after_install"
+after_migrate = "mint.setup.after_migrate"
 
 website_route_rules = [{'from_route': '/mint/<path:app_path>', 'to_route': 'mint'}]
