@@ -262,6 +262,14 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
                         />
                     </div>
 
+                    <div className="col-span-2">
+                        <LinkFormField
+                            name="source_bank"
+                            label={_("Banco Origen")}
+                            doctype="Bank"
+                        />
+                    </div>
+
                 </div>
 
 
@@ -310,6 +318,7 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
             reference_date: selectedTransaction.date,
             posting_date: selectedTransaction.date,
             reference_no: (selectedTransaction.reference_number || selectedTransaction.description || '').slice(0, 140),
+            source_bank: rule?.name ?? '',
             target_exchange_rate: 1,
             source_exchange_rate: 1,
         }
@@ -463,6 +472,14 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                             
                             <div className="col-span-2">
                                 <ModeOfPaymentField />
+                            </div>
+
+                            <div className="col-span-2">
+                                <LinkFormField
+                                    name="source_bank"
+                                    label={_("Banco Origen")}
+                                    doctype="Bank"
+                                />
                             </div>
 
                         </div>

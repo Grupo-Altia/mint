@@ -145,6 +145,7 @@ doc_events = {
         # del depósito. set_ve_branch sigue en l10n_ve (before_submit, se fusiona por app).
         "before_submit": "mint.apis.reconciliation.before_submit_receive_payment",
         "on_submit": "mint.apis.reconciliation.on_submit_receive_payment",
+        "on_cancel": "mint.apis.reconciliation.on_cancel_receive_payment",
     },
     "Bank Transaction": {
         "validate": "mint.apis.reconciliation.validate_bank_transaction_duplicate",

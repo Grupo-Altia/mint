@@ -623,6 +623,13 @@ def on_submit_receive_payment(doc, method=None) -> None:
         _link_deposit_to_payment(bt_name, doc.name)
 
 
+def on_cancel_receive_payment(doc, method=None) -> None:
+    """Al cancelar un cobro, se resetea su estado de conciliación visual para evitar
+    confusión en documentos cancelados."""
+    if doc.get("custom_reconciliation_status") != RECON_PENDING:
+        doc.db_set("custom_reconciliation_status", RECON_PENDING)
+
+
 def validate_bank_transaction_duplicate(doc, method=None) -> None:
     """No permite dos depósitos con la misma referencia en la misma cuenta
     bancaria y empresa.
