@@ -377,7 +377,7 @@ const OptionsForMultipleTransactions = ({ transactions }: { transactions: Unreco
             <CardHeader>
                 <CardTitle>
                     <div className="flex items-center justify-between">
-                        <span className="text-lg">{transactions.length} {_(transactions.length === 1 ? _("transaction selected") : _("transactions selected"))}</span>
+                        <span className="text-lg">{transactions.length} {_(transactions.length === 1 ? _("transacción seleccionada") : _("transacciones seleccionadas"))}</span>
                         <span className="text-lg font-semibold font-mono">
                             {formatCurrency(transactions.reduce((acc, transaction) => acc + (transaction.unallocated_amount ?? 0), 0), transactions[0].currency ?? '')}
                         </span>
