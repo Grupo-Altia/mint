@@ -45,8 +45,7 @@ add_to_apps_screen = [
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
-# doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+doctype_js = {"Payment Entry" : "public/js/payment_entry.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
@@ -146,6 +145,7 @@ doc_events = {
         "before_submit": "mint.apis.reconciliation.before_submit_receive_payment",
         "on_submit": "mint.apis.reconciliation.on_submit_receive_payment",
         "on_cancel": "mint.apis.reconciliation.on_cancel_receive_payment",
+        "on_change": "mint.apis.reconciliation.on_change_payment_entry",
     },
     "Bank Transaction": {
         "validate": "mint.apis.reconciliation.validate_bank_transaction_duplicate",

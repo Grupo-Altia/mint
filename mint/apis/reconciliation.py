@@ -627,7 +627,19 @@ def on_cancel_receive_payment(doc, method=None) -> None:
     """Al cancelar un cobro, se resetea su estado de conciliación visual para evitar
     confusión en documentos cancelados."""
     if doc.get("custom_reconciliation_status") != RECON_PENDING:
+        doc.custom_reconciliation_status = RECON_PENDING
         doc.db_set("custom_reconciliation_status", RECON_PENDING)
+
+
+def on_change_payment_entry(doc, method=None) -> None:
+    """Si se reconcilia o desconcilia desde la Transacción Bancaria u otra herramienta,
+    sincroniza el estado visual con la existencia de la fecha de liquidación."""
+    if doc.docstatus == 1:
+        if doc.clearance_date and doc.get("custom_reconciliation_status") != RECON_DONE:
+            doc.db_set("custom_reconciliation_status", RECON_DONE, update_modified=False)
+        elif not doc.clearance_date and doc.get("custom_reconciliation_status") != RECON_PENDING:
+            doc.db_set("custom_reconciliation_status", RECON_PENDING, update_modified=False)
+
 
 
 def validate_bank_transaction_duplicate(doc, method=None) -> None:
