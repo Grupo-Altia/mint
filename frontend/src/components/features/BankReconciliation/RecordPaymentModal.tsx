@@ -298,7 +298,7 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
     const isWithdrawal = (selectedTransaction.withdrawal && selectedTransaction.withdrawal > 0) ? true : false
 
     const form = useForm<PaymentEntry>({
-        defaultValues: {
+        values: {
             payment_type: isWithdrawal ? 'Pay' : 'Receive',
             bank_account: selectedTransaction.bank_account,
             company: selectedTransaction?.company,

@@ -268,7 +268,7 @@ def _first_deposit(filters: dict) -> frappe._dict | None:
     por error de parseo del extracto bancario), se concilia contra el de menor
     'deposit' para no usar el inflado. Defensa en profundidad frente a duplicados.
     """
-    rows = frappe.db.get_all(
+    rows = frappe.get_all(
         "Bank Transaction",
         filters=filters,
         fields=DEPOSIT_FIELDS,
@@ -310,7 +310,7 @@ def _find_deposit_by_source_bank_rule(doc) -> frappe._dict | None:
     if paid_currency:
         cand_filters["currency"] = paid_currency
 
-    candidates = frappe.db.get_all(
+    candidates = frappe.get_all(
         "Bank Transaction",
         filters=cand_filters,
         fields=DEPOSIT_FIELDS + ["reference_number"],

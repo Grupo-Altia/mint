@@ -86,24 +86,11 @@ const UnreconciledTransactions = ({ contentHeight }: { contentHeight: number }) 
 
     const [search, setSearch] = useTransactionSearch()
 
-    const searchIndex = useMemo(() => {
-
-        if (!unreconciledTransactions) {
-            return null
-        }
-
-        return new Fuse(unreconciledTransactions.message, {
-            keys: ['description', 'reference_number'],
-            threshold: 0.5,
-            includeScore: true
-        })
-    }, [unreconciledTransactions])
-
     const results = useMemo(() => {
 
-        return getSearchResults(searchIndex, search, typeFilter, amountFilter.value, unreconciledTransactions?.message)
+        return getSearchResults(search, typeFilter, amountFilter.value, unreconciledTransactions?.message)
 
-    }, [searchIndex, search, typeFilter, amountFilter.value, unreconciledTransactions?.message])
+    }, [search, typeFilter, amountFilter.value, unreconciledTransactions?.message])
 
     const setSelectedTransaction = useSetAtom(bankRecSelectedTransactionAtom(bankAccount?.name || ''))
 

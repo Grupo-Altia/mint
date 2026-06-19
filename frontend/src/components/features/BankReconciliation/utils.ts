@@ -176,15 +176,7 @@ export const useRefreshUnreconciledTransactions = () => {
         }
 
         // From unreconciled transactions list, first apply the filters based on the search criteria and other filters
-
-        const searchIndex = unreconciledTransactions ? new Fuse(unreconciledTransactions.message, {
-            keys: ['description', 'reference_number'],
-            threshold: 0.1,
-            ignoreLocation: true,
-            includeScore: true
-        }) : null
-
-        const results = getSearchResults(searchIndex, searchString, typeFilter, amountFilter.value, unreconciledTransactions?.message)
+        const results = getSearchResults(searchString, typeFilter, amountFilter.value, unreconciledTransactions?.message)
 
         const currentIndex = results.findIndex(t => t.name === transaction.name)
         let nextTransaction = null
@@ -373,10 +365,8 @@ export function useTransactionSearch(): [string, DebouncedState<(value: string) 
     return [debouncedValue, updateDebouncedValue]
 }
 
-/** Utility function to get the search results based on the search index, search string, type filter, amount filter and unreconciled transactions */
+/** Utility function to get the search results based on the search string, type filter, amount filter and unreconciled transactions */
 export const getSearchResults = (
-    /** Fuse index of the unreconciled transactions */
-    searchIndex: Fuse<UnreconciledTransaction> | null,
     /** Search string */
     search: string,
     /** Type filter */

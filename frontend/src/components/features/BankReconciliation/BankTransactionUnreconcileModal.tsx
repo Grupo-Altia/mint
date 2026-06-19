@@ -29,7 +29,7 @@ const BankTransactionUnreconcileModal = () => {
             <AlertDialogHeader>
                 <AlertDialogTitle>{_("Deshacer Conciliación de Transacción")}</AlertDialogTitle>
                 <AlertDialogDescription>
-                    {_("¿Estás seguro de que deseas desconciliar esta transacción?")}
+                    {_("Are you sure you want to unreconcile this transaction?")}
                 </AlertDialogDescription>
             </AlertDialogHeader>
             <BankTransactionUnreconcileModalContent />

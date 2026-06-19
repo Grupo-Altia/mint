@@ -448,8 +448,6 @@ def create_payment_entry_and_reconcile(bank_transaction_name: str | int,
             "amount": payment_entry.paid_amount,
         }]), is_new_voucher=True)
     
-    # Reload transaction to ensure we have latest data
-    transaction = frappe.get_doc("Bank Transaction", bank_transaction_name)
     # Update party info if it's missing
     if not transaction.party and payment_entry.party:
         transaction.db_set("party_type", payment_entry.party_type)
