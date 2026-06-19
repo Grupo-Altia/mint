@@ -1,5 +1,5 @@
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
-import { bankRecAmountFilter, bankRecDateAtom, bankRecRecordJournalEntryModalAtom, bankRecRecordPaymentModalAtom, bankRecSelectedTransactionAtom, bankRecTransactionTypeFilter, bankRecTransferModalAtom, selectedBankAccountAtom } from "./bankRecAtoms"
+import { bankRecAmountFilter, bankRecDateAtom, bankRecRecordJournalEntryModalAtom, bankRecRecordPaymentModalAtom, bankRecSelectedTransactionAtom, bankRecStrictMatchingAtom, bankRecTransactionTypeFilter, bankRecTransferModalAtom, selectedBankAccountAtom } from "./bankRecAtoms"
 import { H4 } from "@/components/ui/typography"
 import { useMemo, useRef } from "react"
 import { getCompanyCurrency } from "@/lib/company"
@@ -8,7 +8,7 @@ import { Separator } from "@/components/ui/separator"
 import Fuse from 'fuse.js'
 import { getSearchResults, LinkedPayment, UnreconciledTransaction, useGetRuleForTransaction, useGetUnreconciledTransactions, useGetVouchersForTransaction, useIsTransactionWithdrawal, useReconcileTransaction, useTransactionSearch } from "./utils"
 import { Input } from "@/components/ui/input"
-import { AlertCircle, ArrowDownRight, ArrowRightIcon, ArrowRightLeft, ArrowUpRight, BadgeCheck, ChevronDown, DollarSign, Landmark, LandmarkIcon, ListIcon, Loader2, Receipt, ReceiptIcon, Search, User, XCircle, ZapIcon } from "lucide-react"
+import { AlertCircle, ArrowDownRight, ArrowRightIcon, ArrowRightLeft, ArrowUpRight, BadgeCheck, ChevronDown, DollarSign, Landmark, LandmarkIcon, ListIcon, Loader2, Receipt, ReceiptIcon, Search, User, XCircle, ZapIcon, Info } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
@@ -34,9 +34,12 @@ import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { useFrappeGetCall } from "frappe-react-sdk"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Link } from "react-router"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
 
 const MatchAndReconcile = ({ contentHeight }: { contentHeight: number }) => {
     const selectedBank = useAtomValue(selectedBankAccountAtom)
+    const [strictMatching, setStrictMatching] = useAtom(bankRecStrictMatchingAtom)
 
     if (!selectedBank) {
         return <Empty className="bg-muted/30 h-64">
@@ -52,12 +55,28 @@ const MatchAndReconcile = ({ contentHeight }: { contentHeight: number }) => {
     return <>
         <div className={`flex items-start space-x-2`} >
             <div className="flex-1">
-                <H4 className="text-sm font-medium">{_("Transacciones no conciliadas")}</H4>
+                <H4 className="text-sm font-medium">{_("Depósitos no conciliados")}</H4>
                 <UnreconciledTransactions contentHeight={contentHeight} />
             </div>
             <Separator orientation="vertical" style={{ minHeight: `${contentHeight}px` }} />
             <div className="flex-1 px-1">
-                <H4 className="text-sm font-medium">{_("Emparejar o Crear")}</H4>
+                <div className="flex items-center justify-between pb-2">
+                    <H4 className="text-sm font-medium">{_("Registros de pago/ Banco por emparejar o crear")}</H4>
+                    <div className="flex items-center space-x-2">
+                        <Label htmlFor="strict-match" className="text-sm text-muted-foreground">{_("Emparejamiento exigente")}</Label>
+                        <Switch id="strict-match" checked={strictMatching} onCheckedChange={setStrictMatching} />
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Info className="w-4 h-4 text-muted-foreground cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent className="max-w-xs">
+                                    <p>{_("Fuerza coincidencias exactas por referencia o fecha/monto. Al desactivar, permite recomendaciones parciales o difusas del sistema antiguo.")}</p>
+                                </TooltipContent>
+                            </Tooltip>
+                        </TooltipProvider>
+                    </div>
+                </div>
                 <VouchersSection contentHeight={contentHeight} />
             </div>
         </div>
