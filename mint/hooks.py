@@ -9,8 +9,7 @@ app_license = "agpl-3.0"
 # ------------------
 
 # mint es ahora el motor de conciliación y usa, en runtime, los métodos fiscales del
-# CustomPaymentEntry de l10n_ve (calculate_igtf_taxes, set_amounts, ...).
-required_apps = ["apps/l10n_ve"]
+required_apps = ["l10n_ve"]
 
 # Each item in the list will be shown as an app in the apps page
 add_to_apps_screen = [
