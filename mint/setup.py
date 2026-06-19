@@ -51,8 +51,11 @@ def update_conciliaciones_workspace():
     for s in doc.shortcuts:
         if s.label == "Conciliar Banco" or s.label == "Conciliación Bancaria":
             s.label = "Conciliación Bancaria"
+            s.type = "URL"
             s.url = "/mint"
             s.link_to = ""
+            s.stats_filter = ""
+            s.format = ""
             new_shortcuts.append(s)
             has_mint = True
             
