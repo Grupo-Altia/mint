@@ -27,7 +27,7 @@ const BankTransactionUnreconcileModal = () => {
         <AlertDialogOverlay />
         <AlertDialogContent className="min-w-2xl">
             <AlertDialogHeader>
-                <AlertDialogTitle>{_("Undo Transaction Reconciliation")}</AlertDialogTitle>
+                <AlertDialogTitle>{_("Deshacer Conciliación de Transacción")}</AlertDialogTitle>
                 <AlertDialogDescription>
                     {_("Are you sure you want to unreconcile this transaction?")}
                 </AlertDialogDescription>
@@ -59,7 +59,7 @@ const BankTransactionUnreconcileModalContent = () => {
             mutate(`bank-reconciliation-bank-transactions-${bankAccount?.name}-${dates.fromDate}-${dates.toDate}`)
             mutate(`bank-reconciliation-unreconciled-transactions-${bankAccount?.name}-${dates.fromDate}-${dates.toDate}`)
             mutate(`bank-reconciliation-account-closing-balance-${bankAccount?.name}-${dates.toDate}`)
-            toast.success(_("Transaction Unreconciled"))
+            toast.success(_("Transacción Desconciliada"))
             setBankRecUnreconcileModal('')
         })
 
@@ -75,13 +75,13 @@ const BankTransactionUnreconcileModalContent = () => {
             {error && <ErrorBanner error={error} />}
             {unreconcileError && <ErrorBanner error={unreconcileError} />}
             {transaction && <SelectedTransactionDetails transaction={transaction} />}
-            <span className="font-medium text-sm">{_("This transaction has been reconciled with the following document(s):")}</span>
+            <span className="font-medium text-sm">{_("Esta transacción ha sido conciliada con el(los) siguiente(s) documento(s):")}</span>
             <Table>
                 <TableHeader>
                     <TableRow>
-                        <TableHead>{_("Document")}</TableHead>
-                        <TableHead>{_("Amount")}</TableHead>
-                        <TableHead>{_("Reconciliation Type")}</TableHead>
+                        <TableHead>{_("Documento")}</TableHead>
+                        <TableHead>{_("Monto")}</TableHead>
+                        <TableHead>{_("Tipo de Conciliación")}</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -105,7 +105,7 @@ const BankTransactionUnreconcileModalContent = () => {
                 </TableBody>
             </Table>
             <div className="py-4">
-                {vouchersWhichWillBeCancelled && vouchersWhichWillBeCancelled?.length > 0 && <span>The following documents will be <strong>cancelled</strong>:</span>}
+                {vouchersWhichWillBeCancelled && vouchersWhichWillBeCancelled?.length > 0 && <span>{_("Los siguientes documentos serán ")}<strong>{_("cancelados")}</strong>:</span>}
                 {vouchersWhichWillBeCancelled && vouchersWhichWillBeCancelled?.length > 0 && <ol className="ml-6 list-disc [&>li]:mt-2">
                     {vouchersWhichWillBeCancelled?.map((voucher) => {
                         return <li key={voucher.name}>{_(voucher.payment_document)}: {voucher.payment_entry}</li>
@@ -114,9 +114,9 @@ const BankTransactionUnreconcileModalContent = () => {
             </div>
         </div>
         <AlertDialogFooter>
-            <AlertDialogCancel disabled={loading}>{_("Cancel")}</AlertDialogCancel>
+            <AlertDialogCancel disabled={loading}>{_("Cancelar")}</AlertDialogCancel>
             <AlertDialogAction onClick={onUnreconcile} variant="destructive" disabled={loading}>
-                {_("Unreconcile")}
+                {_("Desconciliar")}
             </AlertDialogAction>
         </AlertDialogFooter>
     </div>

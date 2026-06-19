@@ -262,6 +262,14 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
                         />
                     </div>
 
+                    <div className="col-span-2">
+                        <LinkFormField
+                            name="source_bank"
+                            label={_("Banco Origen")}
+                            doctype="Bank"
+                        />
+                    </div>
+
                 </div>
 
 
@@ -290,7 +298,7 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
     const isWithdrawal = (selectedTransaction.withdrawal && selectedTransaction.withdrawal > 0) ? true : false
 
     const form = useForm<PaymentEntry>({
-        defaultValues: {
+        values: {
             payment_type: isWithdrawal ? 'Pay' : 'Receive',
             bank_account: selectedTransaction.bank_account,
             company: selectedTransaction?.company,
@@ -310,6 +318,7 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
             reference_date: selectedTransaction.date,
             posting_date: selectedTransaction.date,
             reference_no: (selectedTransaction.reference_number || selectedTransaction.description || '').slice(0, 140),
+            source_bank: rule?.name ?? '',
             target_exchange_rate: 1,
             source_exchange_rate: 1,
         }
@@ -463,6 +472,14 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                             
                             <div className="col-span-2">
                                 <ModeOfPaymentField />
+                            </div>
+
+                            <div className="col-span-2">
+                                <LinkFormField
+                                    name="source_bank"
+                                    label={_("Banco Origen")}
+                                    doctype="Bank"
+                                />
                             </div>
 
                         </div>
@@ -841,9 +858,9 @@ const DifferenceButton = ({ index, currency }: { index: number, currency: string
                 </Button>
             </TooltipTrigger>
             <TooltipContent>
-                {_("The invoice is not fully allocated as there is a difference of {0}.", [formatCurrency(difference, currency) ?? ''])}
+                {_("La factura no está completamente pagada ya que hay una diferencia de {0}.", [formatCurrency(difference, currency) ?? ''])}
                 <br />
-                {_("Click to pay in full.")}
+                {_("Haz clic para pagar el monto completo.")}
             </TooltipContent>
         </Tooltip>
 

@@ -32,8 +32,12 @@ const STATUS_LABELS: Record<string, string> = {
     "Cancelled": "Cancelado",
 }
 
+import { useAtomValue } from "jotai"
+import { selectedBankAccountAtom } from "./bankRecAtoms"
+
 const BankTransferList = () => {
     const companyID = useCurrentCompany()
+    const bankAccount = useAtomValue(selectedBankAccountAtom)
     const [searchTerm, setSearchTerm] = useState("")
 
     const { data, error, isLoading } = useFrappeGetDocList<MintBankTransfer>("Mint Bank Transfer", {
@@ -43,6 +47,10 @@ const BankTransferList = () => {
             "status", "description", "docstatus"
         ],
         filters: companyID ? [["company", "=", companyID]] : [],
+        orFilters: bankAccount ? [
+            ["from_bank_account", "=", bankAccount.name],
+            ["to_bank_account", "=", bankAccount.name]
+        ] : [],
         orderBy: { field: "date", order: "desc" },
         limit_page_length: 100,
     })

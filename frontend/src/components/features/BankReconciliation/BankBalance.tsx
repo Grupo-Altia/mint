@@ -52,7 +52,22 @@ const OpeningBalance = () => {
     const { data, isLoading } = useGetAccountOpeningBalance()
 
     return <StatContainer className="min-w-48">
-        <StatLabel>{_("Opening Balance")}</StatLabel>
+        <div className="flex items-start gap-1">
+            <StatLabel>{_("Opening Balance")}</StatLabel>
+            <HoverCard openDelay={100}>
+                <HoverCardTrigger>
+                    <Info size='14px' className="text-secondary-foreground/80" />
+                </HoverCardTrigger>
+                <HoverCardContent className="w-96" align="start" side="right">
+                    <H4 className="text-base">{_("Saldo de Apertura")}</H4>
+                    <Paragraph className="mt-2 text-sm">
+                        {_("Este es el saldo inicial de la cuenta bancaria para el período de fechas seleccionado.")}
+                        <br />
+                        {_("Representa el dinero disponible en el sistema antes de empezar a sumar o restar las transacciones de este bloque de fechas.")}
+                    </Paragraph>
+                </HoverCardContent>
+            </HoverCard>
+        </div>
         {isLoading ? <Skeleton className="w-[150px] h-9" /> : <StatValue className="font-mono">{formatCurrency(flt(data?.message, 2), bankAccount?.account_currency ?? getCompanyCurrency(bankAccount?.company ?? ''))}</StatValue>}
     </StatContainer>
 }
@@ -65,14 +80,14 @@ const ClosingBalance = () => {
         <StatContainer className="min-w-48">
             <div className="flex items-start gap-1">
                 <StatLabel>
-                    {_("Saldo de Cierre según el sistema")}
+                    {_("Saldo según el sistema")}
                 </StatLabel>
                 <HoverCard openDelay={100}>
                     <HoverCardTrigger>
                         <Info size='14px' className="text-secondary-foreground/80" />
                     </HoverCardTrigger>
                     <HoverCardContent className="w-96" align="start" side="right">
-                        <H4 className="text-base">{_("Saldo de cierre según el sistema")}</H4>
+                        <H4 className="text-base">{_("Saldo según el sistema")}</H4>
                         <Paragraph className="mt-2 text-sm">
                             {_("This is what the system expects the closing balance to be in your bank statement.")}
                             <br />
@@ -103,7 +118,22 @@ const Difference = () => {
     const isError = difference !== 0
 
     return <StatContainer className="w-fit text-right sm:min-w-56">
-        <StatLabel className="text-right">{_("Difference")}</StatLabel>
+        <div className="flex items-start justify-end gap-1">
+            <StatLabel className="text-right">{_("Monto por conciliar")}</StatLabel>
+            <HoverCard openDelay={100}>
+                <HoverCardTrigger>
+                    <Info size='14px' className="text-secondary-foreground/80" />
+                </HoverCardTrigger>
+                <HoverCardContent className="w-96 text-left" align="end" side="left">
+                    <H4 className="text-base">{_("Monto por conciliar")}</H4>
+                    <Paragraph className="mt-2 text-sm">
+                        {_("Es la diferencia matemática entre el Saldo según el sistema y el Saldo según el banco.")}
+                        <br />
+                        {_("El objetivo final es que este monto sea exactamente cero (0,00). Si no lo es, significa que existen transacciones registradas en Frappe que no están liquidadas contra el banco, o que el saldo bancario introducido no coincide con los pagos ingresados.")}
+                    </Paragraph>
+                </HoverCardContent>
+            </HoverCard>
+        </div>
         {isLoading ? <Skeleton className="w-[150px] h-9" /> : <StatValue className={isError ? 'text-destructive font-mono' : 'font-mono'}>
             {formatCurrency(difference,
                 bankAccount?.account_currency ?? getCompanyCurrency(bankAccount?.company ?? ''))
@@ -165,7 +195,7 @@ const ClosingBalanceAsPerStatement = () => {
 
 
     return <StatContainer className="min-w-48">
-        <StatLabel>{_("Saldo de Cierre según el estado de cuenta")}</StatLabel>
+        <StatLabel>{_("Saldos según el banco")}</StatLabel>
         <div className="flex flex-col gap-2 items-start">
             <Dialog open={isOpen} onOpenChange={setIsOpen}>
                 <DialogTrigger>
@@ -242,7 +272,7 @@ const ClosingBalanceForm = ({ defaultBalance, date, bankAccount, onClose }: { de
     return <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)}>
             <DialogHeader>
-                <DialogTitle>{_("Establecer el saldo de cierre según el estado de cuenta")}</DialogTitle>
+                <DialogTitle>{_("Establecer el saldo según el banco")}</DialogTitle>
                 <DialogDescription>
                     {_("Enter the closing balance you see in your bank statement for {0} as of the {1}", [bankAccount?.account_name ?? bankAccount?.name ?? '', formatDate(date, 'Do MMM YYYY')])}
                 </DialogDescription>
@@ -251,7 +281,7 @@ const ClosingBalanceForm = ({ defaultBalance, date, bankAccount, onClose }: { de
             <div className="py-4">
                 <CurrencyFormField
                     name="balance"
-                    label={_("Saldo de cierre en el estado de cuenta al {0}", [formatDate(date, 'Do MMM YYYY')])}
+                    label={_("Saldo según el banco al {0}", [formatDate(date, 'Do MMM YYYY')])}
                     isRequired
                     currency={currency}
                 />

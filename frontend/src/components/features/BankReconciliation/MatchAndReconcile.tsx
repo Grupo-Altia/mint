@@ -86,24 +86,11 @@ const UnreconciledTransactions = ({ contentHeight }: { contentHeight: number }) 
 
     const [search, setSearch] = useTransactionSearch()
 
-    const searchIndex = useMemo(() => {
-
-        if (!unreconciledTransactions) {
-            return null
-        }
-
-        return new Fuse(unreconciledTransactions.message, {
-            keys: ['description', 'reference_number'],
-            threshold: 0.5,
-            includeScore: true
-        })
-    }, [unreconciledTransactions])
-
     const results = useMemo(() => {
 
-        return getSearchResults(searchIndex, search, typeFilter, amountFilter.value, unreconciledTransactions?.message)
+        return getSearchResults(search, typeFilter, amountFilter.value, unreconciledTransactions?.message)
 
-    }, [searchIndex, search, typeFilter, amountFilter.value, unreconciledTransactions?.message])
+    }, [search, typeFilter, amountFilter.value, unreconciledTransactions?.message])
 
     const setSelectedTransaction = useSetAtom(bankRecSelectedTransactionAtom(bankAccount?.name || ''))
 
@@ -726,7 +713,7 @@ const VoucherItem = ({ voucher, index }: { voucher: LinkedPayment, index: number
         const amountMatches = voucher.paid_amount === transaction?.unallocated_amount
         const postingDateMatches = voucher.posting_date === transaction?.date
         const referenceDateMatches = voucher.reference_date === transaction?.date
-        const referenceMatchesFull = voucher.reference_no === transaction?.reference_number || voucher.reference_no === transaction?.description
+        const referenceMatchesFull = voucher.reference_no === transaction?.reference_number || voucher.reference_no === transaction?.description || voucher.matched_by_rule
 
         const referenceMatchesPartial = transaction?.reference_number?.includes(voucher.reference_no) || transaction?.description?.includes(voucher.reference_no)
 

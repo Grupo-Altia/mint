@@ -63,6 +63,7 @@ export interface PaymentEntry{
 	paid_to_account_balance?: number
 	/**	Paid Amount : Currency	*/
 	paid_on_currency?: string;
+	source_bank?: string;
 	paid_amount: number
 	/**	Paid Amount After Tax : Currency	*/
 	paid_amount_after_tax?: number

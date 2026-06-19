@@ -407,11 +407,18 @@ def create_bulk_payment_entry_and_reconcile(bank_transaction_names: list[str | i
         payment_entry_doc.insert()
         payment_entry_doc.submit()
 
-        final_transaction = reconcile_vouchers(bank_transaction_name, json.dumps([{
-            "payment_doctype": "Payment Entry",
-            "payment_name": payment_entry_doc.name,
-            "amount": payment_entry_doc.paid_amount,
-        }]), is_new_voucher=True)
+        final_transaction = frappe.get_doc("Bank Transaction", bank_transaction_name)
+        if final_transaction.unallocated_amount > 0:
+            final_transaction = reconcile_vouchers(bank_transaction_name, json.dumps([{
+                "payment_doctype": "Payment Entry",
+                "payment_name": payment_entry_doc.name,
+                "amount": payment_entry_doc.paid_amount,
+            }]), is_new_voucher=True)
+            
+        final_transaction = frappe.get_doc("Bank Transaction", bank_transaction_name)
+        if not final_transaction.party and payment_entry_doc.party:
+            final_transaction.db_set("party_type", payment_entry_doc.party_type)
+            final_transaction.db_set("party", payment_entry_doc.party)
 
         output.append({
             "transaction": final_transaction,
@@ -433,11 +440,18 @@ def create_payment_entry_and_reconcile(bank_transaction_name: str | int,
     })
     payment_entry.insert()
     payment_entry.submit()
-    transaction = reconcile_vouchers(bank_transaction_name, json.dumps([{
-        "payment_doctype": "Payment Entry",
-        "payment_name": payment_entry.name,
-        "amount": payment_entry.paid_amount,
-    }]), is_new_voucher=True)
+    transaction = frappe.get_doc("Bank Transaction", bank_transaction_name)
+    if transaction.unallocated_amount > 0:
+        transaction = reconcile_vouchers(bank_transaction_name, json.dumps([{
+            "payment_doctype": "Payment Entry",
+            "payment_name": payment_entry.name,
+            "amount": payment_entry.paid_amount,
+        }]), is_new_voucher=True)
+    
+    # Update party info if it's missing
+    if not transaction.party and payment_entry.party:
+        transaction.db_set("party_type", payment_entry.party_type)
+        transaction.db_set("party", payment_entry.party)
 
     return {
         "transaction": transaction,

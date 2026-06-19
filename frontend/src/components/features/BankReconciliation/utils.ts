@@ -107,7 +107,8 @@ export interface LinkedPayment {
     posting_date: string,
     party_type?: string,
     party?: string,
-    currency: string
+    currency: string,
+    matched_by_rule?: boolean
 }
 
 export const useGetBankTransactions = () => {
@@ -128,7 +129,7 @@ export const useGetVouchersForTransaction = (transaction: UnreconciledTransactio
 
     const matchFilters = useAtomValue(bankRecMatchFilters)
 
-    return useFrappeGetCall<{ message: LinkedPayment[] }>('erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool.get_linked_payments', {
+    return useFrappeGetCall<{ message: LinkedPayment[] }>('mint.apis.reconciliation.get_linked_payments', {
         bank_transaction_name: transaction.name,
         document_types: matchFilters ?? ['payment_entry', 'journal_entry'],
         from_date: dates.fromDate,
@@ -175,14 +176,7 @@ export const useRefreshUnreconciledTransactions = () => {
         }
 
         // From unreconciled transactions list, first apply the filters based on the search criteria and other filters
-
-        const searchIndex = unreconciledTransactions ? new Fuse(unreconciledTransactions.message, {
-            keys: ['description', 'reference_number'],
-            threshold: 0.5,
-            includeScore: true
-        }) : null
-
-        const results = getSearchResults(searchIndex, searchString, typeFilter, amountFilter.value, unreconciledTransactions?.message)
+        const results = getSearchResults(searchString, typeFilter, amountFilter.value, unreconciledTransactions?.message)
 
         const currentIndex = results.findIndex(t => t.name === transaction.name)
         let nextTransaction = null
@@ -371,10 +365,8 @@ export function useTransactionSearch(): [string, DebouncedState<(value: string) 
     return [debouncedValue, updateDebouncedValue]
 }
 
-/** Utility function to get the search results based on the search index, search string, type filter, amount filter and unreconciled transactions */
+/** Utility function to get the search results based on the search string, type filter, amount filter and unreconciled transactions */
 export const getSearchResults = (
-    /** Fuse index of the unreconciled transactions */
-    searchIndex: Fuse<UnreconciledTransaction> | null,
     /** Search string */
     search: string,
     /** Type filter */
@@ -385,10 +377,14 @@ export const getSearchResults = (
     unreconciledTransactions?: UnreconciledTransaction[]) => {
 
     let r = []
-    if (!searchIndex || !search) {
+    if (!search) {
         r = unreconciledTransactions ?? []
     } else {
-        r = searchIndex.search(search).map((result) => result.item)
+        const searchLower = search.toLowerCase()
+        r = (unreconciledTransactions ?? []).filter((transaction) => {
+            return transaction.description?.toLowerCase().includes(searchLower) ||
+                   transaction.reference_number?.toLowerCase().includes(searchLower)
+        })
     }
 
     if (typeFilter !== 'All') {

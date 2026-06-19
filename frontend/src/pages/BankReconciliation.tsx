@@ -19,6 +19,8 @@ import _ from "@/lib/translate"
 import { useLayoutEffect, useRef, useState } from "react"
 
 
+import { ThemeToggle } from "@/components/ui/theme-toggle"
+
 const BankReconciliation = () => {
 
     const [headerHeight, setHeaderHeight] = useState(0)
@@ -39,6 +41,7 @@ const BankReconciliation = () => {
                 <div className="flex justify-between">
                     <H1 className="text-base font-medium"><span className="text-4xl font-extrabold text-emerald-500">mint</span>&nbsp; {_("Bank Reconciliation")}</H1>
                     <div className="flex items-center gap-2">
+                        <ThemeToggle />
                         <TooltipProvider>
                             <RuleConfigureButton />
                             <Settings />
@@ -58,7 +61,7 @@ const BankReconciliation = () => {
                     <TabsTrigger value="Bank Transactions">{_("Transacciones Bancarias")}</TabsTrigger>
                     <TabsTrigger value="Bank Clearance Summary">{_("Resumen de Cambios Bancarios")}</TabsTrigger>
                     <TabsTrigger value="Incorrectly Cleared Entries">{_("Entradas Liquidadas Incorrectamente")}</TabsTrigger>
-                    <TabsTrigger value="Bank Transfers">{_("Transferencias Bancarias")}</TabsTrigger>
+                    <TabsTrigger value="Bank Transfers">{_("Transferencias Bancarias Internas")}</TabsTrigger>
                 </TabsList>
                 <TabsContent value="Match and Reconcile">
                     <MatchAndReconcile contentHeight={remainingHeightAfterTabs} />
