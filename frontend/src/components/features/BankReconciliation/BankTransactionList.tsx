@@ -20,7 +20,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { getCurrencySymbol } from "@/lib/currency"
 import { cn } from "@/lib/utils"
 import { useDebounceValue } from "usehooks-ts"
-import React, { useMemo, useState } from "react"
+import React, { useMemo, useState, useEffect } from "react"
 import { Link } from "react-router"
 import { TableVirtuoso } from "react-virtuoso"
 
@@ -73,6 +73,11 @@ const BankTransactionListView = () => {
     const [amountFilter, setAmountFilter] = useState<{ value: number, stringValue?: string | number }>({ value: 0, stringValue: '0.00' })
     const [typeFilter, setTypeFilter] = useState('All')
     const [status, setStatus] = useState<'Reconciled' | 'Unreconciled' | 'All' | 'Partially Reconciled'>('All')
+    const [visibleCount, setVisibleCount] = useState(100)
+
+    useEffect(() => {
+        setVisibleCount(100)
+    }, [search, amountFilter, typeFilter, status, data])
 
     const onSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         setSearch(e.target.value)
@@ -132,6 +137,10 @@ const BankTransactionListView = () => {
 
     }, [data, search, amountFilter, typeFilter, status])
 
+    const paginatedResults = useMemo(() => {
+        return filteredResults.slice(0, visibleCount)
+    }, [filteredResults, visibleCount])
+
     return <div className="space-y-4 py-2">
 
         <div className="flex gap-2 justify-between items-center">
@@ -164,19 +173,19 @@ const BankTransactionListView = () => {
         />}
 
         <TableVirtuoso
-            data={filteredResults}
+            data={paginatedResults}
             components={virtuosoComponents}
             fixedHeaderContent={() => (
                 <TableRow className="bg-background">
-                    <TableHead style={{ width: '10%' }}>{_("Date")}</TableHead>
-                    <TableHead style={{ width: '25%' }}>{_("Description")}</TableHead>
-                    <TableHead style={{ width: '12%' }}>{_("Nº Referencia")}</TableHead>
-                    <TableHead className="text-right" style={{ width: '12%' }}>{_("Withdrawal")}</TableHead>
-                    <TableHead className="text-right" style={{ width: '12%' }}>{_("Deposit")}</TableHead>
-                    <TableHead className="text-right" style={{ width: '12%' }}>{_("Sin asignar")}</TableHead>
-                    <TableHead style={{ width: '8%' }}>{_("Type")}</TableHead>
-                    <TableHead style={{ width: '14%' }}>{_("Status")}</TableHead>
-                    <TableHead style={{ width: '15%' }}>{_("Actions")}</TableHead>
+                    <TableHead style={{ width: '8%' }}>{_("Date")}</TableHead>
+                    <TableHead style={{ width: '20%' }}>{_("Description")}</TableHead>
+                    <TableHead style={{ width: '10%' }}>{_("Nº Referencia")}</TableHead>
+                    <TableHead className="text-right" style={{ width: '10%' }}>{_("Withdrawal")}</TableHead>
+                    <TableHead className="text-right" style={{ width: '10%' }}>{_("Deposit")}</TableHead>
+                    <TableHead className="text-right" style={{ width: '10%' }}>{_("Sin asignar")}</TableHead>
+                    <TableHead style={{ width: '12%' }}>{_("Type")}</TableHead>
+                    <TableHead style={{ width: '12%' }}>{_("Status")}</TableHead>
+                    <TableHead style={{ width: '8%' }}>{_("Actions")}</TableHead>
                 </TableRow>
             )}
             itemContent={(_index, row) => (
@@ -187,7 +196,9 @@ const BankTransactionListView = () => {
                     <TableCell className="text-right">{formatCurrency(row.withdrawal, bankAccount?.account_currency ?? getCompanyCurrency(bankAccount?.company ?? ''))}</TableCell>
                     <TableCell className="text-right">{formatCurrency(row.deposit, bankAccount?.account_currency ?? getCompanyCurrency(bankAccount?.company ?? ''))}</TableCell>
                     <TableCell className="text-right">{formatCurrency(row.unallocated_amount, bankAccount?.account_currency ?? getCompanyCurrency(bankAccount?.company ?? ''))}</TableCell>
-                    <TableCell>{row.transaction_type ? <Badge variant={'outline'}>{row.transaction_type}</Badge> : null}</TableCell>
+                    <TableCell className="overflow-hidden text-ellipsis whitespace-nowrap" title={row.transaction_type}>
+                        {row.transaction_type ? <Badge variant={'outline'} className="truncate max-w-[120px]" title={row.transaction_type}>{row.transaction_type}</Badge> : null}
+                    </TableCell>
                     <TableCell>
                         {(!row.allocated_amount || (row.allocated_amount && row.allocated_amount === 0)) ?
                             <div className="bg-transparent border border-border flex items-center justify-center gap-1.5 px-2 py-1 text-xs w-fit rounded-md">
@@ -226,8 +237,16 @@ const BankTransactionListView = () => {
                 </>
             )}
             style={{ minHeight: 'calc(100vh - 200px)' }}
-            totalCount={filteredResults?.length}
+            totalCount={paginatedResults?.length}
         />
+
+        {visibleCount < filteredResults.length && (
+            <div className="flex justify-center py-4">
+                <Button variant="outline" onClick={() => setVisibleCount(v => v + 100)}>
+                    {_("Mostrar Más")} ({filteredResults.length - visibleCount} {_("restantes")})
+                </Button>
+            </div>
+        )}
 
         {filteredResults.length === 0 &&
             <Alert variant='default'>

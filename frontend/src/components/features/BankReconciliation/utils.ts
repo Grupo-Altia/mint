@@ -1,4 +1,4 @@
-import { ActionLog, bankRecActionLog, bankRecAmountFilter, bankRecDateAtom, bankRecMatchFilters, bankRecSearchText, bankRecSelectedTransactionAtom, bankRecTransactionTypeFilter, bankRecUnreconcileModalAtom, SelectedBank, selectedBankAccountAtom } from './bankRecAtoms'
+import { ActionLog, bankRecActionLog, bankRecAmountFilter, bankRecDateAtom, bankRecMatchFilters, bankRecSearchText, bankRecSelectedTransactionAtom, bankRecStrictMatchingAtom, bankRecTransactionTypeFilter, bankRecUnreconcileModalAtom, SelectedBank, selectedBankAccountAtom } from './bankRecAtoms'
 import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { useMemo } from 'react'
 import { SWRConfiguration, useFrappeGetCall, useFrappeGetDoc, useFrappePostCall, useSWRConfig } from 'frappe-react-sdk'
@@ -128,14 +128,16 @@ export const useGetVouchersForTransaction = (transaction: UnreconciledTransactio
     const dates = useAtomValue(bankRecDateAtom)
 
     const matchFilters = useAtomValue(bankRecMatchFilters)
+    const strictMatching = useAtomValue(bankRecStrictMatchingAtom)
 
     return useFrappeGetCall<{ message: LinkedPayment[] }>('mint.apis.reconciliation.get_linked_payments', {
         bank_transaction_name: transaction.name,
         document_types: matchFilters ?? ['payment_entry', 'journal_entry'],
         from_date: dates.fromDate,
         to_date: dates.toDate,
-        filter_by_reference_date: 0
-    }, `bank-reconciliation-vouchers-${transaction.name}-${dates.fromDate}-${dates.toDate}-${matchFilters.join(',')}`, {
+        filter_by_reference_date: 0,
+        strict_matching: strictMatching ? 1 : 0
+    }, `bank-reconciliation-vouchers-${transaction.name}-${dates.fromDate}-${dates.toDate}-${matchFilters.join(',')}-${strictMatching}`, {
         revalidateOnFocus: false
     })
 }

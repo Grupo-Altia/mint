@@ -771,6 +771,7 @@ def get_linked_payments(
     filter_by_reference_date=None,
     from_reference_date=None,
     to_reference_date=None,
+    strict_matching=1,
 ):
     if isinstance(document_types, str):
         document_types = json.loads(document_types)
@@ -860,6 +861,9 @@ def get_linked_payments(
                             matches.append(match)
 
     # Filtrar resultados (Sugerir SOLO si hay coincidencia exacta o al menos 2 coincidencias: monto y fecha)
+    if not frappe.utils.cint(strict_matching):
+        return matches
+
     filtered_matches = []
     for match in matches:
         m = frappe._dict(match) if isinstance(match, dict) else match
