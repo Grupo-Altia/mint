@@ -99,7 +99,7 @@ def apply_format_rule(rule_name, reference_number):
     ref = str(reference_number or "").strip()
     if not rule_name:
         return ref
-    rule_expr = frappe.db.get_value("Bank Reference Rule", rule_name, "rule")
+    rule_expr = frappe.get_cached_value("Bank Reference Rule", rule_name, "rule")
     if not rule_expr:
         return ref
     try:
@@ -139,17 +139,6 @@ def custom_get_matching_rules(bank_transaction_doc):
 # Aplicar parche (interno de mint, sobre su propio módulo utils.matching)
 if original_get_matching_rules:
     mint.mint.utils.matching.get_matching_rules = custom_get_matching_rules
-
-
-def modify_venezuela_reference(doc, method=None):
-    """Hook: before_insert en Bank Transaction. Convierte el Ref N en texto plano y
-    anula cualquier función de Excel.
-
-    NOTA (revisar luego): hoy NO está enganchado en hooks.py — queda inactivo a
-    propósito (decisión pendiente de revisión). Ver el TODO de integración mint↔l10n_ve.
-    """
-    if getattr(doc, "reference_number", None):
-        doc.reference_number = str(doc.reference_number).strip()
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -290,7 +279,7 @@ def _find_deposit_by_source_bank_rule(doc) -> frappe._dict | None:
     source_bank = doc.get("source_bank")
     if not source_bank:
         return None
-    rule_name = frappe.db.get_value("Bank", source_bank, "bank_reference_rule")
+    rule_name = frappe.get_cached_value("Bank", source_bank, "bank_reference_rule")
     if not rule_name:
         return None
     target_ref = str(doc.reference_no or "").strip()
@@ -762,105 +751,83 @@ def reconcile_drafts_job(reference: str) -> None:
 # Bank Reconciliation Tool: matching extendido por reglas (mint)
 # ════════════════════════════════════════════════════════════════════════════
 
-@frappe.whitelist()
-def get_linked_payments(
-    bank_transaction_name,
-    document_types=None,
-    from_date=None,
-    to_date=None,
-    filter_by_reference_date=None,
-    from_reference_date=None,
-    to_reference_date=None,
-    strict_matching=1,
-):
-    if isinstance(document_types, str):
-        document_types = json.loads(document_types)
+def _get_payment_entry_source_banks(names):
+    if not names: return {}
+    pes = frappe.get_all("Payment Entry", filters={"name": ("in", names)}, fields=["name", "source_bank"])
+    return {p.name: p.source_bank for p in pes}
 
-    # 1. Llamar a la logica original de ERPNext (búsqueda normal)
-    matches = erpnext_get_linked_payments(
-        bank_transaction_name,
-        document_types,
-        from_date,
-        to_date,
-        filter_by_reference_date,
-        from_reference_date,
-        to_reference_date,
-    )
-    if not matches:
-        matches = []
+def _tag_existing_matches_by_rule(matches, original_ref, banks_with_rules):
+    pe_names = [m.get("name") or m.name for m in matches if (m.get("doctype") or m.doctype) == "Payment Entry"]
+    source_banks = _get_payment_entry_source_banks(pe_names)
 
-    transaction = frappe.get_doc("Bank Transaction", bank_transaction_name)
-    original_ref = str(transaction.reference_number or "").strip()
-    if not original_ref:
-        return matches
-
-    # Obtener bancos con reglas
-    banks_with_rules = frappe.get_all(
-        "Bank", filters={"bank_reference_rule": ["!=", ""]},
-        fields=["name", "bank_reference_rule"],
-    )
-
-    # 2. Etiquetar los que ya encontro Frappe
     for match in matches:
         pe_ref = match.get("reference_no") or match.reference_no
-        if pe_ref and pe_ref != original_ref:
-            for bank in banks_with_rules:
-                mod_ref = apply_format_rule(bank.bank_reference_rule, original_ref)
-                if mod_ref == pe_ref:
-                    doctype = match.get("doctype") or match.doctype
-                    name = match.get("name") or match.name
-                    if doctype == "Payment Entry":
-                        source_bank = frappe.db.get_value("Payment Entry", name, "source_bank")
-                        if source_bank == bank.name:
-                            match["matched_by_rule"] = True
-                            break
+        if not pe_ref or pe_ref == original_ref:
+            continue
+            
+        doctype = match.get("doctype") or match.doctype
+        if doctype != "Payment Entry":
+            continue
+            
+        name = match.get("name") or match.name
+        source_bank = source_banks.get(name)
+        if not source_bank:
+            continue
+            
+        for bank in banks_with_rules:
+            if source_bank != bank.name:
+                continue
+            mod_ref = apply_format_rule(bank.bank_reference_rule, original_ref)
+            if mod_ref == pe_ref:
+                if isinstance(match, dict):
+                    match["matched_by_rule"] = True
+                else:
+                    match.matched_by_rule = True
+                break
+    return matches
 
-    # 3. Buscar si hay extras (que Frappe omitió)
+def _find_extra_matches_by_rule(matches, transaction, original_ref, banks_with_rules, document_types, filter_by_reference_date, from_reference_date, to_reference_date):
+    bank_account = frappe.db.get_values(
+        "Bank Account", transaction.bank_account, ["account", "company"], as_dict=True
+    )[0]
+    
+    existing_keys = set(f"{m.get('doctype') or m.doctype}-{m.get('name') or m.name}" for m in matches)
+    
     for bank in banks_with_rules:
-        # Aplicar la regla
         modified_ref = apply_format_rule(bank.bank_reference_rule, original_ref)
         if modified_ref == original_ref:
             continue
 
-        # Reemplazar temporalmente el numero de referencia en la transaccion (en memoria)
         transaction.reference_number = modified_ref
-
-        bank_account = frappe.db.get_values(
-            "Bank Account", transaction.bank_account, ["account", "company"], as_dict=True
-        )[0]
-
-        # Buscar coincidencias con la referencia modificada ignorando las fechas
         new_matches = check_matching(
-            bank_account.account,
-            bank_account.company,
-            transaction,
-            document_types,
-            None,  # Ignorar from_date
-            None,  # Ignorar to_date
-            filter_by_reference_date,
-            from_reference_date,
-            to_reference_date,
+            bank_account.account, bank_account.company, transaction, document_types,
+            None, None, filter_by_reference_date, from_reference_date, to_reference_date
         )
-
-        # Restaurar la referencia original
         transaction.reference_number = original_ref
+        
+        if not new_matches:
+            continue
+            
+        pe_names = [m.get("name") if isinstance(m, dict) else m.name for m in new_matches if (m.get("doctype") if isinstance(m, dict) else m.doctype) == "Payment Entry"]
+        source_banks = _get_payment_entry_source_banks(pe_names)
+            
+        for match in new_matches:
+            doctype = match.get("doctype") if isinstance(match, dict) else match.doctype
+            name = match.get("name") if isinstance(match, dict) else match.name
+            
+            if doctype == "Payment Entry":
+                source_bank = source_banks.get(name)
+                if source_bank == bank.name:
+                    key = f"{doctype}-{name}"
+                    if key not in existing_keys:
+                        if not isinstance(match, dict):
+                            match = match.as_dict()
+                        match["matched_by_rule"] = True
+                        matches.append(match)
+                        existing_keys.add(key)
+    return matches
 
-        if new_matches:
-            for match in new_matches:
-                doctype = match.get("doctype") if isinstance(match, dict) else match.doctype
-                name = match.get("name") if isinstance(match, dict) else match.name
-
-                if doctype == "Payment Entry":
-                    source_bank = frappe.db.get_value("Payment Entry", name, "source_bank")
-                    if source_bank == bank.name:
-                        # Avoid duplicates
-                        if not any((m.get("name") or m.name) == name and (m.get("doctype") or m.doctype) == doctype for m in matches):
-                            if not isinstance(match, dict):
-                                match = match.as_dict()
-                            match["matched_by_rule"] = True
-                            matches.append(match)
-
-    # Filtrar resultados (Sugerir SOLO si hay coincidencia exacta o al menos 2 coincidencias: monto y fecha)
+def _filter_matches(matches, transaction, strict_matching):
     if not frappe.utils.cint(strict_matching):
         return matches
 
@@ -878,7 +845,6 @@ def get_linked_payments(
             filtered_matches.append(match)
             continue
 
-        # Si no es exacta, debe tener coincidencia de monto y fecha
         match_amount = float(m.get("paid_amount") or m.get("amount") or m.get("allocated_amount") or 0.0)
         txn_amount = float(transaction.unallocated_amount)
 
@@ -890,12 +856,56 @@ def get_linked_payments(
 
     return filtered_matches
 
+@frappe.whitelist()
+def get_linked_payments(
+    bank_transaction_name,
+    document_types=None,
+    from_date=None,
+    to_date=None,
+    filter_by_reference_date=None,
+    from_reference_date=None,
+    to_reference_date=None,
+    strict_matching=1,
+):
+    if isinstance(document_types, str):
+        document_types = json.loads(document_types)
+    if not document_types:
+        document_types = ["Payment Entry", "Journal Entry", "Sales Invoice", "Purchase Invoice", "Expense Claim", "Loan Repayment"]
+
+    matches = erpnext_get_linked_payments(
+        bank_transaction_name, document_types, from_date, to_date, 
+        filter_by_reference_date, from_reference_date, to_reference_date
+    )
+    if not matches:
+        matches = []
+
+    transaction = frappe.get_doc("Bank Transaction", bank_transaction_name)
+    original_ref = str(transaction.reference_number or "").strip()
+    if not original_ref:
+        return matches
+
+    banks_with_rules = frappe.get_all(
+        "Bank", filters={"bank_reference_rule": ["!=", ""]},
+        fields=["name", "bank_reference_rule"],
+    )
+    
+    if not banks_with_rules:
+        return _filter_matches(matches, transaction, strict_matching)
+
+    matches = _tag_existing_matches_by_rule(matches, original_ref, banks_with_rules)
+    matches = _find_extra_matches_by_rule(
+        matches, transaction, original_ref, banks_with_rules, 
+        document_types, filter_by_reference_date, from_reference_date, to_reference_date
+    )
+
+    return _filter_matches(matches, transaction, strict_matching)
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # Post-conciliación: mapear tercero y referencia origen (mint)
 # ════════════════════════════════════════════════════════════════════════════
 
-def update_referencia_origen_on_reconcile(doc, method=None) -> None:
+def update_source_reference_on_reconcile(doc, method=None) -> None:
     """Si la transacción bancaria se concilia, mapea el tercero del cobro y guarda la
     referencia origen (la del cobro, obtenida aplicando la regla del banco origen a la
     referencia del depósito)."""
