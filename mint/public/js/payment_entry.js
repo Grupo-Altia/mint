@@ -15,6 +15,5 @@ frappe.ui.form.on("Payment Entry", {
 				
 				frm.page.set_indicator(__(label), color);
 			}
-		}, 100);
 	}
 });
