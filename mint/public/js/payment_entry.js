@@ -4,16 +4,26 @@ frappe.ui.form.on("Payment Entry", {
 			if (frm.doc.docstatus === 0 || frm.doc.docstatus === 1) {
 				let label, color;
 				
+				// Remover badge personalizado si ya existe para evitar duplicados en refresh
+				frm.page.wrapper.find('.custom-recon-badge').remove();
+				
 				if (frm.doc.docstatus === 0) {
 					label = "Por conciliar";
 					color = "orange";
 				} else {
-					let status = frm.doc.custom_reconciliation_status;
-					label = status === "Conciliado" ? "Conciliado" : "Por conciliar";
-					color = status === "Conciliado" ? "green" : "orange";
+					// Usar el campo nativo clearance_date para saber si está conciliado
+					let is_reconciled = !!frm.doc.clearance_date;
+					label = is_reconciled ? "Conciliado" : "Por conciliar";
+					color = is_reconciled ? "green" : "orange";
 				}
 				
-				frm.page.set_indicator(__(label), color);
+				let custom_badge = $(`<span class="indicator-pill whitespace-nowrap ${color} custom-recon-badge" style="margin-left: 8px;">${__(label)}</span>`);
+				
+				// Seleccionar el contenedor donde está el título y el badge estándar
+				let title_container = frm.page.wrapper.find('.title-text').parent();
+				if (title_container.length) {
+					title_container.append(custom_badge);
+				}
 			}
 	}
 });
