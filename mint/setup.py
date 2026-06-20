@@ -92,7 +92,6 @@ def update_conciliaciones_workspace():
                         new_blocks.append(b)
                     elif b["data"].get("shortcut_name") == "Conciliación Bancaria":
                         new_blocks.append(b)
-                    # skip Importar Extracto
                 elif b.get("type") == "header":
                     if "Documentos y Catálogos" in b["data"].get("text", ""):
                         b["data"]["text"] = b["data"]["text"].replace("Documentos y Catálogos", "Documentos")
@@ -120,13 +119,14 @@ def update_conciliaciones_workspace():
         mint_ws.flags.ignore_permissions = True
         mint_ws.save()
 
-    # Fix Administración Workspace (remove old Bank Reconciliation Tool)
+def update_admin_workspace():
+    # Solo arreglar el Workspace Administración que daba error al guardar
     if frappe.db.exists("Workspace", "Administración"):
         admin_ws = frappe.get_doc("Workspace", "Administración")
         admin_links = []
         modified = False
         for l in admin_ws.links:
-            if l.link_to == "Bank Reconciliation Tool":
+            if l.link_to == "Bank Reconciliation Tool" or "Herramienta de conciliación" in str(l.label):
                 modified = True
                 continue
             admin_links.append(l)
@@ -142,4 +142,5 @@ def after_install():
 def after_migrate():
     create_bank_reference_rules()
     update_conciliaciones_workspace()
+    update_admin_workspace()
     frappe.db.commit()
