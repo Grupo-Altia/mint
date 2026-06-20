@@ -545,6 +545,15 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
     bt.save(ignore_permissions=True)
 
 
+def strip_leading_quote_from_reference(doc, method):
+    """
+    Strips leading single quotes from reference numbers (common in bank exports like Bancamiga .xls)
+    to prevent string matching errors in rules and reconciliation.
+    """
+    if doc.reference_number and doc.reference_number.startswith("'"):
+        doc.reference_number = doc.reference_number[1:]
+
+
 def before_submit_receive_payment(doc, method=None) -> None:
     """Al aprobar un cobro bancario: buscar su depósito por referencia y conciliar.
 

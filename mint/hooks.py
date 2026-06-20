@@ -148,6 +148,7 @@ doc_events = {
         "on_change": "mint.apis.reconciliation.on_change_payment_entry",
     },
     "Bank Transaction": {
+        "before_insert": "mint.apis.reconciliation.strip_leading_quote_from_reference",
         "validate": "mint.apis.reconciliation.validate_bank_transaction_duplicate",
         "on_submit": "mint.apis.reconciliation.reconcile_drafts_for_deposit",
         "on_update_after_submit": "mint.apis.reconciliation.update_source_reference_on_reconcile",
