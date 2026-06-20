@@ -1,4 +1,5 @@
 frappe.listview_settings['Payment Entry'] = {
+	add_fields: ["clearance_date"],
 	get_indicator: function (doc) {
 		if (doc.docstatus === 2) {
 			return [__("Cancelado"), "red", "docstatus,=,2"];
