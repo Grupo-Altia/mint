@@ -31,6 +31,7 @@ import {
     useSortable,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 const RuleConfigureButton = () => {
 
@@ -50,12 +51,19 @@ const RuleConfigureButton = () => {
 
     return (
         <Sheet open={isOpen} onOpenChange={onOpenChange}>
-            <SheetTrigger asChild>
-                <Button size='icon' variant='outline' title={_("Transaction Matching Rules")}>
-                    <ZapIcon />
-                </Button>
-            </SheetTrigger>
-            <SheetContent className="min-w-xl">
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <SheetTrigger asChild>
+                        <Button size='icon' variant='outline' title={_("Reglas de Emparejamiento")}>
+                            <ZapIcon />
+                        </Button>
+                    </SheetTrigger>
+                </TooltipTrigger>
+                <TooltipContent>
+                    {_("Reglas de Emparejamiento")}
+                </TooltipContent>
+            </Tooltip>
+            <SheetContent className="min-w-3xl">
                 <SheetHeader>
                     <div className="flex items-center gap-2">
                         {(selectedRule || isNewRule) && <Button variant='ghost' size='icon' className="p-0" onClick={() => {
@@ -65,11 +73,11 @@ const RuleConfigureButton = () => {
                             <ArrowLeftIcon />
                         </Button>}
 
-                        <SheetTitle>{selectedRule ? selectedRule : isNewRule ? _("New Rule") : _("Transaction Matching Rules")}</SheetTitle>
+                        <SheetTitle>{selectedRule ? selectedRule : isNewRule ? _("Nueva Regla") : _("Reglas de Emparejamiento")}</SheetTitle>
                     </div>
 
                     <SheetDescription className={selectedRule ? "sr-only" : ""}>
-                        {selectedRule ? _("Edit this rule") : isNewRule ? _("Create a new rule to automatically classify transactions.") : _("Set up rules to automatically classify transactions. Drag and drop rules to reorder their priority.")}
+                        {selectedRule ? _("Edit this rule") : isNewRule ? _("Crea una nueva regla para clasificar transacciones automáticamente.") : _("Configura reglas para clasificar transacciones automáticamente. Arrastra y suelta para reordenar su prioridad.")}
                     </SheetDescription>
                 </SheetHeader>
                 {selectedRule ? <EditRule onClose={() => setSelectedRule(null)} ruleID={selectedRule} /> : isNewRule ? <CreateNewRule onCreate={() => setIsNewRule(false)} /> : <RuleList setSelectedRule={setSelectedRule} setIsNewRule={setIsNewRule} />}
@@ -91,6 +99,10 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
 
     const { db } = useContext(FrappeContext) as FrappeConfig
     const { call: runRuleEvaluation, loading: isRunningRules } = useFrappePostCall('mint.apis.rules.run_rule_evaluation')
+    const { call: deleteRuleCall } = useFrappePostCall('mint.apis.rules.delete_rule')
+    
+    const { data: hasManagePermissionData } = useFrappeGetCall('mint.apis.rules.has_rule_manage_permission')
+    const hasManagePermission = hasManagePermissionData?.message ?? false
 
     const sensors = useSensors(
         useSensor(PointerSensor),
@@ -100,7 +112,9 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
     )
 
     const onDeleteRule = (ruleID: string) => {
-        toast.promise(db.deleteDoc("Mint Bank Transaction Rule", ruleID), {
+        toast.promise(deleteRuleCall({ rule_name: ruleID }).then(() => {
+            mutate()
+        }), {
             loading: _("Deleting rule..."),
             success: _("Rule deleted."),
             error: _("Failed to delete rule.")
@@ -120,6 +134,8 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
     }
 
     const handleDragEnd = async (event: DragEndEvent) => {
+        if (!hasManagePermission) return
+
         const { active, over } = event
 
         if (active.id !== over?.id && data) {
@@ -161,7 +177,7 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
                                 ) : (
                                     <Play className="w-4 h-4 mr-2" />
                                 )}
-                                {isRunningRules ? _("Running...") : _("Run Rules")}
+                                {isRunningRules ? _("Running...") : _("Ejecutar Reglas")}
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
@@ -172,11 +188,11 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => handleRunRules(true)} disabled={isRunningRules} title={_("Force re-evaluate all unreconciled transactions, even if they were previously evaluated")}>
                                 <RefreshCw className="w-4 h-4 mr-2" />
-                                {_("Force Evaluate All")}
+                                {_("Force evaluate all")}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
 
-                            <AutoRunRuleItem />
+                            {hasManagePermission && <AutoRunRuleItem />}
 
                         </DropdownMenuContent>
                     </DropdownMenu>}
@@ -195,9 +211,9 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
                 {data && data.length === 0 && <div className="flex flex-col justify-center h-48 gap-4 items-center text-center">
                     {_("No rules found")}
 
-                    <Button type='button' onClick={() => setIsNewRule(true)}>
-                        {_("Create a new rule")}
-                    </Button>
+                    {hasManagePermission && <Button type='button' onClick={() => setIsNewRule(true)}>
+                        {_("Crear una nueva regla")}
+                    </Button>}
                 </div>}
 
                 {data && data.length > 0 && (
@@ -210,13 +226,14 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
                             items={data.map(rule => rule.name)}
                             strategy={verticalListSortingStrategy}
                         >
-                            <ul className="space-2 divide-y divide-border">
+                            <ul className="space-y-2 divide-y divide-border">
                                 {data?.map((rule) => (
                                     <SortableRuleItem
                                         key={rule.name}
                                         rule={rule}
                                         setSelectedRule={setSelectedRule}
                                         onDeleteRule={onDeleteRule}
+                                        hasManagePermission={hasManagePermission}
                                     />
                                 ))}
                             </ul>
@@ -225,9 +242,9 @@ const RuleList = ({ setSelectedRule, setIsNewRule }: { setSelectedRule: (rule: s
                 )}
             </div>
             <SheetFooter>
-                <Button type='button' onClick={() => setIsNewRule(true)}>
-                    {_("Create a new rule")}
-                </Button>
+                {hasManagePermission && <Button type='button' onClick={() => setIsNewRule(true)}>
+                    {_("Crear una nueva regla")}
+                </Button>}
                 <SheetClose asChild>
                     <Button type='button' variant='outline'>
                         {_("Close")}
@@ -281,11 +298,13 @@ const AutoRunRuleItem = () => {
 const SortableRuleItem = ({
     rule,
     setSelectedRule,
-    onDeleteRule
+    onDeleteRule,
+    hasManagePermission
 }: {
     rule: MintBankTransactionRule
     setSelectedRule: (rule: string) => void
     onDeleteRule: (ruleID: string) => void
+    hasManagePermission: boolean
 }) => {
     const {
         attributes,
@@ -306,14 +325,14 @@ const SortableRuleItem = ({
         <li ref={setNodeRef} style={style}>
             <div className="flex justify-between items-center py-2 h-full">
                 <div className="flex items-center gap-2">
-                    <div
+                    {hasManagePermission && <div
                         {...attributes}
                         {...listeners}
                         className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded"
                         title={_("Drag to reorder")}
                     >
                         <GripVertical className="w-4 h-4 text-muted-foreground" />
-                    </div>
+                    </div>}
                     <Badge variant="secondary" className="w-6 h-6 p-0 flex items-center justify-center text-xs font-mono">
                         {rule.priority}
                     </Badge>
@@ -322,11 +341,15 @@ const SortableRuleItem = ({
                             <Button
                                 variant='link'
                                 className="p-0 h-fit text-foreground text-left font-medium cursor-pointer"
-                                onClick={() => setSelectedRule(rule.name)}>
+                                onClick={() => {
+                                    if(hasManagePermission){
+                                        setSelectedRule(rule.name)
+                                    }
+                                }}>
                                 {rule.rule_name}
                             </Button>
                             <div title={rule.transaction_type === "Any" ? _("Any") : rule.transaction_type === "Withdrawal" ? _("Withdrawal") : _("Deposit")}>
-                                {rule.transaction_type === "Any" ? <ArrowDownUp className="text-muted-foreground w-4 h-4" /> : rule.transaction_type === "Withdrawal" ? <ArrowUpRight className="text-destructive w-5 h-5" /> : <ArrowDownRight className="text-green-500 w-5 h-5" />}
+                                {rule.transaction_type === "Any" ? <ArrowDownUp className="text-muted-foreground w-4 h-4" /> : rule.transaction_type === "Withdrawal" ? <ArrowUpRight className="text-destructive w-5 h-5" /> : <ArrowDownRight className="text-green-600 w-5 h-5" />}
                             </div>
                         </div>
                         <span className="text-sm text-muted-foreground">
@@ -335,7 +358,7 @@ const SortableRuleItem = ({
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2 h-full justify-center">
+                {hasManagePermission && <div className="flex items-center gap-2 h-full justify-center">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button variant='ghost' size='icon'>
@@ -349,7 +372,7 @@ const SortableRuleItem = ({
                             </DropdownMenuItem>
                         </DropdownMenuContent>
                     </DropdownMenu>
-                </div>
+                </div>}
             </div>
         </li>
     )

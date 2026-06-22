@@ -2,7 +2,7 @@ import { atom, useAtom, useAtomValue, useSetAtom } from "jotai"
 import { bankRecRecordPaymentModalAtom, bankRecSelectedTransactionAtom, bankRecUnreconcileModalAtom, SelectedBank, selectedBankAccountAtom } from "./bankRecAtoms"
 import { Dialog, DialogContent, DialogTitle, DialogDescription, DialogHeader, DialogFooter, DialogClose, DialogTrigger } from "@/components/ui/dialog"
 import _ from "@/lib/translate"
-import { UnreconciledTransaction, useGetRuleForTransaction, useRefreshUnreconciledTransactions } from "./utils"
+import { UnreconciledTransaction, useGetRuleForTransaction, useRefreshUnreconciledTransactions, useUpdateActionLog } from "./utils"
 import { useFieldArray, useForm, useFormContext, useWatch } from "react-hook-form"
 import { getCompanyCostCenter, getCompanyCurrency } from "@/lib/company"
 import { FrappeConfig, FrappeContext, useFrappeGetCall, useFrappePostCall } from "frappe-react-sdk"
@@ -31,6 +31,10 @@ import { PaymentEntryDeduction } from "@/types/Accounts/PaymentEntryDeduction"
 import { TableLoader } from "@/components/ui/loaders"
 import SelectedTransactionsTable from "./SelectedTransactionsTable"
 import { useCurrentCompany } from "@/hooks/useCurrentCompany"
+import { Label } from "@/components/ui/label"
+import { FileDropzone } from "@/components/ui/file-dropzone"
+import { BankTransaction } from "@/types/Accounts/BankTransaction"
+import FileUploadBanner from "@/components/common/FileUploadBanner"
 
 const RecordPaymentModal = () => {
 
@@ -40,9 +44,9 @@ const RecordPaymentModal = () => {
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogContent className='min-w-[95vw]'>
                 <DialogHeader>
-                    <DialogTitle>{_("Record Payment")}</DialogTitle>
+                    <DialogTitle>{_("Registro de Pago")}</DialogTitle>
                     <DialogDescription>
-                        {_("Record a payment entry against a customer or supplier")}
+                        {_("Registrar un pago contra un cliente o proveedor")}
                     </DialogDescription>
                 </DialogHeader>
                 <RecordPaymentModalContent />
@@ -79,7 +83,7 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
 
 
     const setIsOpen = useSetAtom(bankRecRecordPaymentModalAtom)
-
+ 
     const form = useForm<{
         party_type: PaymentEntry['party_type'],
         party: PaymentEntry['party'],
@@ -87,20 +91,50 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
         /** GL account that's paid from or paid to */
         account: string
         mode_of_payment: PaymentEntry['mode_of_payment']
+        paid_on_currency: string
     }>()
 
-    const { call: createPaymentEntry, loading, error } = useFrappePostCall('mint.apis.bank_reconciliation.create_bulk_payment_entry_and_reconcile')
+    const { call: createPaymentEntry, loading, error } = useFrappePostCall<{ message: { transaction: BankTransaction, payment_entry: PaymentEntry }[] }>('mint.apis.bank_reconciliation.create_bulk_payment_entry_and_reconcile')
 
     const onReconcile = useRefreshUnreconciledTransactions()
 
-    const onSubmit = (data: { party_type: PaymentEntry['party_type'], party: PaymentEntry['party'], account: string, mode_of_payment: PaymentEntry['mode_of_payment'] }) => {
+    const addToActionLog = useUpdateActionLog()
+
+    const onSubmit = (data: { party_type: PaymentEntry['party_type'], party: PaymentEntry['party'], account: string, mode_of_payment: PaymentEntry['mode_of_payment'], paid_on_currency: string }) => {
 
         createPaymentEntry({
             bank_transaction_names: transactions.map((transaction) => transaction.name),
             party_type: data.party_type,
             party: data.party,
-            account: data.account
-        }).then(() => {
+            account: data.account,
+            mode_of_payment: data.mode_of_payment,
+            paid_on_currency: data.paid_on_currency
+        }).then(({ message }) => {
+
+            addToActionLog({
+                type: 'payment',
+                timestamp: (new Date()).getTime(),
+                isBulk: true,
+                items: message.map((item) => ({
+                    bankTransaction: item.transaction,
+                    voucher: {
+                        reference_doctype: "Payment Entry",
+                        reference_name: item.payment_entry.name,
+                        reference_no: item.payment_entry.reference_no,
+                        reference_date: item.payment_entry.reference_date,
+                        posting_date: item.payment_entry.posting_date,
+                        party_type: item.payment_entry.party_type,
+                        party: item.payment_entry.party,
+                        doc: item.payment_entry,
+                    }
+                })),
+                bulkCommonData: {
+                    party_type: data.party_type,
+                    party: data.party,
+                    account: data.account,
+                }
+            })
+
             toast.success(_("Payment Recorded"), {
                 duration: 4000,
                 closeButton: true,
@@ -215,10 +249,24 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
                     </div>
 
                     <div className="col-span-2">
+                        <ModeOfPaymentField />
+                    </div>
+
+                    <div className="col-span-2">
                         <LinkFormField
-                            name='mode_of_payment'
-                            label={_("Mode of Payment")}
-                            doctype="Mode of Payment"
+                            name="paid_on_currency"
+                            label={_("Moneda de Pago")}
+                            doctype="Currency"
+                            isRequired
+                            rules={{ required: _("La moneda es requerida") }}
+                        />
+                    </div>
+
+                    <div className="col-span-2">
+                        <LinkFormField
+                            name="source_bank"
+                            label={_("Banco Origen")}
+                            doctype="Bank"
                         />
                     </div>
 
@@ -250,9 +298,9 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
     const isWithdrawal = (selectedTransaction.withdrawal && selectedTransaction.withdrawal > 0) ? true : false
 
     const form = useForm<PaymentEntry>({
-        defaultValues: {
+        values: {
             payment_type: isWithdrawal ? 'Pay' : 'Receive',
-            bank_account: selectedBankAccount.account,
+            bank_account: selectedTransaction.bank_account,
             company: selectedTransaction?.company,
             // If the money is paid, it's usually to a supplier. If it's received, it's usually from a customer
             party_type: rule?.party_type ?? (isWithdrawal ? 'Supplier' : 'Customer'),
@@ -266,9 +314,11 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
             base_paid_amount: selectedTransaction.unallocated_amount,
             received_amount: selectedTransaction.unallocated_amount,
             base_received_amount: selectedTransaction.unallocated_amount,
+            paid_on_currency: selectedTransaction.currency ?? getCompanyCurrency(selectedTransaction.company ?? ''),
             reference_date: selectedTransaction.date,
             posting_date: selectedTransaction.date,
             reference_no: (selectedTransaction.reference_number || selectedTransaction.description || '').slice(0, 140),
+            source_bank: rule?.name ?? '',
             target_exchange_rate: 1,
             source_exchange_rate: 1,
         }
@@ -285,9 +335,18 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
 
     }, [rule, setUnpaidInvoiceOpen])
 
-    const { call: createPaymentEntry, loading, error } = useFrappePostCall('mint.apis.bank_reconciliation.create_payment_entry_and_reconcile')
+    const { call: createPaymentEntry, loading, error, isCompleted } = useFrappePostCall<{ message: { transaction: BankTransaction, payment_entry: PaymentEntry } }>('mint.apis.bank_reconciliation.create_payment_entry_and_reconcile')
 
     const setBankRecUnreconcileModalAtom = useSetAtom(bankRecUnreconcileModalAtom)
+
+    const addToActionLog = useUpdateActionLog()
+
+    const { file: frappeFile } = useContext(FrappeContext) as FrappeConfig
+
+    const [isUploading, setIsUploading] = useState(false)
+    const [uploadProgress, setUploadProgress] = useState(0)
+
+    const [files, setFiles] = useState<File[]>([])
 
     const onSubmit = (data: PaymentEntry) => {
 
@@ -297,7 +356,25 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                 ...data,
                 custom_remarks: data.remarks ? true : false
             }
-        }).then(() => {
+        }).then(async ({ message }) => {
+            addToActionLog({
+                type: 'payment',
+                timestamp: (new Date()).getTime(),
+                isBulk: false,
+                items: [
+                    {
+                        bankTransaction: message.transaction,
+                        voucher: {
+                            reference_doctype: "Payment Entry",
+                            reference_name: message.payment_entry.name,
+                            reference_no: message.payment_entry.reference_no,
+                            reference_date: message.payment_entry.reference_date,
+                            posting_date: message.payment_entry.posting_date,
+                            doc: message.payment_entry,
+                        }
+                    }
+                ]
+            })
             toast.success(_("Payment Entry Created"), {
                 duration: 4000,
                 closeButton: true,
@@ -309,9 +386,43 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                     backgroundColor: "rgb(0, 138, 46)"
                 }
             })
+
+            if (files.length > 0) {
+                setIsUploading(true)
+
+                const uploadPromises = files.map(f => {
+                    return frappeFile.uploadFile(f, {
+                        isPrivate: true,
+                        doctype: "Payment Entry",
+                        docname: message.payment_entry.name,
+                    }, (_bytesUploaded, _totalBytes, progress) => {
+
+                        setUploadProgress((currentProgress) => {
+                            //If there are multiple files, we need to add the progress to the current progress
+                            return currentProgress + ((progress?.progress ?? 0) / files.length)
+                        })
+
+                    })
+                })
+
+                return Promise.all(uploadPromises).then(() => {
+                    setUploadProgress(0)
+                    setIsUploading(false)
+                })
+            } else {
+                return Promise.resolve()
+            }
+
+        }).then(() => {
+            setUploadProgress(0)
+            setIsUploading(false)
             onReconcile(selectedTransaction)
             onClose()
         })
+    }
+
+    if (isUploading && isCompleted) {
+        return <FileUploadBanner uploadProgress={uploadProgress} />
     }
 
     return <Form {...form}>
@@ -320,9 +431,8 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                 {error && <ErrorBanner error={error} />}
                 <div className='grid grid-cols-2 gap-4 items-start'>
                     <SelectedTransactionDetails transaction={selectedTransaction} />
-
                     <div className='flex flex-col gap-2'>
-                        <H4 className="text-base">{isWithdrawal ? _("Paid to") : _("Received from")}</H4>
+                        <H4 className="text-base">{isWithdrawal ? _("Pagado a") : _("Recibido de")}</H4>
                         <div className='grid grid-cols-4 gap-4'>
                             <div className="col-span-1">
                                 <PartyTypeFormField
@@ -348,11 +458,27 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                                 <AccountDropdown isWithdrawal={isWithdrawal} />
                             </div>
 
+                            
                             <div className="col-span-2">
                                 <LinkFormField
-                                    name='mode_of_payment'
-                                    label={_("Mode of Payment")}
-                                    doctype="Mode of Payment"
+                                    name="paid_on_currency"
+                                    label={_("Moneda de Pago")}
+                                    doctype="Currency"
+                                    isRequired
+                                    rules={{ required: _("La moneda es requerida") }}
+                                />
+                            </div>
+                            
+                            
+                            <div className="col-span-2">
+                                <ModeOfPaymentField />
+                            </div>
+
+                            <div className="col-span-2">
+                                <LinkFormField
+                                    name="source_bank"
+                                    label={_("Banco Origen")}
+                                    doctype="Bank"
                                 />
                             </div>
 
@@ -388,12 +514,19 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                                 inputProps={{ autoFocus: false }}
                             />
                         </div>
-                        <DataField name='reference_no' label={_("Reference No")} isRequired inputProps={{ autoFocus: false }} />
+                        <DataField name='reference_no' label={_("Reference")} isRequired inputProps={{ autoFocus: false }} />
+                        <div
+                            data-slot="form-item"
+                            className="flex flex-col gap-2"
+                        >
+                            <Label>{_("Attachments")}</Label>
+                            <FileDropzone files={files} setFiles={setFiles} />
+                        </div>
                     </div>
                     <SmallTextField
                         name='remarks'
                         label={_("Custom Remarks")}
-                        formDescription={"This will be auto-populated if not set."}
+                        formDescription={_("Se completará automáticamente si no se establece.")}
                     />
 
                 </div>
@@ -401,7 +534,7 @@ const PaymentEntryForm = ({ selectedTransaction, selectedBankAccount }: { select
                     <DialogClose asChild>
                         <Button variant={'outline'} disabled={loading}>{_("Cancel")}</Button>
                     </DialogClose>
-                    <Button type='submit' disabled={loading}>{_("Submit")}</Button>
+                    <Button type='submit' disabled={loading || isUploading}>{_("Submit")}</Button>
                 </DialogFooter>
             </div>
         </form>
@@ -518,7 +651,7 @@ const AccountDropdown = ({ isWithdrawal }: { isWithdrawal: boolean }) => {
     if (isWithdrawal) {
         return <AccountFormField
             name='paid_to'
-            label={_("Paid To (GL Account)")}
+            label={_("Pagado a (Cuenta Contable)")}
             isRequired
             rules={{
                 required: 'Paid To is required',
@@ -530,7 +663,7 @@ const AccountDropdown = ({ isWithdrawal }: { isWithdrawal: boolean }) => {
     } else {
         return <AccountFormField
             name='paid_from'
-            label={_("Paid From (GL Account)")}
+            label={_("Pagado desde (Cuenta Contable)")}
             isRequired
             rules={{
                 required: 'Paid From is required',
@@ -542,6 +675,33 @@ const AccountDropdown = ({ isWithdrawal }: { isWithdrawal: boolean }) => {
 
 }
 
+
+const ModeOfPaymentField = () => {
+    const { control } = useFormContext<PaymentEntry>()
+    const company = useWatch({ control, name: 'company' })
+    const { data } = useFrappeGetCall('mint.apis.bank_account.get_allowed_mode_of_payments', {
+        company: company ?? ''
+    }, {
+        isPaused() {
+            return !company
+        }
+    })
+
+    const allowedModes = data?.message ?? []
+
+    return <LinkFormField
+        name='mode_of_payment'
+        label={_("Mode of Payment")}
+        doctype="Mode of Payment"
+        query={allowedModes.length > 0 ? () => {
+            return {
+                filters: {
+                    name: ["in", allowedModes]
+                }
+            }
+        } : undefined}
+    />
+}
 
 const InvoicesSection = ({ currency }: { currency: string }) => {
 
@@ -698,9 +858,9 @@ const DifferenceButton = ({ index, currency }: { index: number, currency: string
                 </Button>
             </TooltipTrigger>
             <TooltipContent>
-                {_("The invoice is not fully allocated as there is a difference of {0}.", [formatCurrency(difference, currency) ?? ''])}
+                {_("La factura no está completamente pagada ya que hay una diferencia de {0}.", [formatCurrency(difference, currency) ?? ''])}
                 <br />
-                {_("Click to pay in full.")}
+                {_("Haz clic para pagar el monto completo.")}
             </TooltipContent>
         </Tooltip>
 
@@ -765,7 +925,7 @@ const Summary = ({ currency }: { currency: string }) => {
         </div>
 
         {(unallocatedAmount && unallocatedAmount !== 0) ? <div className="flex gap-2 justify-between">
-            <TextComponent>{_("Unallocated")}</TextComponent>
+            <TextComponent>{_("Sin asignar")}</TextComponent>
             <Tooltip>
                 <TooltipTrigger asChild>
                     <Button type='button' variant='link' className="p-0 text-destructive underline h-fit" role='button' onClick={() => onAddRow(unallocatedAmount ?? 0)}>
@@ -773,7 +933,7 @@ const Summary = ({ currency }: { currency: string }) => {
                     </Button>
                 </TooltipTrigger>
                 <TooltipContent>
-                    {_("Add a charge to the payment entry with the unallocated amount")}
+                    {_("Agregar un cargo al pago con el monto sin asignar")}
                 </TooltipContent>
             </Tooltip>
 
@@ -813,12 +973,12 @@ const GetUnpaidInvoicesButton = () => {
 
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
             {partyType && party && <DialogTrigger asChild>
-                <Button variant='outline' size='sm' type='button'>Get Unpaid Invoices</Button>
+                <Button variant='outline' size='sm' type='button'>{_("Obtener Facturas Pendientes")}</Button>
             </DialogTrigger>}
             <DialogContent className="min-w-[75vw]">
                 <DialogHeader>
-                    <DialogTitle>Select Invoices</DialogTitle>
-                    <DialogDescription>Unpaid invoices from {partyName} for {formatCurrency(amount)}.</DialogDescription>
+                    <DialogTitle>{_("Seleccionar Facturas")}</DialogTitle>
+                    <DialogDescription>{_("Facturas pendientes de {0} por {1}", [partyName || party || '', formatCurrency(amount) || ''])}</DialogDescription>
                 </DialogHeader>
                 <FetchInvoicesModal onClose={() => setIsOpen(false)} />
             </DialogContent>
@@ -946,7 +1106,7 @@ const FetchInvoicesModal = ({ onClose }: { onClose: () => void }) => {
                         Name
                     </TableHead>
                     <TableHead>
-                        Invoice No
+                        {_("Nº de Factura")}
                     </TableHead>
                     <TableHead>
                         Due Date
@@ -1009,14 +1169,14 @@ const FetchInvoicesModal = ({ onClose }: { onClose: () => void }) => {
         </Table> : null}
         <div className="flex justify-between items-center">
             <div className="flex gap-2">
-                <span className="text-muted-foreground">Invoices: <span className="text-foreground font-mono font-medium">{selectedInvoices.length}</span></span> /
-                <span className="text-muted-foreground">Total: <span className="text-foreground font-mono font-medium">{formatCurrency(selectedInvoices.reduce((acc, invoice) => acc + invoice.outstanding_amount, 0))}</span></span>
+                <span className="text-muted-foreground">{_("Facturas")}: <span className="text-foreground font-mono font-medium">{selectedInvoices.length}</span></span> /
+                <span className="text-muted-foreground">{_("Total")}: <span className="text-foreground font-mono font-medium">{formatCurrency(selectedInvoices.reduce((acc, invoice) => acc + invoice.outstanding_amount, 0))}</span></span>
             </div>
             <DialogFooter className="pt-2">
                 <DialogClose asChild>
-                    <Button variant='ghost' disabled={allocateAmountToReferencesLoading}>Cancel</Button>
+                    <Button variant='ghost' disabled={allocateAmountToReferencesLoading}>{_("Cancelar")}</Button>
                 </DialogClose>
-                <Button onClick={onSelect} disabled={allocateAmountToReferencesLoading}>Select</Button>
+                <Button onClick={onSelect} disabled={allocateAmountToReferencesLoading}>{_("Seleccionar")}</Button>
             </DialogFooter>
         </div>
 
@@ -1076,7 +1236,7 @@ const OtherChargesSection = ({ currency }: { currency: string }) => {
 
     return <div className="flex flex-col gap-2">
         <div className="flex gap-2 items-center">
-            <H4 className="text-base">Other Charges / Deductions</H4>
+            <H4 className="text-base">{_("Otros Cargos / Deducciones")}</H4>
             <TotalDeductions currency={currency} />
         </div>
         <Table>
@@ -1143,7 +1303,7 @@ const OtherChargesSection = ({ currency }: { currency: string }) => {
                                 name={`entries.${index}.user_remark`}
                                 label={_("Remarks")}
                                 inputProps={{
-                                    placeholder: _("e.g. Bank Charges"),
+                                    placeholder: _("ej. Comisiones Bancarias"),
                                     className: 'min-w-64'
                                 }}
                                 hideLabel

@@ -1,4 +1,5 @@
 import { MintBankTransactionDescriptionRules } from './MintBankTransactionDescriptionRules'
+import { MintTransactionRuleAccounts } from './MintTransactionRuleAccounts'
 
 export interface MintBankTransactionRule{
 	name: string
@@ -14,6 +15,7 @@ export interface MintBankTransactionRule{
 	/**	Rule Name : Data	*/
 	rule_name: string
 	/**	Transaction Type : Select	*/
+	bank?: string
 	transaction_type: "Any" | "Withdrawal" | "Deposit"
 	/**	Priority : Int	*/
 	priority: number
@@ -28,11 +30,15 @@ export interface MintBankTransactionRule{
 	/**	Description Rules : Table - Mint Bank Transaction Description Rules	*/
 	description_rules: MintBankTransactionDescriptionRules[]
 	/**	Classify As : Select	*/
-	classify_as: "Bank Entry" | "Payment Entry" | "Transfer"
+	classify_as: "Bank Entry" | "Payment Entry"
 	/**	Account : Link - Account	*/
-	account: string
-	/**	Party Type : Link - DocType	*/
+	account?: string
+	/**	Bank Entry Type : Select	*/
+	bank_entry_type?: "Single Account" | "Multiple Accounts"
+	/**	Party Type : Link - Party Type	*/
 	party_type?: string
 	/**	Party : Dynamic Link	*/
 	party?: string
+	/**	Accounts : Table - Mint Transaction Rule Accounts	*/
+	accounts?: MintTransactionRuleAccounts[]
 }

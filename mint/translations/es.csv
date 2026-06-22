@@ -1,0 +1,309 @@
+About,Acerca de,
+Account,Cuenta,
+Accounts,Cuentas,
+Accounts Manager,Gerente de Cuentas,
+Accounts User,Usuario de Cuentas,
+Action,Acción,
+Amended From,Modificado Desde,
+Amount,Monto,
+Apps,Apps,
+Balance,Saldo,
+Bank,Banco,
+Bank Account,Cuenta bancaria,
+Bank Entry,Registro de Banco,
+Bank Reconciliation,Conciliación bancaria,
+Bank Transaction {0} is already fully reconciled,Transacción bancaria {0} ya está totalmente conciliada,
+Cancelled,Cancelado,
+Check,Marcar,
+Closing Balance,Balance de cierre,
+Company,Empresa,
+Completed,Completado,
+Contains,Contiene,
+Credit,Haber,
+Currency,Divisa / Moneda,
+Date,Fecha,
+Debit,Debe,
+Deposit,Monto de Deposito,
+Description,Descripción,
+Draft,Borrador,
+End Date,Fecha Final,
+Error,Error,
+File,Archivo,
+File Type,Tipo de Archivo,
+Frappe Support,Soporte de Frappe,
+From Bank Account,Cuenta Bancaria Origen,
+From Date,Desde Fecha,
+General,General,
+"Import template should be of type .csv, .xlsx or .xls","La plantilla de importación debe ser de tipo .csv, .xlsx o .xls",
+Journal Entry,Asiento de Diario,
+Keyboard Shortcuts,Atajos de teclado,
+Log out,Cerrar sesión,
+Max Amount,Cantidad Máxima,
+Min Amount,Cantidad mínima,
+Mint Bank Transfer,Transferencia Bancaria
+My Profile,Mi Perfil,
+My Settings,Mis ajustes,
+Not Started,No iniciado,
+PDF,PDF,
+Party,Tercero,
+Party Type,Tipo de Entidad,
+Payment Entry,Registro de Pago,
+Priority,Prioridad,
+Reference,Referencia,
+Reference Number,Número de Referencia,
+Regex,Expresión Regular,
+Reload,Recargar,
+Rule,Regla,
+Rule Description,Descripción de la regla,
+Rule Name,Nombre de la regla,
+Session Defaults,Valores predeterminados de sesión,
+Settings,Configuración,
+Start Date,Fecha de inicio,
+Status,Estado,
+Submitted,Validado,
+System Manager,Gerente de Sistema,
+To Bank Account,Cuenta Bancaria Destino,
+To Date,Hasta Fecha,
+Toggle Full Width,Cambiar a ancho completo,
+Toggle Theme,Cambiar tema,
+Transaction Type,tipo de transacción,
+Transactions,Transacciones,
+Transfer,Transferencia,
+Type,Tipo,
+User Remark,Observaciones,
+Value,Valor,
+View Website,Ver Sitio Web,
+Withdrawal,Retiro,
+{0} {1} does not exist,{0} {1} no existe,
+Transfer,Transferencia,
+Record an internal transfer to another bank/credit card/cash account.,"Registrar una transferencia interna a otra cuenta bancaria, tarjeta de crédito o cuenta de efectivo.",
+Transfer Recorded,Transferencia registrada,
+Cancel,Cancelar,
+Undo,Deshacer,
+Posting Date,Fecha de contabilización,
+Reference Date,Fecha de referencia,
+Reference,Referencia,
+Transferred to,Transferido a,
+Transferred from,Transferido desde,
+Paid From,Pagado desde,
+Paid To,Pagado a,
+Custom Remarks,Comentarios personalizados,
+This will be auto-populated if not set.,Esto se completará automáticamente si no se define.,
+Attachments,Adjuntos,
+Suggested Transfer to {0},Transferencia sugerida a {0},
+The system found a mirror transaction ({0}) in another account with the same amount and date.,"El sistema encontró una transacción espejo ({0}) en otra cuenta con el mismo monto y fecha.",
+Accepting the suggestion will reconcile both transactions.,Aceptar la sugerencia conciliará ambas transacciones.,
+Transferred Out,Retirado,
+Received,Recibido,
+Accepted,Aceptado,
+Use Suggestion,Usar sugerencia,
+No transaction selected,Ninguna transacción seleccionada,
+
+
+Mint,Conciliación Bancaria
+Posted On,Registrado el,
+No Match,Sin coincidencias,
+Complete Match,Coincidencia exacta,
+Partial Match,Coincidencia parcial,
+Create Bank Entry against,Crear registro bancario para,
+Single Account,Cuenta única,
+"Multiple Accounts (Journal Template)","Múltiples cuentas (Plantilla de Diario)",
+Starts with,Comienza con,
+Ends with,Termina con,
+Configure settings for Mint.,Configura los ajustes de Mint.,
+Number of days to match transfers,Número de días para emparejar transferencias,
+"For example, if set to 4, Mint will try to find matching transactions in other banks 4 days before and after the transaction date. This is because transactions can clear on different days on different bank accounts.","Por ejemplo, si se establece en 4, Mint intentará encontrar transacciones coincidentes en otros bancos 4 días antes y después de la fecha de la transacción. Esto se debe a que las transacciones pueden liquidarse en diferentes días en diferentes cuentas bancarias.",
+e.g. Last 3 weeks,ej. Últimas 3 semanas,
+This Fiscal Year,Este Año Fiscal,
+Last Fiscal Year,Año Fiscal Anterior,
+Q1,T1,
+Q2,T2,
+Q3,T3,
+Q4,T4,
+Select {0},Seleccionar {0},
+Customer,Cliente,
+Supplier,Proveedor,
+Employee,Empleado,
+Shareholder,Accionista,
+Run on new transactions,Ejecutar en transacciones nuevas,
+Force evaluate all,Forzar evaluación de todas,
+Run rules automatically,Ejecutar reglas automáticamente,
+Enabled,Habilitado,
+Disabled,Deshabilitado,
+Edit this rule,Editar esta regla,
+"Deleting rule...","Eliminando regla...",
+Rule deleted.,Regla eliminada.,
+Failed to delete rule.,Fallo al eliminar regla.,
+Rules evaluation started,Evaluación de reglas iniciada,
+Rules evaluation completed,Evaluación de reglas completada,
+Failed to run rules evaluation,Fallo al ejecutar la evaluación de reglas,
+Rule priorities updated,Prioridades de reglas actualizadas,
+Failed to update rule priorities,Fallo al actualizar prioridades de reglas,
+"Running...","Ejecutando...",
+"Run rules on unreconciled transactions that haven't been evaluated yet","Ejecutar reglas en transacciones sin conciliar que no han sido evaluadas aún",
+"Force re-evaluate all unreconciled transactions, even if they were previously evaluated","Forzar re-evaluación de todas las transacciones sin conciliar, incluso si fueron evaluadas previamente",
+No rules found,No se encontraron reglas,
+"Updating...","Actualizando...",
+"Scheduled job enabled. Transactions will be auto classified.","Trabajo programado habilitado. Las transacciones se clasificarán automáticamente.",
+"Scheduled job disabled. Transactions will not be auto classified.","Trabajo programado deshabilitado. Las transacciones no se clasificarán automáticamente.",
+Failed to update auto classify transactions settings,Fallo al actualizar la configuración de clasificación automática de transacciones,
+Drag to reorder,Arrastrar para reordenar,
+Delete,Eliminar,
+Close,Cerrar,
+Any,Cualquiera,
+Reconciliation History,Historial de conciliación,
+View all reconciliation actions taken in this session.,Ver todas las acciones de conciliación realizadas en esta sesión.,
+No reconciliation actions found,No se encontraron acciones de conciliación,
+You have not performed any reconciliations in this session yet.,Aún no has realizado ninguna conciliación en esta sesión.,
+Matched,Emparejado,
+Bulk Payment,Pago Masivo,
+Payment,Pago,
+Bulk Transfer,Transferencia Masiva,
+Bulk Bank Entry,Registro Bancario Masivo,
+Transaction Date,Fecha de la transacción,
+Spent,Gastado,
+Received,Recibido,
+"Split across {} accounts","Dividido en {} cuentas",
+No invoice linked,Ninguna factura vinculada,
+1 invoice,1 factura,
+"{} invoices","{} facturas",
+Document,Documento,
+Invoice No,Nº Factura,
+Due Date,Fecha Vto,
+Grand Total,Total,
+Allocated,Asignado,
+Match,Emparejar,
+Unmatched,Desemparejado,
+There was an error while performing the action.,Hubo un error al realizar la acción.,
+Unmatch Transaction?,¿Desemparejar Transacción?,
+"Undo {}?","¿Deshacer {}?",
+Are you sure you want to unmatch the voucher from this transaction?,¿Estás seguro de que quieres desemparejar el comprobante de esta transacción?,
+"Are you sure you want to cancel this {} {}?","¿Estás seguro de que quieres cancelar este {} {}?",
+Action Type,Tipo de Acción,
+Voucher Type,Tipo de Comprobante,
+Voucher Name,Nombre de Comprobante,
+Transfer Account,Cuenta de Transferencia,
+Payment Details,Detalles de Pago,
+Document Type,Tipo de Documento,
+Payment Document,Documento de Pago,
+Posting Date,Fecha de Contabilización,
+Cheque/Reference Number,Nº Cheque/Referencia,
+Clearance Date,Fecha de Liquidación,
+Against Account,Contra la cuenta,
+Amount,Monto,
+Status,Estado,
+Cleared,Liquidado,
+Not Cleared,No Liquidado,
+"Set the clearance date for this voucher without reconciling with a bank transaction.","Establecer la fecha de liquidación para este comprobante sin conciliar con una transacción bancaria.",
+Force Clear Voucher,Forzar Liquidación de Comprobante,
+Force Clear,Forzar Liquidación,
+Cancel,Cancelar,
+Submit,Enviar,
+Copy to clipboard,Copiar al portapapeles,
+Copied to clipboard,Copiado al portapapeles,
+No entries found,No se encontraron entradas,
+"There are no accounting entries in the system for the selected account and dates.","No hay entradas contables en el sistema para la cuenta y fechas seleccionadas.",
+"A continuación se muestra una lista de todas las entradas contables registradas contra la cuenta bancaria {0} entre {1} y {2}.","A continuación se muestra una lista de todas las entradas contables registradas contra la cuenta bancaria {0} entre {1} y {2}.",
+Por favor selecciona una cuenta bancaria para ver el resumen de cambios bancarios.,Por favor selecciona una cuenta bancaria para ver el resumen de cambios bancarios.,
+Por favor selecciona las fechas para ver el resumen de cambios bancarios.,Por favor selecciona las fechas para ver el resumen de cambios bancarios.,
+Clearance date updated,Fecha de liquidación actualizada,
+"No unreconciled transactions found","No se encontraron transacciones no conciliadas",
+"Import your bank statement to get started.","Importa tu estado de cuenta bancario para comenzar.",
+"Bank Statement","Estado de Cuenta",
+"Upload your bank statement file to start the import process. We support CSV, and XLSX files.","Sube tu archivo de estado de cuenta para iniciar el proceso de importación. Soportamos archivos CSV y XLSX.",
+"View Instructions","Ver instrucciones",
+"Statement Import Instructions","Instrucciones de Importación de Estado de Cuenta",
+"We support uploading CSV, XLSX and XLS files. Please make sure the file contains the correct columns.","Soportamos la carga de archivos CSV, XLSX y XLS. Asegúrate de que el archivo contenga las columnas correctas.",
+"The file should contain the following columns with a distinct header row. You can upload most bank statements as is without changing the columns.","El archivo debe contener las siguientes columnas con una fila de encabezado distintiva. Puedes subir la mayoría de los estados de cuenta tal cual sin cambiar las columnas.",
+"The date of the transaction","La fecha de la transacción",
+"This can contain ""CR""/""DR"" values or positive/negative values. You could also have a separate column for CR/DR.","Puede contener valores ""CR""/""DR"" o valores positivos/negativos. También podría tener una columna separada para CR/DR.",
+"The withdrawal or deposit amounts - only required if there's no amount column.","Los montos de retiro o depósito - solo es requerido si no hay columna de monto.",
+"The description of the transaction","La descripción de la transacción",
+"The reference number of the transaction","El número de referencia de la transacción",
+"No bank statements imported yet","Aún no hay estados de cuenta importados",
+"Maps To","Equivale a",
+"Imported On","Importado el",
+"Transaction Dates","Fechas de las Transacciones",
+"Number of Transactions","Número de Transacciones",
+"Previous Imports","Importaciones Anteriores",
+"No outstanding {0} found for the {1} {2} which qualify the filters you have specified.","No se encontraron {0} pendientes para el/la {1} {2} que cumplan con los filtros especificados."
+"invoices","facturas"
+"orders","órdenes"
+"invoices or orders","facturas u órdenes"
+"Please upload a file","Por favor sube un archivo"
+"Invalid file type","Tipo de archivo inválido"
+"All rows must have an amount and a type. Missing in row {0}","Todas las filas deben tener un monto y un tipo. Falta en la fila {0}"
+"No transactions found","No se encontraron transacciones"
+"From Bank Account and To Bank Account cannot be the same.","La Cuenta Bancaria Origen y la Cuenta Bancaria Destino no pueden ser la misma."
+"Bank Account '{0}' does not have a linked GL Account.","La Cuenta Bancaria '{0}' no tiene una Cuenta Contable enlazada."
+"Min amount cannot be greater than max amount.","El monto mínimo no puede ser mayor que el monto máximo."
+"Party type is required to create a payment entry.","El tipo de parte es requerido para crear un registro de pago."
+"Party is required create a payment entry.","La parte es requerida para crear un registro de pago."
+"Party account is required to create a payment entry.","La cuenta de la parte es requerida para crear un registro de pago."
+"Please add an account for the Bank Entry rule.","Por favor agrega una cuenta para la regla del Registro Bancario."
+"Please configure accounts for the Bank Entry rule.","Por favor configura las cuentas para la regla del Registro Bancario."
+"The last account row must not have any debit or credit amounts set.","La última fila de cuenta no debe tener montos de débito o crédito establecidos."
+"Invalid regex pattern.","Patrón regex inválido."
+"This method is only meant for developer mode","Este método solo está destinado para el modo desarrollador"
+"{0} {1} does not exist","{0} {1} no existe"
+"You do not have permission to import bank transactions","No tienes permiso para importar transacciones bancarias"
+"You do not have permission to import and submit bank transactions","No tienes permiso para importar y enviar transacciones bancarias"
+"The bank account is not a company account. Please select a company account","La cuenta bancaria no es una cuenta de empresa. Por favor selecciona una cuenta de empresa"
+"The bank account is disabled. Please enable it","La cuenta bancaria está deshabilitada. Por favor habilítala"
+"Import template should be of type .csv, .xlsx or .xls","La plantilla de importación debe ser de tipo .csv, .xlsx o .xls"
+"Google Project ID is not set. Please set it in the Mint Settings.","El ID del Proyecto de Google no está configurado. Por favor configúralo en la Configuración de Mint."
+"Invalid processor type: {0}","Tipo de procesador inválido: {0}"
+"Google APIs are not enabled. Please enable them in Mint Settings.","Las APIs de Google no están habilitadas. Por favor habilítalas en la Configuración de Mint."
+"Failed to create processor","Fallo al crear el procesador"
+"Failed to create document processor","Fallo al crear el procesador de documentos"
+"Google Project ID is not set in Mint Settings","El ID del Proyecto de Google no está configurado en la Configuración de Mint"
+"Google Service Account JSON Key is not set in Mint Settings","La clave JSON de la cuenta de servicio de Google no está configurada en la Configuración de Mint"
+"Bank Statement Processor is not set in Mint Settings","El Procesador de Estado de Cuenta Bancario no está configurado en la Configuración de Mint"
+
+"Closing Balance as of {}","Saldo de cierre al {}"
+"As of {0}","Al {0}"
+"Enter the closing balance you see in your bank statement for {0} as of the {1}","Ingresa el saldo de cierre que ves en tu estado de cuenta para {0} al {1}"
+
+"This is what the system expects the closing balance to be in your bank statement.","Esto es lo que el sistema espera que sea el saldo de cierre en tu estado de cuenta."
+"It takes into account all the transactions that have been posted and subtracts the transactions that have not cleared yet.","Toma en cuenta todas las transacciones que han sido registradas y resta las transacciones que aún no han sido liquidadas."
+"If your bank statement shows a different closing balance, it is because all transactions have not reconciled yet.","Si tu estado de cuenta muestra un saldo de cierre diferente, es porque no todas las transacciones han sido conciliadas."
+"For more information, click on the <strong>Bank Reconciliation Statement</strong> tab below.","Para más información, haz clic en la pestaña <strong>Estados de conciliación bancarios</strong> de abajo."
+"Click to set the closing balance as per statement","Haz clic para establecer el saldo de cierre según el estado de cuenta"
+"Closing balance set.","Saldo de cierre establecido."
+"Closing balance is required.","El saldo de cierre es requerido."
+"Deleting closing balance...","Eliminando saldo de cierre..."
+"Closing balance deleted.","Saldo de cierre eliminado."
+"Failed to delete closing balance.","Fallo al eliminar saldo de cierre."
+"Balances as per bank statement before {0}","Saldos según el estado de cuenta antes del {0}"
+
+"Payment Entry Created","Registro de Pago Creado"
+"Amount matches the selected transaction","El monto coincide con la transacción seleccionada"
+"Amount does not match the selected transaction","El monto no coincide con la transacción seleccionada"
+"Posting date matches the transaction date","La fecha de contabilización coincide con la fecha de la transacción"
+"Posting date does not match the transaction date","La fecha de contabilización no coincide con la fecha de la transacción"
+"Reference date matches the transaction date","La fecha de referencia coincide con la fecha de la transacción"
+"Reference date does not match the transaction date","La fecha de referencia no coincide con la fecha de la transacción"
+"Complete Match","Coincidencia Exacta"
+"Partial Match","Coincidencia Parcial"
+"No Match","Sin coincidencias"
+"Reference matches the selected transaction","La referencia coincide con la transacción seleccionada"
+"Reference matches the selected transaction partially","La referencia coincide parcialmente con la transacción seleccionada"
+"Reference does not match the selected transaction","La referencia no coincide con la transacción seleccionada"
+"Reconciling","Conciliando"
+"Reconcile","Conciliar"
+"Suggested","Sugerido"
+"Action Type","Tipo de Acción"
+"Account","Cuenta"
+"Party","Parte"
+"Crear","Crear"
+
+"Bank Entry Created","Registro de Banco Creado"
+"Import {0} transactions","Importar {0} transacciones"
+"Importing...","Importando..."
+
+"There was an error.","Hubo un error."
+"There was an error while importing the bank statement.","Hubo un error al importar el estado de cuenta bancario."
+"There was an error while performing the action.","Hubo un error al realizar la acción."
+Bank Reference Rule,Reglas de Referencia Bancaria
+Bank Transaction Rule,Regla de Referencia Bancaria
+Bank Reference Rule,Regla de Referencia Bancaria

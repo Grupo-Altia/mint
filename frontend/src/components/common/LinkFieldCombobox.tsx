@@ -110,7 +110,7 @@ const LinkFieldCombobox = ({
     readOnly,
     disabled,
     filterFn,
-    placeholder = `Select ${doctype}`,
+    placeholder = _("Select {0}", [_(doctype)]),
     customQuery,
     searchfield,
     searchAPIPath = "frappe.desk.search.search_link",
@@ -222,8 +222,9 @@ const LinkFieldCombobox = ({
                         role="combobox"
                         ref={buttonRef}
                         tabIndex={0}
-                        disabled={disabled}
+                        disabled={disabled || readOnly}
                         aria-expanded={open}
+                        aria-readonly={readOnly}
                         className={cn("w-full justify-between font-normal group",
                             readOnly ? "bg-muted" : ""
                             , buttonClassName)}>
@@ -272,7 +273,7 @@ const LinkFieldCombobox = ({
                                 <a href={`/app/${slug(doctype)}/new-${slug(doctype)}-1`}
                                     target="_blank"
                                     className="hover:underline underline-offset-4 cursor-pointer flex justify-between items-center">
-                                    {_("Create New {0}", [doctype])}
+                                    {_("Create New {0}", [_(doctype)])}
 
                                     <ExternalLink />
                                 </a>

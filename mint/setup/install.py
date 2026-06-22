@@ -41,5 +41,7 @@ def after_install():
                 "read_only": 1,
                 "allow_on_submit": 1,
 			}
-		]
+        ]
         })
+    
+    make_property_setter("Bank Transaction", "", "track_changes", 0, "Check")

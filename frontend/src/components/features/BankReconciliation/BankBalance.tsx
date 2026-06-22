@@ -1,20 +1,30 @@
-import { useAtom, useAtomValue } from "jotai"
-import { bankRecClosingBalanceAtom, bankRecDateAtom, selectedBankAccountAtom } from "./bankRecAtoms"
-import { useFrappeGetDocCount } from "frappe-react-sdk"
+import { useAtomValue, useSetAtom } from "jotai"
+import { bankRecClosingBalanceAtom, bankRecDateAtom, SelectedBank, selectedBankAccountAtom } from "./bankRecAtoms"
+import { FrappeConfig, FrappeContext, useFrappeGetDocCount, useFrappeGetDocList, useFrappePostCall, useSWRConfig } from "frappe-react-sdk"
 import { BankTransaction } from "@/types/Accounts/BankTransaction"
 import { Progress } from "@/components/ui/progress"
-import { useGetAccountClosingBalance, useGetAccountOpeningBalance, useGetUnreconciledTransactions } from "./utils"
-import { flt, formatCurrency, getCurrencyFormatInfo } from "@/lib/numbers"
+import { useGetAccountClosingBalance, useGetAccountClosingBalanceAsPerStatement, useGetAccountOpeningBalance, useGetUnreconciledTransactions } from "./utils"
+import { flt, formatCurrency } from "@/lib/numbers"
 import { Skeleton } from "@/components/ui/skeleton"
 import { StatContainer, StatLabel, StatValue } from "@/components/ui/stats"
-import { Info } from "lucide-react"
+import { Edit, Info, Trash2 } from "lucide-react"
 import { H4, Paragraph } from "@/components/ui/typography"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
-import { Input } from "@/components/ui/input"
-import CurrencyInput from 'react-currency-input-field'
 import { getCompanyCurrency } from "@/lib/company"
-import { getCurrencySymbol } from "@/lib/currency"
 import _ from "@/lib/translate"
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { formatDate } from "@/lib/date"
+import { Form } from "@/components/ui/form"
+import { CurrencyFormField } from "@/components/ui/form-elements"
+import { useForm } from "react-hook-form"
+import { Button } from "@/components/ui/button"
+import { useContext, useState } from "react"
+import { Separator } from "@/components/ui/separator"
+import { MintBankStatementBalance } from "@/types/Mint/MintBankStatementBalance"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { toast } from "sonner"
+import ErrorBanner from "@/components/ui/error-banner"
 
 const BankBalance = () => {
 
@@ -42,7 +52,22 @@ const OpeningBalance = () => {
     const { data, isLoading } = useGetAccountOpeningBalance()
 
     return <StatContainer className="min-w-48">
-        <StatLabel>{_("Opening Balance")}</StatLabel>
+        <div className="flex items-start gap-1">
+            <StatLabel>{_("Opening Balance")}</StatLabel>
+            <HoverCard openDelay={100}>
+                <HoverCardTrigger>
+                    <Info size='14px' className="text-secondary-foreground/80" />
+                </HoverCardTrigger>
+                <HoverCardContent className="w-96" align="start" side="right">
+                    <H4 className="text-base">{_("Saldo de Apertura")}</H4>
+                    <Paragraph className="mt-2 text-sm">
+                        {_("Este es el saldo inicial de la cuenta bancaria para el período de fechas seleccionado.")}
+                        <br />
+                        {_("Representa el dinero disponible en el sistema antes de empezar a sumar o restar las transacciones de este bloque de fechas.")}
+                    </Paragraph>
+                </HoverCardContent>
+            </HoverCard>
+        </div>
         {isLoading ? <Skeleton className="w-[150px] h-9" /> : <StatValue className="font-mono">{formatCurrency(flt(data?.message, 2), bankAccount?.account_currency ?? getCompanyCurrency(bankAccount?.company ?? ''))}</StatValue>}
     </StatContainer>
 }
@@ -55,14 +80,14 @@ const ClosingBalance = () => {
         <StatContainer className="min-w-48">
             <div className="flex items-start gap-1">
                 <StatLabel>
-                    {_("Closing Balance as per system")}
+                    {_("Saldo según el sistema")}
                 </StatLabel>
                 <HoverCard openDelay={100}>
                     <HoverCardTrigger>
                         <Info size='14px' className="text-secondary-foreground/80" />
                     </HoverCardTrigger>
                     <HoverCardContent className="w-96" align="start" side="right">
-                        <H4 className="text-base">{_("Closing balance as per system")}</H4>
+                        <H4 className="text-base">{_("Saldo según el sistema")}</H4>
                         <Paragraph className="mt-2 text-sm">
                             {_("This is what the system expects the closing balance to be in your bank statement.")}
                             <br />
@@ -70,7 +95,7 @@ const ClosingBalance = () => {
                             <br />
                             {_("If your bank statement shows a different closing balance, it is because all transactions have not reconciled yet.")}
                             <br /><br />
-                            For more information, click on the <strong>Bank Reconciliation Statement</strong> tab below.
+                            <span dangerouslySetInnerHTML={{ __html: _("For more information, click on the <strong>Bank Reconciliation Statement</strong> tab below.") }} />
                         </Paragraph>
                     </HoverCardContent>
                 </HoverCard>
@@ -79,47 +104,6 @@ const ClosingBalance = () => {
             {isLoading ? <Skeleton className="w-[150px] h-9" /> : <StatValue className="font-mono">{formatCurrency(flt(data?.message, 2), bankAccount?.account_currency ?? getCompanyCurrency(bankAccount?.company ?? ''))}</StatValue>}
         </StatContainer>
     )
-}
-
-const ClosingBalanceAsPerStatement = () => {
-
-    const bankAccount = useAtomValue(selectedBankAccountAtom)
-
-    const currency = bankAccount?.account_currency ?? getCompanyCurrency(bankAccount?.company ?? '')
-    const currencySymbol = getCurrencySymbol(currency)
-    
-    const formatInfo = getCurrencyFormatInfo(currency)
-    const groupSeparator = formatInfo.group_sep || ","
-    const decimalSeparator = formatInfo.decimal_str || "."
-
-    const [value, setValue] = useAtom(bankRecClosingBalanceAtom(bankAccount?.name ?? ''))
-
-    return <StatContainer>
-        <StatLabel className="mb-1">{_("Enter Closing Balance as per statement")}</StatLabel>
-        <CurrencyInput
-            groupSeparator={groupSeparator}
-            decimalSeparator={decimalSeparator}
-            placeholder={`${currencySymbol}0${decimalSeparator}00`}
-            decimalsLimit={2}
-            value={value.stringValue}
-            maxLength={12}
-            decimalScale={2}
-            prefix={currencySymbol}
-            onValueChange={(v, _n, values) => {
-                // If the input ends with a decimal or a decimal with trailing zeroes, store the string since we need the user to be able to type the decimals.
-                // When the user eventually types the decimals or blurs out, the value is formatted anyway.
-                // Otherwise store the float value
-                // Check if the value ends with a decimal or a decimal with trailing zeroes
-                const isDecimal = v?.endsWith(decimalSeparator) || v?.endsWith(decimalSeparator + '0')
-                const newValue = isDecimal ? v : values?.float ?? ''
-                setValue({
-                    value: Number(newValue),
-                    stringValue: newValue
-                })
-            }}
-            customInput={Input}
-        />
-    </StatContainer>
 }
 
 const Difference = () => {
@@ -134,7 +118,22 @@ const Difference = () => {
     const isError = difference !== 0
 
     return <StatContainer className="w-fit text-right sm:min-w-56">
-        <StatLabel className="text-right">{_("Difference")}</StatLabel>
+        <div className="flex items-start justify-end gap-1">
+            <StatLabel className="text-right">{_("Monto por conciliar")}</StatLabel>
+            <HoverCard openDelay={100}>
+                <HoverCardTrigger>
+                    <Info size='14px' className="text-secondary-foreground/80" />
+                </HoverCardTrigger>
+                <HoverCardContent className="w-96 text-left" align="end" side="left">
+                    <H4 className="text-base">{_("Monto por conciliar")}</H4>
+                    <Paragraph className="mt-2 text-sm">
+                        {_("Es la diferencia matemática entre el Saldo según el sistema y el Saldo según el banco.")}
+                        <br />
+                        {_("El objetivo final es que este monto sea exactamente cero (0,00). Si no lo es, significa que existen transacciones registradas en Frappe que no están liquidadas contra el banco, o que el saldo bancario introducido no coincide con los pagos ingresados.")}
+                    </Paragraph>
+                </HoverCardContent>
+            </HoverCard>
+        </div>
         {isLoading ? <Skeleton className="w-[150px] h-9" /> : <StatValue className={isError ? 'text-destructive font-mono' : 'font-mono'}>
             {formatCurrency(difference,
                 bankAccount?.account_currency ?? getCompanyCurrency(bankAccount?.company ?? ''))
@@ -153,7 +152,7 @@ const ReconcileProgress = () => {
         ['docstatus', '=', 1],
         ['date', '<=', dates?.toDate],
         ['date', '>=', dates?.fromDate]
-    ], false, false, undefined, {
+    ], false, undefined, {
         revalidateOnFocus: false
     })
 
@@ -165,12 +164,198 @@ const ReconcileProgress = () => {
 
     return <div className="w-[18%] flex flex-col gap-1 items-end">
         <div>
-            <span className="text-right font-medium text-sm">{_("Your Progress")}: {reconciledCount} / {totalCount} {_("reconciled")}</span>
+            <span className="text-right font-medium text-sm">{_("Tu Progreso")}: {reconciledCount} / {totalCount} {_("conciliados")}</span>
         </div>
         <div className="w-full">
             <Progress value={progress} max={100} />
         </div>
     </div>
+}
+
+const ClosingBalanceAsPerStatement = () => {
+
+    const bankAccount = useAtomValue(selectedBankAccountAtom)
+    const dates = useAtomValue(bankRecDateAtom)
+    const setValue = useSetAtom(bankRecClosingBalanceAtom(bankAccount?.name ?? ''))
+
+    const { data, isLoading } = useGetAccountClosingBalanceAsPerStatement({
+        onSuccess: (data) => {
+            if (data?.message && data?.message?.balance) {
+                setValue({
+                    value: data?.message?.balance,
+                    stringValue: data?.message?.balance.toString()
+                })
+            }
+        }
+    })
+
+    const isDateSame = data?.message?.date === dates.toDate
+
+    const [isOpen, setIsOpen] = useState(false)
+
+
+    return <StatContainer className="min-w-48">
+        <StatLabel>{_("Saldos según el banco")}</StatLabel>
+        <div className="flex flex-col gap-2 items-start">
+            <Dialog open={isOpen} onOpenChange={setIsOpen}>
+                <DialogTrigger>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <div className="flex items-center gap-4 underline cursor-pointer underline-offset-6">
+                                {isLoading ? <Skeleton className="w-[150px] h-9" /> : <StatValue className="font-mono">{formatCurrency(flt(data?.message?.balance, 2), bankAccount?.account_currency ?? getCompanyCurrency(bankAccount?.company ?? ''))}</StatValue>}
+                                <Edit className="w-4 h-4" />
+                            </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            {_("Click to set the closing balance as per statement")}
+                        </TooltipContent>
+                    </Tooltip>
+                </DialogTrigger>
+                <DialogContent>
+                    <ClosingBalanceForm
+                        defaultBalance={data?.message?.balance ?? 0}
+                        date={dates.toDate}
+                        bankAccount={bankAccount}
+                        onClose={() => setIsOpen(false)}
+                    />
+
+
+                </DialogContent>
+            </Dialog>
+            {!isDateSame && data?.message.date && <span className="text-xs font-medium text-destructive">{_("As of {0}", [formatDate(data?.message?.date ?? '', 'Do MMM YYYY')])}</span>}
+        </div>
+    </StatContainer>
+
+}
+
+const ClosingBalanceForm = ({ defaultBalance, date, bankAccount, onClose }: { defaultBalance: number, date: string, bankAccount: SelectedBank | null, onClose: VoidFunction }) => {
+
+    const { mutate } = useSWRConfig()
+
+    const form = useForm<{ balance: number }>({
+        defaultValues: {
+            balance: defaultBalance
+        }
+    })
+
+    const setValue = useSetAtom(bankRecClosingBalanceAtom(bankAccount?.name ?? ''))
+
+    const { call, loading, error } = useFrappePostCall("mint.apis.bank_account.set_closing_balance_as_per_statement")
+
+    const onSubmit = (data: { balance: number }) => {
+        if (data.balance) {
+            call({
+                bank_account: bankAccount?.name ?? '',
+                date: date,
+                balance: data.balance
+            })
+                .then(() => {
+                    // Mutate the closing balance as per statement
+                    mutate(`bank-reconciliation-account-closing-balance-as-per-statement-${bankAccount?.name}-${date}`)
+                    setValue({
+                        value: data.balance,
+                        stringValue: data.balance.toString()
+                    })
+                    toast.success(_("Closing balance set."))
+                    onClose()
+
+
+                })
+        } else {
+            toast.error(_("Closing balance is required."))
+        }
+    }
+
+    const currency = bankAccount?.account_currency ?? getCompanyCurrency(bankAccount?.company ?? '')
+
+
+    return <Form {...form}>
+        <form onSubmit={form.handleSubmit(onSubmit)}>
+            <DialogHeader>
+                <DialogTitle>{_("Establecer el saldo según el banco")}</DialogTitle>
+                <DialogDescription>
+                    {_("Enter the closing balance you see in your bank statement for {0} as of the {1}", [bankAccount?.account_name ?? bankAccount?.name ?? '', formatDate(date, 'Do MMM YYYY')])}
+                </DialogDescription>
+            </DialogHeader>
+            {error && <ErrorBanner error={error} />}
+            <div className="py-4">
+                <CurrencyFormField
+                    name="balance"
+                    label={_("Saldo según el banco al {0}", [formatDate(date, 'Do MMM YYYY')])}
+                    isRequired
+                    currency={currency}
+                />
+            </div>
+
+            <DialogFooter>
+                <DialogClose asChild>
+                    <Button variant={'outline'} disabled={loading}>{_("Cancel")}</Button>
+                </DialogClose>
+                <Button type='submit' disabled={loading}>{_("Save")}</Button>
+            </DialogFooter>
+
+            <ClosingBalancesList bankAccount={bankAccount} date={date} />
+        </form>
+    </Form>
+}
+
+const ClosingBalancesList = ({ bankAccount, date }: { bankAccount: SelectedBank | null, date: string }) => {
+
+    const { data, mutate } = useFrappeGetDocList<MintBankStatementBalance>("Mint Bank Statement Balance", {
+        filters: [["bank_account", "=", bankAccount?.name ?? ''], ["date", "<=", date]],
+        orderBy: {
+            field: "date",
+            order: "desc"
+        },
+        fields: ["date", "balance", "name"],
+        limit: 10
+    })
+
+    const { db } = useContext(FrappeContext) as FrappeConfig
+
+    const onDelete = (name: string) => {
+        toast.promise(db.deleteDoc("Mint Bank Statement Balance", name).then(() => {
+            mutate()
+        }), {
+            loading: _("Deleting closing balance..."),
+            success: _("Closing balance deleted."),
+            error: _("Failed to delete closing balance.")
+        })
+    }
+
+    if (data?.length === 0) {
+        return null
+    }
+
+    return <div>
+        <Separator className="my-8" />
+        <p className="text-sm text-center">{_("Balances as per bank statement before {0}", [formatDate(date, 'Do MMM YYYY')])}</p>
+        <Table>
+            <TableHeader>
+                <TableRow>
+                    <TableHead>{_("Date")}</TableHead>
+                    <TableHead className="text-right">{_("Balance")}</TableHead>
+                    <TableHead></TableHead>
+                </TableRow>
+            </TableHeader>
+            <TableBody>
+                {data?.map((item) => (
+                    <TableRow key={item.name}>
+                        <TableCell>{formatDate(item.date, 'Do MMM YYYY')}</TableCell>
+                        <TableCell className="text-right">{formatCurrency(flt(item.balance, 2), bankAccount?.account_currency ?? getCompanyCurrency(bankAccount?.company ?? ''))}</TableCell>
+                        <TableCell className="text-right">
+                            <Button
+                                title={_("Delete")}
+                                type='button' size='icon' className="h-fit w-fit p-0 hover:bg-transparent active:bg-transparent hover:text-destructive" variant='ghost' onClick={() => onDelete(item.name)}>
+                                <Trash2 />
+                            </Button>
+                        </TableCell>
+                    </TableRow>
+                ))}
+            </TableBody>
+        </Table>
+    </div>
+
 }
 
 export default BankBalance

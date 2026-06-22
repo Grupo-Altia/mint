@@ -54,10 +54,17 @@ def evaluate_transaction(transaction, rule_docs):
 
     for rule in rule_docs:
 
-        if rule.company != transaction.company:
-            continue
+       
+        # Si la regla tiene un banco asignado, verificamos que coincida con el banco de la transacción.
+        if rule.bank:
+            # Buscamos a qué institución pertenece la cuenta bancaria de esta transacción
+            transaction_bank = frappe.db.get_value("Bank Account", transaction.bank_account, "bank")
+            
+            if rule.bank != transaction_bank:
+                continue
+       
 
-        # Run the rules
+
 
         # Type rule - we continue searching for a rule if the transaction type does not match
         if rule.transaction_type == "Withdrawal":
@@ -107,4 +114,26 @@ def evaluate_transaction(transaction, rule_docs):
         "is_rule_evaluated": 1,
         "matched_rule": matched_rule.name if matched_rule else None
     })
-        
+
+@frappe.whitelist()
+def delete_rule(rule_name):
+    """
+    Deletes a Mint Bank Transaction Rule by manually unlinking it first.
+    """
+    # Unlink transactions manually before deletion to avoid LinkExistsError
+    frappe.db.sql("""UPDATE `tabBank Transaction` SET matched_rule = NULL WHERE matched_rule = %s""", rule_name)
+    
+    frappe.delete_doc("Mint Bank Transaction Rule", rule_name)
+
+@frappe.whitelist()
+def has_rule_manage_permission():
+    user = frappe.session.user
+    if user == "Administrator":
+        return True
+    roles = frappe.get_roles(user)
+    allowed_roles = ["System Manager", "Soporte 1", "ISP Support Level 1", "ISP Support"]
+    for role in roles:
+        if role in allowed_roles or "gerente" in role.lower():
+            return True
+    return False
+

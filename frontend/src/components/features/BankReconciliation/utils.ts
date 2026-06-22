@@ -1,7 +1,7 @@
-import { bankRecDateAtom, bankRecMatchFilters, bankRecSelectedTransactionAtom, bankRecUnreconcileModalAtom, SelectedBank, selectedBankAccountAtom } from './bankRecAtoms'
-import { useAtomValue, useSetAtom } from 'jotai'
+import { ActionLog, bankRecActionLog, bankRecAmountFilter, bankRecDateAtom, bankRecMatchFilters, bankRecSearchText, bankRecSelectedTransactionAtom, bankRecStrictMatchingAtom, bankRecTransactionTypeFilter, bankRecUnreconcileModalAtom, SelectedBank, selectedBankAccountAtom } from './bankRecAtoms'
+import { useAtom, useAtomValue, useSetAtom } from 'jotai'
 import { useMemo } from 'react'
-import { useFrappeGetCall, useFrappeGetDoc, useFrappePostCall, useSWRConfig } from 'frappe-react-sdk'
+import { SWRConfiguration, useFrappeGetCall, useFrappeGetDoc, useFrappePostCall, useSWRConfig } from 'frappe-react-sdk'
 import { BankTransaction } from '@/types/Accounts/BankTransaction'
 import { BankAccount } from '@/types/Accounts/BankAccount'
 import dayjs from 'dayjs'
@@ -11,6 +11,10 @@ import { getErrorMessage } from '@/lib/frappe'
 import { useCurrentCompany } from '@/hooks/useCurrentCompany'
 import _ from '@/lib/translate'
 import { MintBankTransactionRule } from '@/types/Mint/MintBankTransactionRule'
+import { useRef } from 'react'
+import type { DebouncedState } from 'usehooks-ts'
+import { useDebounceCallback } from 'usehooks-ts'
+import Fuse from 'fuse.js'
 
 export const useGetAccountOpeningBalance = () => {
 
@@ -60,6 +64,23 @@ export const useGetAccountClosingBalance = () => {
 
 }
 
+/**
+ * Hook to fetch the closing balance set in the database for the given bank and date
+ */
+export const useGetAccountClosingBalanceAsPerStatement = (swrConfig: SWRConfiguration = {}) => {
+
+    const dates = useAtomValue(bankRecDateAtom)
+    const bankAccount = useAtomValue(selectedBankAccountAtom)
+
+    return useFrappeGetCall<{ message: { balance: number, date?: string } }>("mint.apis.bank_account.get_closing_balance_as_per_statement", {
+        bank_account: bankAccount?.name,
+        date: dates.toDate
+    }, `bank-reconciliation-account-closing-balance-as-per-statement-${bankAccount?.name}-${dates.toDate}`, {
+        revalidateOnFocus: false,
+        ...swrConfig
+    })
+}
+
 export type UnreconciledTransaction = Pick<BankTransaction, 'name' | 'matched_rule' | 'date' | 'withdrawal' | 'deposit' | 'currency' | 'description' | 'status' | 'transaction_type' | 'reference_number' | 'party_type' | 'party' | 'bank_account' | 'company' | 'unallocated_amount'>
 
 
@@ -86,7 +107,8 @@ export interface LinkedPayment {
     posting_date: string,
     party_type?: string,
     party?: string,
-    currency: string
+    currency: string,
+    matched_by_rule?: boolean
 }
 
 export const useGetBankTransactions = () => {
@@ -97,7 +119,7 @@ export const useGetBankTransactions = () => {
         from_date: dates.fromDate,
         to_date: dates.toDate,
         all_transactions: true
-    }, `bank-reconciliation-bank-transactions-${bankAccount?.name}-${dates.fromDate}-${dates.toDate}`)
+    }, bankAccount ? `bank-reconciliation-bank-transactions-${bankAccount?.name}-${dates.fromDate}-${dates.toDate}` : null)
 }
 
 
@@ -106,14 +128,16 @@ export const useGetVouchersForTransaction = (transaction: UnreconciledTransactio
     const dates = useAtomValue(bankRecDateAtom)
 
     const matchFilters = useAtomValue(bankRecMatchFilters)
+    const strictMatching = useAtomValue(bankRecStrictMatchingAtom)
 
-    return useFrappeGetCall<{ message: LinkedPayment[] }>('erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool.get_linked_payments', {
+    return useFrappeGetCall<{ message: LinkedPayment[] }>('mint.apis.reconciliation.get_linked_payments', {
         bank_transaction_name: transaction.name,
         document_types: matchFilters ?? ['payment_entry', 'journal_entry'],
         from_date: dates.fromDate,
         to_date: dates.toDate,
-        filter_by_reference_date: 0
-    }, `bank-reconciliation-vouchers-${transaction.name}-${dates.fromDate}-${dates.toDate}-${matchFilters.join(',')}`, {
+        filter_by_reference_date: 0,
+        strict_matching: strictMatching ? 1 : 0
+    }, `bank-reconciliation-vouchers-${transaction.name}-${dates.fromDate}-${dates.toDate}-${matchFilters.join(',')}-${strictMatching}`, {
         revalidateOnFocus: false
     })
 }
@@ -131,6 +155,10 @@ export const useRefreshUnreconciledTransactions = () => {
 
     const { mutate } = useSWRConfig()
 
+    const searchString = useAtomValue(bankRecSearchText)
+    const typeFilter = useAtomValue(bankRecTransactionTypeFilter)
+    const amountFilter = useAtomValue(bankRecAmountFilter)
+
     const { data: unreconciledTransactions } = useGetUnreconciledTransactions()
 
     /** 
@@ -141,7 +169,7 @@ export const useRefreshUnreconciledTransactions = () => {
     const onReconcileTransaction = (transaction: UnreconciledTransaction, updatedTransaction?: BankTransaction) => {
 
         // If the updated transaction has an unallocated amount of 0, then we need to select the next unreconciled transaction
-        if (updatedTransaction && updatedTransaction?.unallocated_amount !== 0) {
+        if (updatedTransaction && Number(updatedTransaction?.unallocated_amount) !== 0) {
             mutate(`bank-reconciliation-unreconciled-transactions-${selectedBank?.name}-${dates.fromDate}-${dates.toDate}`)
             mutate(`bank-reconciliation-account-closing-balance-${selectedBank?.name}-${dates.toDate}`)
             // Update the matching vouchers for the selected transaction
@@ -149,13 +177,16 @@ export const useRefreshUnreconciledTransactions = () => {
             return
         }
 
-        const currentIndex = unreconciledTransactions?.message.findIndex(t => t.name === transaction.name)
+        // From unreconciled transactions list, first apply the filters based on the search criteria and other filters
+        const results = getSearchResults(searchString, typeFilter, amountFilter.value, unreconciledTransactions?.message)
+
+        const currentIndex = results.findIndex(t => t.name === transaction.name)
         let nextTransaction = null
 
-        if (currentIndex) {
+        if (currentIndex !== -1) {
             // Check if there is a next transaction
-            if (currentIndex < (unreconciledTransactions?.message.length || 0) - 1) {
-                nextTransaction = unreconciledTransactions?.message[currentIndex + 1]
+            if (currentIndex < (results.length || 0) - 1) {
+                nextTransaction = results[currentIndex + 1]
             }
         }
 
@@ -168,22 +199,12 @@ export const useRefreshUnreconciledTransactions = () => {
                     if (nextTransactionObj) {
                         setSelectedTransaction([nextTransactionObj])
                     } else {
-                        // If the next transaction is not there in the response, we need to select the first unreconciled transaction
-                        const firstTransaction = res?.message && res?.message.length > 0 ? res?.message[0] : null
-                        if (firstTransaction) {
-                            setSelectedTransaction([firstTransaction])
-                        } else {
-                            setSelectedTransaction([])
-                        }
-                    }
-                } else {
-                    // If there is no next transaction, we need to select the first unreconciled transaction
-                    const firstTransaction = res?.message && res?.message.length > 0 ? res?.message[0] : null
-                    if (firstTransaction) {
-                        setSelectedTransaction([firstTransaction])
-                    } else {
+                        // If the next transaction is not there in the response, we need to clear the selection
                         setSelectedTransaction([])
                     }
+                } else {
+                    // If there is no next transaction, we need to clear the selection
+                    setSelectedTransaction([])
                 }
             })
         mutate(`bank-reconciliation-account-closing-balance-${selectedBank?.name}-${dates.toDate}`)
@@ -201,16 +222,35 @@ export const useReconcileTransaction = () => {
 
     const setBankRecUnreconcileModalAtom = useSetAtom(bankRecUnreconcileModalAtom)
 
-    const reconcileTransaction = (transaction: UnreconciledTransaction, vouchers: LinkedPayment[]) => {
+    const addToActionLog = useUpdateActionLog()
+
+    const reconcileTransaction = (transaction: UnreconciledTransaction, voucher: LinkedPayment) => {
 
         call({
             bank_transaction_name: transaction.name,
-            vouchers: JSON.stringify(vouchers.map(v => ({
-                "payment_doctype": v.doctype,
-                "payment_name": v.name,
-                "amount": v.paid_amount
-            })))
+            vouchers: JSON.stringify([{
+                "payment_doctype": voucher.doctype,
+                "payment_name": voucher.name,
+                "amount": voucher.paid_amount
+            }])
         }).then((res) => {
+            addToActionLog({
+                type: 'match',
+                timestamp: (new Date()).getTime(),
+                isBulk: false,
+                items: [
+                    {
+                        bankTransaction: res.message,
+                        voucher: {
+                            reference_doctype: voucher.doctype,
+                            reference_name: voucher.name,
+                            reference_no: voucher.reference_no,
+                            reference_date: voucher.reference_date,
+                            posting_date: voucher.posting_date,
+                        }
+                    }
+                ]
+            })
             onReconcileTransaction(transaction, res.message)
             toast.success(_("Reconciled"), {
                 duration: 4000,
@@ -258,9 +298,12 @@ export const useGetBankAccounts = (onSuccess?: (data?: Omit<SelectedBank, 'logo'
         // Match the bank account to the logo
         const banksWithLogos = data?.message.map((bank) => {
             const logo = BANK_LOGOS.find((logo) => logo.keywords.some((keyword) => bank.bank?.toLowerCase().includes(keyword.toLowerCase())))
+            
+            const dynamicLogoName = bank.bank ? bank.bank.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '.png' : ''
+            
             return {
                 ...bank,
-                logo: logo?.logo
+                logo: logo?.logo || `assets/bank-logos/${dynamicLogoName}`
             }
         }) ?? []
 
@@ -300,4 +343,92 @@ export const useGetRuleForTransaction = (transaction: UnreconciledTransaction) =
         revalidateIfStale: false
     }
     )
+}
+
+/** Hook to handle the search input while maintaining debouncing and global state. */
+export function useTransactionSearch(): [string, DebouncedState<(value: string) => void>] {
+    const delay = 500
+    const unwrappedInitialValue = ''
+    const eq = (left: string, right: string) => left === right
+    const [debouncedValue, setDebouncedValue] = useAtom(bankRecSearchText)
+    const previousValueRef = useRef<string | undefined>(unwrappedInitialValue)
+
+    const updateDebouncedValue = useDebounceCallback(
+        setDebouncedValue,
+        delay,
+    )
+
+    // Update the debounced value if the initial value changes
+    if (!eq(previousValueRef.current as string, unwrappedInitialValue)) {
+        updateDebouncedValue(unwrappedInitialValue)
+        previousValueRef.current = unwrappedInitialValue
+    }
+
+    return [debouncedValue, updateDebouncedValue]
+}
+
+/** Utility function to get the search results based on the search string, type filter, amount filter and unreconciled transactions */
+export const getSearchResults = (
+    /** Search string */
+    search: string,
+    /** Type filter */
+    typeFilter: string,
+    /** Amount filter */
+    amountFilter: number,
+    /** Unreconciled transactions */
+    unreconciledTransactions?: UnreconciledTransaction[]) => {
+
+    let r = []
+    if (!search) {
+        r = unreconciledTransactions ?? []
+    } else {
+        const searchLower = search.toLowerCase()
+        r = (unreconciledTransactions ?? []).filter((transaction) => {
+            return transaction.description?.toLowerCase().includes(searchLower) ||
+                   transaction.reference_number?.toLowerCase().includes(searchLower)
+        })
+    }
+
+    if (typeFilter !== 'All') {
+        r = r.filter((transaction) => {
+            if (typeFilter === 'Debits') {
+                return transaction.withdrawal && transaction.withdrawal > 0
+            }
+            if (typeFilter === 'Credits') {
+                return transaction.deposit && transaction.deposit > 0
+            }
+        })
+    }
+
+    if (amountFilter > 0) {
+        r = r.filter((transaction) => {
+            if (transaction.withdrawal && transaction.withdrawal > 0) {
+                return transaction.withdrawal === amountFilter
+            }
+            if (transaction.deposit && transaction.deposit > 0) {
+                return transaction.deposit === amountFilter
+            }
+            return false
+        })
+    }
+
+    return r
+}
+
+export const useUpdateActionLog = () => {
+
+    const setActionLog = useSetAtom(bankRecActionLog)
+
+    const addToActionLog = (action: ActionLog) => {
+        // Store at max 100 actions
+        setActionLog((prev) => {
+            const newActions = [action, ...prev]
+            if (newActions.length > 100) {
+                return newActions.slice(0, 100)
+            }
+            return newActions
+        })
+    }
+
+    return addToActionLog
 }

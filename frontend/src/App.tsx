@@ -1,7 +1,28 @@
+import { useEffect } from 'react'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { FrappeProvider } from 'frappe-react-sdk'
-import BankReconciliation from './pages/BankReconciliation'
 import { Toaster } from './components/ui/sonner'
+import BankStatementImporter from './pages/BankStatementImporter'
+import BankReconciliation from './pages/BankReconciliation'
+
+import { ThemeProvider } from 'next-themes'
+
 function App() {
+	useEffect(() => {
+		// Check if user is logged in by checking the Cookie "user_id"
+		// In Frappe, unauthenticated users are "Guest"
+		const userId = document.cookie?.split('; ').find(row => row.startsWith('user_id='))?.split('=')[1]?.trim()
+		const isLoggedIn = userId !== 'Guest'
+
+		if (!isLoggedIn) {
+			if (import.meta.env.DEV) {
+				return
+			}
+			// Redirect to Frappe login page
+			window.location.href = '/login?redirect-to=/mint'
+			return
+		}
+	}, [])
 
 	return (
 		<FrappeProvider
@@ -10,8 +31,18 @@ function App() {
 			}}
 			socketPort={import.meta.env.VITE_SOCKET_PORT}
 			siteName={window.frappe?.boot?.sitename ?? import.meta.env.VITE_SITE_NAME}>
-			<BankReconciliation />
-			<Toaster richColors theme='light' />
+			<ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+				{window.frappe?.boot?.user?.name && window.frappe?.boot?.user?.name !== 'Guest' &&
+					<BrowserRouter basename={import.meta.env.VITE_BASE_NAME ? `/${import.meta.env.VITE_BASE_NAME}` : ''}>
+						<Routes>
+							<Route index element={<BankReconciliation />} />
+							<Route path="/statement-importer" element={<BankStatementImporter />} />
+							<Route path="*" element={<Navigate to="/" />} />
+						</Routes>
+					</BrowserRouter>
+				}
+				<Toaster richColors />
+			</ThemeProvider>
 		</FrappeProvider>
 	)
 }
