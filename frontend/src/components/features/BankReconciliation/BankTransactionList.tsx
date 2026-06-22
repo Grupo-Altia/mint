@@ -91,8 +91,8 @@ const BankTransactionListView = () => {
         return data.message.filter((transaction) => {
 
             if (search && 
-                !transaction.description?.toLowerCase().includes(search.toLowerCase()) && 
-                !transaction.reference_number?.toLowerCase().includes(search.toLowerCase())) {
+                !transaction.description?.toLowerCase()?.includes(search.toLowerCase()) && 
+                !transaction.reference_number?.toLowerCase()?.includes(search.toLowerCase())) {
                 return false
             }
 

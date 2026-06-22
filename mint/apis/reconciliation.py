@@ -56,7 +56,7 @@ REVIEW_OTHER_BANK = "other_bank"
 REVIEW_DUPLICATE_REFERENCE = "duplicate_reference"
 
 # Modos que no exigen depósito bancario para aprobarse.
-CASH_LIKE_TYPES = ("Cash", "Gateway")
+CASH_LIKE_TYPES = ("Cash", "Gateway", "Gangway")
 
 # Tolerancia de redondeo (en moneda de la empresa, VEF) admitida al comparar el
 # depósito real contra el total del pago. SOLO positiva: "céntimo por encima,
