@@ -250,6 +250,12 @@ fixtures = [
         "dt": "Property Setter",
     },
     {
+        "dt": "Translation",
+        "filters": [
+            ["source_text", "in", ["Bank Transaction", "Bank Transactions"]]
+        ]
+    },
+    {
         "dt": "Custom Field",
         "filters": [
             ["name", "in", [

@@ -6,7 +6,7 @@ l10n_ve aporta solo lo fiscal (CustomPaymentEntry: IGTF/impuestos), que se invoc
 como métodos del doc en runtime. domina_isp reacciona al estado conciliado.
 
 Regla central (solo para Payment Entry de tipo cobro / Receive):
-  - Efectivo / Gangway: se aprueban sin exigir depósito (por su naturaleza).
+  - Efectivo / Gateway: se aprueban sin exigir depósito (por su naturaleza).
   - Cualquier otro modo (banco): NO se puede aprobar hasta conciliarse con el
     depósito bancario cuyo número de referencia coincide con la referencia del
     cobro. Al conciliar, el monto AUTORITATIVO es el del depósito.
@@ -56,7 +56,7 @@ REVIEW_OTHER_BANK = "other_bank"
 REVIEW_DUPLICATE_REFERENCE = "duplicate_reference"
 
 # Modos que no exigen depósito bancario para aprobarse.
-CASH_LIKE_TYPES = ("Cash", "Gangway")
+CASH_LIKE_TYPES = ("Cash", "Gateway")
 
 # Tolerancia de redondeo (en moneda de la empresa, VEF) admitida al comparar el
 # depósito real contra el total del pago. SOLO positiva: "céntimo por encima,
@@ -146,7 +146,7 @@ if original_get_matching_rules:
 # ════════════════════════════════════════════════════════════════════════════
 
 def _is_bank_receive(doc) -> bool:
-    """True si es un cobro que exige depósito bancario (no efectivo/gangway)."""
+    """True si es un cobro que exige depósito bancario (no efectivo/gateway)."""
     if doc.payment_type != "Receive":
         return False
     mop_type = (
@@ -158,7 +158,7 @@ def _is_bank_receive(doc) -> bool:
 
 
 def _is_cash_like_receive(doc) -> bool:
-    """True si es un cobro en efectivo/gangway: no exige depósito bancario; se aprueba
+    """True si es un cobro en efectivo/gateway: no exige depósito bancario; se aprueba
     con el monto tecleado y se aplica directo a la factura (modos privados de oficina)."""
     if doc.payment_type != "Receive":
         return False
@@ -453,7 +453,7 @@ def reconcile_and_approve(payment_entry: str) -> dict:
     if doc.docstatus != 0:
         frappe.throw(_("Solo se puede conciliar un cobro en borrador."))
     if not _is_bank_receive(doc):
-        frappe.throw(_("Solo aplica a cobros bancarios (no efectivo/gangway)."))
+        frappe.throw(_("Solo aplica a cobros bancarios (no efectivo/gateway)."))
 
     # Colisión de referencia: si hay más de un depósito con la misma referencia en la
     # cuenta del cobro, NO se elige uno a dedo. Se detiene, se marca para revisión
