@@ -1,6 +1,22 @@
 [
  {
   "default_value": null,
+  "doc_type": "Bank Transaction",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocType",
+  "field_name": null,
+  "is_system_generated": 0,
+  "modified": "2026-06-12 13:30:00",
+  "module": "Mint",
+  "name": "Bank Transaction-main-track_changes",
+  "property": "track_changes",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "0"
+ },
+ {
+  "default_value": null,
   "doc_type": "Bank Account",
   "docstatus": 0,
   "doctype": "Property Setter",
@@ -4273,22 +4289,6 @@
  },
  {
   "default_value": null,
-  "doc_type": "Mode of Payment",
-  "docstatus": 0,
-  "doctype": "Property Setter",
-  "doctype_or_field": "DocField",
-  "field_name": "type",
-  "is_system_generated": 0,
-  "modified": "2025-09-12 10:00:00",
-  "module": "L10N Ve",
-  "name": "Mode of Payment-type-options",
-  "property": "options",
-  "property_type": "Text",
-  "row_name": null,
-  "value": "Cash\nBank\nGeneral\nPhone\nGangway"
- },
- {
-  "default_value": null,
   "doc_type": "Bank Transaction",
   "docstatus": 0,
   "doctype": "Property Setter",
@@ -6446,5 +6446,21 @@
   "property_type": "Text",
   "row_name": null,
   "value": "eval:!doc.__islocal"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Mode of Payment",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "type",
+  "is_system_generated": 1,
+  "modified": "2026-06-22 08:13:11.243095",
+  "module": null,
+  "name": "Mode of Payment-type-options",
+  "property": "options",
+  "property_type": "Select",
+  "row_name": null,
+  "value": "Cash\nBank\nPhone\nGangway\nGateway"
  }
 ]

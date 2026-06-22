@@ -1,0 +1,28 @@
+[
+ {
+  "context": null,
+  "contributed": 0,
+  "contribution_docname": null,
+  "contribution_status": "",
+  "docstatus": 0,
+  "doctype": "Translation",
+  "language": "es",
+  "modified": "2026-06-22 08:13:10.894571",
+  "name": "135f10mhu7",
+  "source_text": "Bank Transaction",
+  "translated_text": "Extracto Bancario"
+ },
+ {
+  "context": null,
+  "contributed": 0,
+  "contribution_docname": null,
+  "contribution_status": "",
+  "docstatus": 0,
+  "doctype": "Translation",
+  "language": "es",
+  "modified": "2026-06-22 08:13:11.068908",
+  "name": "1369le0nfi",
+  "source_text": "Bank Transactions",
+  "translated_text": "Extractos Bancarios"
+ }
+]
