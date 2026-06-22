@@ -161,6 +161,50 @@ def import_statement(file_url: str, bank_account: str):
         "end_date": data.get("statement_end_date"),
     }
 
+# Firmas con las que xlrd falla cuando el archivo .xls es en realidad un HTML
+# (tabla disfrazada de Excel que entregan algunos bancos venezolanos).
+HTML_LIKE_XLS_ERRORS = (
+    "Expected BOF record; found b'<table",
+    "found b'<html",
+    "startswith first arg must be str",
+)
+
+
+def _is_html_like_xls_error(exc: Exception) -> bool:
+    """True si el error de xlrd indica que el .xls es realmente HTML."""
+    error_msg = str(exc)
+    return any(err in error_msg for err in HTML_LIKE_XLS_ERRORS)
+
+
+def _parse_html_as_table(content) -> list[list]:
+    """Parsea un archivo .xls que en realidad contiene una tabla HTML.
+
+    Devuelve la misma estructura ``list[list[str]]`` que producen los lectores
+    de Excel/CSV, de modo que el resto del flujo (detección de encabezados y
+    mapeo de columnas) no necesita cambios.
+    """
+    from bs4 import BeautifulSoup
+
+    if isinstance(content, bytes):
+        text = content.decode("utf-8", errors="ignore")
+    else:
+        text = content
+
+    soup = BeautifulSoup(text, "html.parser")
+    table = soup.find("table")
+    if not table:
+        frappe.throw(
+            _("No se pudo leer el archivo .xls: parece HTML pero no contiene una tabla."),
+            title=_("Invalid File Type"),
+        )
+
+    data = []
+    for row in table.find_all("tr"):
+        cells = row.find_all(["td", "th"])
+        data.append([cell.get_text(strip=True) for cell in cells])
+    return data
+
+
 def get_data(file_path: str):
 
     file_doc = frappe.get_doc("File", {"file_url": file_path})
@@ -177,8 +221,17 @@ def get_data(file_path: str):
     elif extension.lower() == ".xlsx":
         data = read_xlsx_file_from_attached_file(fcontent=content)
     elif extension.lower() == ".xls":
-        data = read_xls_file_from_attached_file(content)
-    
+        try:
+            data = read_xls_file_from_attached_file(content)
+        except Exception as e:
+            # Algunos bancos (p. ej. Bancamiga) entregan un HTML con extensión
+            # .xls; xlrd falla con "Expected BOF record; found b'<table". En ese
+            # caso lo parseamos como tabla HTML en lugar de propagar un 500.
+            if _is_html_like_xls_error(e):
+                data = _parse_html_as_table(content)
+            else:
+                raise
+
     return data
 
 def get_header_row_index(data: list[list[str]]):
