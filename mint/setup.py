@@ -1,6 +1,7 @@
 import frappe
 
 def create_bank_reference_rules():
+    frappe.reload_doc("mint", "doctype", "bank_reference_rule")
     rules = [
         {
             "rule_name": "Tomar los últimos 8 dígitos",
