@@ -176,6 +176,38 @@ def _is_html_like_xls_error(exc: Exception) -> bool:
     return any(err in error_msg for err in HTML_LIKE_XLS_ERRORS)
 
 
+def _read_csv_content_robust(content) -> list[list]:
+    import csv
+    if not isinstance(content, str):
+        decoded = False
+        for encoding in ["utf-8", "windows-1250", "windows-1252", "latin-1"]:
+            try:
+                content = str(content, encoding)
+                decoded = True
+                break
+            except UnicodeDecodeError:
+                continue
+    
+    lines = content.splitlines()
+    if not lines:
+        return []
+
+    # Auto-detect delimiter (comma or semicolon)
+    delimiter = ','
+    try:
+        sniffer = csv.Sniffer()
+        dialect = sniffer.sniff(lines[0])
+        delimiter = dialect.delimiter
+    except Exception:
+        if lines[0].count(';') > lines[0].count(','):
+            delimiter = ';'
+
+    rows = []
+    for row in csv.reader(lines, delimiter=delimiter):
+        rows.append([val.strip() for val in row])
+    return rows
+
+
 def _parse_corrupt_xlsx(content) -> list[list]:
     import zipfile
     from io import BytesIO
@@ -286,7 +318,7 @@ def get_data(file_path: str):
         frappe.throw(_("Import template should be of type .csv, .xlsx or .xls"), title="Invalid File Type")
 
     if extension.lower() == ".csv":
-        data = read_csv_content(content)
+        data = _read_csv_content_robust(content)
     elif extension.lower() == ".xlsx":
         try:
             data = read_xlsx_file_from_attached_file(fcontent=content)
