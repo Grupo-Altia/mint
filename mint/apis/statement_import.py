@@ -176,6 +176,75 @@ def _is_html_like_xls_error(exc: Exception) -> bool:
     return any(err in error_msg for err in HTML_LIKE_XLS_ERRORS)
 
 
+def _parse_corrupt_xlsx(content) -> list[list]:
+    import zipfile
+    from io import BytesIO
+    import xml.etree.ElementTree as ET
+    import re
+
+    def col2num(col):
+        num = 0
+        for c in col:
+            num = num * 26 + (ord(c.upper()) - ord('A')) + 1
+        return num - 1
+
+    with zipfile.ZipFile(BytesIO(content)) as z:
+        shared_strings = []
+        if 'xl/sharedStrings.xml' in z.namelist():
+            ss_xml = z.read('xl/sharedStrings.xml')
+            root = ET.fromstring(ss_xml)
+            for elem in root.iter():
+                if elem.tag.endswith('}t'):
+                    shared_strings.append(elem.text)
+        
+        sheet_filename = None
+        for name in z.namelist():
+            if name.startswith('xl/worksheets/sheet') and name.endswith('.xml'):
+                sheet_filename = name
+                break
+        
+        if not sheet_filename:
+            return []
+
+        sheet_xml = z.read(sheet_filename)
+        root = ET.fromstring(sheet_xml)
+        
+        data = []
+        for row in root.iter():
+            if row.tag.endswith('}row'):
+                row_data = []
+                for cell in row:
+                    if cell.tag.endswith('}c'):
+                        val = ""
+                        for child in cell:
+                            if child.tag.endswith('}v'):
+                                val = child.text
+                                t = cell.get('t')
+                                if t == 's' and val is not None:
+                                    try:
+                                        val = shared_strings[int(val)]
+                                    except (ValueError, IndexError):
+                                        pass
+                            elif child.tag.endswith('}is'):
+                                for t_node in child:
+                                    if t_node.tag.endswith('}t'):
+                                        val = t_node.text
+                        
+                        r_attr = cell.get('r')
+                        if r_attr:
+                            match = re.match(r"([A-Z]+)[0-9]+", r_attr)
+                            if match:
+                                col_idx = col2num(match.group(1))
+                                while len(row_data) <= col_idx:
+                                    row_data.append("")
+                                row_data[col_idx] = val
+                            else:
+                                row_data.append(val)
+                        else:
+                            row_data.append(val)
+                data.append(row_data)
+        return data
+
 def _parse_html_as_table(content) -> list[list]:
     """Parsea un archivo .xls que en realidad contiene una tabla HTML.
 
@@ -222,22 +291,18 @@ def get_data(file_path: str):
         try:
             data = read_xlsx_file_from_attached_file(fcontent=content)
         except Exception as e:
-            # Fallback for "NoneType object has no attribute iter_rows" or BadZipFile (HTML as xlsx)
+            # Fallback for corrupted xlsx (e.g. Bancamiga) where openpyxl drops worksheets
+            # due to "invalid specification for 0"
             try:
-                from openpyxl import load_workbook
-                from io import BytesIO
-                wb = load_workbook(filename=BytesIO(content), data_only=True)
-                ws = wb.active
-                if ws is None and wb.worksheets:
-                    ws = wb.worksheets[0]
-                
-                if ws is not None:
-                    data = [[cell.value for cell in row] for row in ws.iter_rows()]
-                else:
-                    data = _parse_html_as_table(content)
+                data = _parse_corrupt_xlsx(content)
+                if not data:
+                    raise Exception("Custom parser returned no data")
             except Exception:
-                # Si openpyxl falla completamente (ej. BadZipFile), asume que es un HTML
-                data = _parse_html_as_table(content)
+                # Si falla, podría ser un .xls real (o HTML) renombrado a .xlsx
+                try:
+                    data = read_xls_file_from_attached_file(content)
+                except Exception:
+                    data = _parse_html_as_table(content)
     elif extension.lower() == ".xls":
         try:
             data = read_xls_file_from_attached_file(content)
