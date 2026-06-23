@@ -564,6 +564,14 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
 
     bt.save(ignore_permissions=True)
 
+    # Forzar actualización del estado visual, ya que bt.save actualiza clearance_date
+    # silenciosamente por db.set_value sin disparar hooks del Payment Entry.
+    clearance_date, current_status = frappe.db.get_value(
+        "Payment Entry", payment_entry_name, ["clearance_date", "custom_reconciliation_status"]
+    )
+    if clearance_date and current_status != RECON_DONE:
+        frappe.db.set_value("Payment Entry", payment_entry_name, "custom_reconciliation_status", RECON_DONE, update_modified=False)
+
 
 def strip_leading_quote_from_reference(doc, method):
     """
