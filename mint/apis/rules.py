@@ -57,8 +57,8 @@ def evaluate_transaction(transaction, rule_docs):
        
         # Si la regla tiene un banco asignado, verificamos que coincida con el banco de la transacción.
         if rule.bank:
-            # Buscamos a qué institución pertenece la cuenta bancaria de esta transacción
-            transaction_bank = frappe.db.get_value("Bank Account", transaction.bank_account, "bank")
+            # Buscamos a qué institución pertenece la cuenta bancaria de esta transacción (usando caché para evitar N+1)
+            transaction_bank = frappe.get_cached_value("Bank Account", transaction.bank_account, "bank")
             
             if rule.bank != transaction_bank:
                 continue

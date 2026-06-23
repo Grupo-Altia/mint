@@ -134,10 +134,11 @@ const BankClearanceSummaryView = () => {
                     <TableCell className="max-w-[250px] overflow-hidden text-ellipsis whitespace-nowrap" title={row.against}>{row.against}</TableCell>
                     <TableCell className="text-right">{formatCurrency(row.amount, bankAccount?.account_currency ?? getCompanyCurrency(companyID))}</TableCell>
                     <TableCell>
-                        {row.clearance_date ? <Badge variant="outline" className="text-foreground px-1.5">
-                            <CheckCircle2 width={16} height={16} className="text-green-600 dark:text-green-500" />
-                            {_("Cleared")}</Badge> : <div className="flex items-center gap-2"><Badge variant="destructive" className="bg-destructive/10 text-destructive">
-                                <XCircle className="-mt-0.5 text-destructive" />
+                        {row.clearance_date ? <Badge variant="outline" className="text-foreground px-1.5 gap-1">
+                            <CheckCircle2 width={14} height={14} className="text-green-600 dark:text-green-500" />
+                            {_("Cleared")}</Badge> : <div className="flex items-center gap-2">
+                                <Badge variant="outline" className="text-red-600 dark:text-red-400 border-red-600/30 dark:border-red-400/30 px-1.5 gap-1">
+                                <XCircle width={14} height={14} />
                                 {_("Not Cleared")}</Badge>
                             <SetClearanceDateButton voucher={row} bankAccount={bankAccount} companyID={companyID} mutate={mutate} />
                         </div>}

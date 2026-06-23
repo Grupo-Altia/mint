@@ -542,6 +542,26 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
     bt.add_payment_entries(
         [{"payment_doctype": "Payment Entry", "payment_name": payment_entry_name}]
     )
+
+    # Forzar mapeo automático del tercero antes de guardar, ya que en ciertas
+    # secuencias de auto-conciliación el hook on_update_after_submit llega tarde.
+    pe = frappe.db.get_value(
+        "Payment Entry", payment_entry_name,
+        ["reference_no", "party_type", "party", "source_bank"], as_dict=True,
+    )
+    if pe:
+        if not bt.party_type and pe.party_type:
+            bt.party_type = pe.party_type
+        if not bt.party and pe.party:
+            bt.party = pe.party
+        
+        # Guardar también la referencia origen si aplica
+        original_ref = str(bt.reference_number or "").strip()
+        if pe.reference_no and not bt.source_bank_reference_rule and original_ref and pe.reference_no != original_ref:
+            rule_name = frappe.db.get_value("Bank", pe.source_bank, "bank_reference_rule") if pe.source_bank else None
+            if rule_name and apply_format_rule(rule_name, original_ref) == pe.reference_no:
+                bt.source_bank_reference_rule = pe.reference_no
+
     bt.save(ignore_permissions=True)
 
 
@@ -550,8 +570,13 @@ def strip_leading_quote_from_reference(doc, method):
     Strips leading single quotes from reference numbers (common in bank exports like Bancamiga .xls)
     to prevent string matching errors in rules and reconciliation.
     """
-    if doc.reference_number and doc.reference_number.startswith("'"):
-        doc.reference_number = doc.reference_number[1:]
+    if doc.reference_number is not None:
+        ref = str(doc.reference_number).strip()
+        if ref.endswith(".0"):
+            ref = ref[:-2]
+        if ref.startswith("'"):
+            ref = ref[1:]
+        doc.reference_number = ref
 
 
 def before_submit_receive_payment(doc, method=None) -> None:

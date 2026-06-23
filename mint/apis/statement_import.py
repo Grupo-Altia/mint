@@ -176,6 +176,107 @@ def _is_html_like_xls_error(exc: Exception) -> bool:
     return any(err in error_msg for err in HTML_LIKE_XLS_ERRORS)
 
 
+def _read_csv_content_robust(content) -> list[list]:
+    import csv
+    if not isinstance(content, str):
+        decoded = False
+        for encoding in ["utf-8", "windows-1250", "windows-1252", "latin-1"]:
+            try:
+                content = str(content, encoding)
+                decoded = True
+                break
+            except UnicodeDecodeError:
+                continue
+    
+    lines = content.splitlines()
+    if not lines:
+        return []
+
+    # Auto-detect delimiter (comma or semicolon)
+    delimiter = ','
+    try:
+        sniffer = csv.Sniffer()
+        dialect = sniffer.sniff(lines[0])
+        delimiter = dialect.delimiter
+    except Exception:
+        if lines[0].count(';') > lines[0].count(','):
+            delimiter = ';'
+
+    rows = []
+    for row in csv.reader(lines, delimiter=delimiter):
+        rows.append([val.strip() for val in row])
+    return rows
+
+
+def _parse_corrupt_xlsx(content) -> list[list]:
+    import zipfile
+    from io import BytesIO
+    import xml.etree.ElementTree as ET
+    import re
+
+    def col2num(col):
+        num = 0
+        for c in col:
+            num = num * 26 + (ord(c.upper()) - ord('A')) + 1
+        return num - 1
+
+    with zipfile.ZipFile(BytesIO(content)) as z:
+        shared_strings = []
+        if 'xl/sharedStrings.xml' in z.namelist():
+            ss_xml = z.read('xl/sharedStrings.xml')
+            root = ET.fromstring(ss_xml)
+            for elem in root.iter():
+                if elem.tag.endswith('}t'):
+                    shared_strings.append(elem.text)
+        
+        sheet_filename = None
+        for name in z.namelist():
+            if name.startswith('xl/worksheets/sheet') and name.endswith('.xml'):
+                sheet_filename = name
+                break
+        
+        if not sheet_filename:
+            return []
+
+        sheet_xml = z.read(sheet_filename)
+        root = ET.fromstring(sheet_xml)
+        
+        data = []
+        for row in root.iter():
+            if row.tag.endswith('}row'):
+                row_data = []
+                for cell in row:
+                    if cell.tag.endswith('}c'):
+                        val = ""
+                        for child in cell:
+                            if child.tag.endswith('}v'):
+                                val = child.text
+                                t = cell.get('t')
+                                if t == 's' and val is not None:
+                                    try:
+                                        val = shared_strings[int(val)]
+                                    except (ValueError, IndexError):
+                                        pass
+                            elif child.tag.endswith('}is'):
+                                for t_node in child:
+                                    if t_node.tag.endswith('}t'):
+                                        val = t_node.text
+                        
+                        r_attr = cell.get('r')
+                        if r_attr:
+                            match = re.match(r"([A-Z]+)[0-9]+", r_attr)
+                            if match:
+                                col_idx = col2num(match.group(1))
+                                while len(row_data) <= col_idx:
+                                    row_data.append("")
+                                row_data[col_idx] = val
+                            else:
+                                row_data.append(val)
+                        else:
+                            row_data.append(val)
+                data.append(row_data)
+        return data
+
 def _parse_html_as_table(content) -> list[list]:
     """Parsea un archivo .xls que en realidad contiene una tabla HTML.
 
@@ -217,9 +318,23 @@ def get_data(file_path: str):
         frappe.throw(_("Import template should be of type .csv, .xlsx or .xls"), title="Invalid File Type")
 
     if extension.lower() == ".csv":
-        data = read_csv_content(content)
+        data = _read_csv_content_robust(content)
     elif extension.lower() == ".xlsx":
-        data = read_xlsx_file_from_attached_file(fcontent=content)
+        try:
+            data = read_xlsx_file_from_attached_file(fcontent=content)
+        except Exception as e:
+            # Fallback for corrupted xlsx (e.g. Bancamiga) where openpyxl drops worksheets
+            # due to "invalid specification for 0"
+            try:
+                data = _parse_corrupt_xlsx(content)
+                if not data:
+                    raise Exception("Custom parser returned no data")
+            except Exception:
+                # Si falla, podría ser un .xls real (o HTML) renombrado a .xlsx
+                try:
+                    data = read_xls_file_from_attached_file(content)
+                except Exception:
+                    data = _parse_html_as_table(content)
     elif extension.lower() == ".xls":
         try:
             data = read_xls_file_from_attached_file(content)
@@ -231,6 +346,21 @@ def get_data(file_path: str):
                 data = _parse_html_as_table(content)
             else:
                 raise
+
+    # Limitar decimales a 2 para evitar errores de precisión de punto flotante en la UI
+    if data:
+        for row_idx in range(len(data)):
+            for col_idx in range(len(data[row_idx])):
+                cell_val = data[row_idx][col_idx]
+                if isinstance(cell_val, float):
+                    data[row_idx][col_idx] = round(cell_val, 2)
+                elif isinstance(cell_val, str) and "." in cell_val:
+                    if cell_val.replace(".", "", 1).replace("-", "", 1).isdigit():
+                        if len(cell_val.split(".")[1]) > 2:
+                            try:
+                                data[row_idx][col_idx] = str(round(float(cell_val), 2))
+                            except ValueError:
+                                pass
 
     return data
 
