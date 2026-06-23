@@ -258,7 +258,6 @@ const RuleAction = () => {
                 }}
             >
                 <SelectItem value="Bank Entry"><LandmarkIcon /> {_("Registro de Banco")}</SelectItem>
-                <SelectItem value="Payment Entry"><ReceiptIcon /> {_("Registro de Pago")}</SelectItem>
             </SelectFormField>
 
             {classify_as === "Bank Entry" && (<SelectFormField
