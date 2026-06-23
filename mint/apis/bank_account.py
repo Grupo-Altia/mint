@@ -4,6 +4,8 @@ import datetime
 @frappe.whitelist(methods=["GET"])
 @frappe.read_only()
 def get_list(company: str, show_disabled: bool = False):
+    if company:
+        frappe.has_permission("Company", "read", doc=company, throw=True)
 
     filters = {
         "is_company_account": 1,
@@ -29,6 +31,10 @@ def get_closing_balance_as_per_statement(bank_account: str, date: str):
     """
         Get the closing balance as per statement for a bank account and date
     """
+    frappe.has_permission("Bank Account", "read", doc=bank_account, throw=True)
+    company = frappe.db.get_value("Bank Account", bank_account, "company")
+    if company:
+        frappe.has_permission("Company", "read", doc=company, throw=True)
     latest_balance = frappe.get_list("Mint Bank Statement Balance", filters={
         "bank_account": bank_account,
         "date": ["<=", date]
@@ -49,6 +55,10 @@ def set_closing_balance_as_per_statement(bank_account: str, date: str | datetime
     """
     Set the closing balance as per statement for a bank account and date
     """
+    frappe.has_permission("Bank Account", "read", doc=bank_account, throw=True)
+    company = frappe.db.get_value("Bank Account", bank_account, "company")
+    if company:
+        frappe.has_permission("Company", "read", doc=company, throw=True)
 
     existing = frappe.db.exists("Mint Bank Statement Balance", {
         "bank_account": bank_account,
@@ -69,6 +79,8 @@ def set_closing_balance_as_per_statement(bank_account: str, date: str | datetime
 @frappe.whitelist(methods=["GET"])
 @frappe.read_only()
 def get_allowed_mode_of_payments(company: str):
+    if company:
+        frappe.has_permission("Company", "read", doc=company, throw=True)
     # Retrieve Bank Accounts the user is allowed to see in this company
     filters = {
         "is_company_account": 1,
