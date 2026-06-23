@@ -1,6 +1,9 @@
 import frappe
 
 def create_bank_reference_rules():
+    if not frappe.local.module_app:
+        frappe.local.module_app = frappe.cache.get_value("app_modules") or {}
+    frappe.local.module_app['mint'] = 'mint'
     frappe.reload_doc("mint", "doctype", "bank_reference_rule")
     rules = [
         {
