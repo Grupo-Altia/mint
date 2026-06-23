@@ -550,8 +550,13 @@ def strip_leading_quote_from_reference(doc, method):
     Strips leading single quotes from reference numbers (common in bank exports like Bancamiga .xls)
     to prevent string matching errors in rules and reconciliation.
     """
-    if doc.reference_number and doc.reference_number.startswith("'"):
-        doc.reference_number = doc.reference_number[1:]
+    if doc.reference_number is not None:
+        ref = str(doc.reference_number).strip()
+        if ref.endswith(".0"):
+            ref = ref[:-2]
+        if ref.startswith("'"):
+            ref = ref[1:]
+        doc.reference_number = ref
 
 
 def before_submit_receive_payment(doc, method=None) -> None:

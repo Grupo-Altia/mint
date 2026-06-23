@@ -428,24 +428,7 @@ const OptionsForMultipleTransactions = ({ transactions }: { transactions: Unreco
                                         </KbdGroup>
                                     </TooltipContent>
                                 </Tooltip>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <Button
-                                            variant='outline'
-                                            size='lg'
-                                            aria-label={_("Registrar un pago contra un cliente o proveedor")}
-                                            onClick={() => setRecordPaymentModalOpen(true)}>
-                                            <Receipt /> {_("Registro de Pago")}
-                                        </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>
-                                        {_("Registrar un pago contra un cliente o proveedor")}
-                                        <KbdGroup className="ml-2">
-                                            <Kbd><KeyboardMetaKeyIcon /></Kbd>
-                                            <Kbd>P</Kbd>
-                                        </KbdGroup>
-                                    </TooltipContent>
-                                </Tooltip>
+
 
                             </div>
                         </TooltipProvider>
@@ -466,23 +449,7 @@ const OptionsForSingleTransaction = ({ transaction, contentHeight }: { transacti
         <TooltipProvider>
             <div className="flex items-center justify-between pt-2">
                 <div className="flex gap-4 justify-center">
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant='outline'
-                                aria-label={_("Registrar un pago contra un cliente o proveedor")}
-                                onClick={() => setRecordPaymentModalOpen(true)}>
-                                <Receipt /> {_("Registro de Pago")}
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                            {_("Registrar un pago contra un cliente o proveedor")}
-                            <KbdGroup className="ml-2">
-                                <Kbd><KeyboardMetaKeyIcon /></Kbd>
-                                <Kbd>P</Kbd>
-                            </KbdGroup>
-                        </TooltipContent>
-                    </Tooltip>
+
                     <Tooltip>
                         <TooltipTrigger asChild>
                             <Button
