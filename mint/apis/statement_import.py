@@ -315,6 +315,21 @@ def get_data(file_path: str):
             else:
                 raise
 
+    # Limitar decimales a 2 para evitar errores de precisión de punto flotante en la UI
+    if data:
+        for row_idx in range(len(data)):
+            for col_idx in range(len(data[row_idx])):
+                cell_val = data[row_idx][col_idx]
+                if isinstance(cell_val, float):
+                    data[row_idx][col_idx] = round(cell_val, 2)
+                elif isinstance(cell_val, str) and "." in cell_val:
+                    if cell_val.replace(".", "", 1).replace("-", "", 1).isdigit():
+                        if len(cell_val.split(".")[1]) > 2:
+                            try:
+                                data[row_idx][col_idx] = str(round(float(cell_val), 2))
+                            except ValueError:
+                                pass
+
     return data
 
 def get_header_row_index(data: list[list[str]]):
