@@ -7,7 +7,19 @@ def get_bank_transactions(bank_account=None, from_date=None, to_date=None, all_t
     
     # 1. Validación de seguridad: Solo agregamos el filtro si existe una cuenta
     if bank_account:
+        frappe.has_permission("Bank Account", "read", doc=bank_account, throw=True)
+        company = frappe.db.get_value("Bank Account", bank_account, "company")
+        if company:
+            frappe.has_permission("Company", "read", doc=company, throw=True)
         filters.append(["bank_account", "=", bank_account])
+    else:
+        # Prevent fetching all transactions for all companies if no bank_account is provided
+        # Filter by allowed companies
+        allowed_companies = frappe.get_all("Company", pluck="name")
+        if allowed_companies:
+            filters.append(["company", "in", allowed_companies])
+        else:
+            return []
         
     filters.append(["docstatus", "=", 1])
     
@@ -49,6 +61,10 @@ def get_older_unreconciled_transactions(bank_account: str, from_date: str):
     """
         Get the older unreconciled transactions for a bank account
     """
+    frappe.has_permission("Bank Account", "read", doc=bank_account, throw=True)
+    company = frappe.db.get_value("Bank Account", bank_account, "company")
+    if company:
+        frappe.has_permission("Company", "read", doc=company, throw=True)
     count = frappe.db.count("Bank Transaction", filters={
         "bank_account": bank_account,
         "date": ["<", from_date],

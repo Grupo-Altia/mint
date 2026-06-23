@@ -219,7 +219,25 @@ def get_data(file_path: str):
     if extension.lower() == ".csv":
         data = read_csv_content(content)
     elif extension.lower() == ".xlsx":
-        data = read_xlsx_file_from_attached_file(fcontent=content)
+        try:
+            data = read_xlsx_file_from_attached_file(fcontent=content)
+        except Exception as e:
+            # Fallback for "NoneType object has no attribute iter_rows" or BadZipFile (HTML as xlsx)
+            try:
+                from openpyxl import load_workbook
+                from io import BytesIO
+                wb = load_workbook(filename=BytesIO(content), data_only=True)
+                ws = wb.active
+                if ws is None and wb.worksheets:
+                    ws = wb.worksheets[0]
+                
+                if ws is not None:
+                    data = [[cell.value for cell in row] for row in ws.iter_rows()]
+                else:
+                    data = _parse_html_as_table(content)
+            except Exception:
+                # Si openpyxl falla completamente (ej. BadZipFile), asume que es un HTML
+                data = _parse_html_as_table(content)
     elif extension.lower() == ".xls":
         try:
             data = read_xls_file_from_attached_file(content)
