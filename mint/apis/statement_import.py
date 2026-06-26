@@ -110,9 +110,63 @@ def import_statement(file_url: str, bank_account: str):
 
     data = get_statement_details(file_url, bank_account)
 
+    final_transactions = data.get("final_transactions", [])
+
+    # 1. Limpiar referencias
+    for tx in final_transactions:
+        ref = str(tx.get("reference") or "").strip()
+        if ref.endswith(".0"):
+            ref = ref[:-2]
+        if ref.startswith("'"):
+            ref = ref[1:]
+        tx["cleaned_reference"] = ref
+
+    # 2. Emparejar comisiones
+    try:
+        from l10n_ve.utils.utils import get_exchange_rate
+    except ImportError:
+        get_exchange_rate = None
+
+    for tx in final_transactions:
+        dep = float(tx.get("deposit") or 0)
+        wth = float(tx.get("withdrawal") or 0)
+        if dep > 0 and wth == 0:
+            tx_ref = tx.get("cleaned_reference")
+            tx_date = tx.get("date")
+            
+            if not tx_ref:
+                continue
+                
+            # Buscar una comisión (retiro) con la misma fecha y referencia
+            for comm_tx in final_transactions:
+                c_wth = float(comm_tx.get("withdrawal") or 0)
+                c_dep = float(comm_tx.get("deposit") or 0)
+                if c_wth > 0 and c_dep == 0:
+                    if comm_tx.get("cleaned_reference") == tx_ref and comm_tx.get("date") == tx_date:
+                        comision_val = c_wth
+                        tx["comision"] = comision_val
+                        
+                        # Calcular el equivalente en USD
+                        if get_exchange_rate:
+                            try:
+                                rate = get_exchange_rate(tx_date, "USD")
+                            except TypeError:
+                                # Fallback por si la firma es diferente
+                                try:
+                                    rate = get_exchange_rate(tx_date, "USD", "VES")
+                                except Exception:
+                                    rate = 0.0
+                            if rate and rate > 0:
+                                tx["equivalente_de_comision"] = comision_val / rate
+                            else:
+                                tx["equivalente_de_comision"] = 0
+                        else:
+                            tx["equivalente_de_comision"] = 0
+                        break
+
     progress = 0
 
-    for transaction in data.get("final_transactions"):
+    for transaction in final_transactions:
         bank_tx = frappe.get_doc({
             "doctype": "Bank Transaction",
             "date": transaction.get("date"),
@@ -125,6 +179,8 @@ def import_statement(file_url: str, bank_account: str):
             "transaction_type": transaction.get("transaction_type"),
             "currency": currency,
             "company": company,
+            "comision": transaction.get("comision", 0.0),
+            "equivalente_de_comision": transaction.get("equivalente_de_comision", 0.0),
         })
         bank_tx.insert()
         bank_tx.submit()
