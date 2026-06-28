@@ -129,7 +129,7 @@ def import_statement(file_url: str, bank_account: str):
 
     for tx in final_transactions:
         tx_desc = str(tx.get("description") or "").lower()
-        is_commission = "comision" in tx_desc or "comisión" in tx_desc
+        is_commission = any(term in tx_desc for term in ["comision", "comisión", "commission"])
         
         if not is_commission:
             tx_ref = tx.get("cleaned_reference")
@@ -140,14 +140,18 @@ def import_statement(file_url: str, bank_account: str):
                 
             # Buscar una comisión (retiro) con la misma fecha y referencia
             for comm_tx in final_transactions:
+                if comm_tx.get("is_paired"):
+                    continue
+                    
                 c_wth = float(comm_tx.get("withdrawal") or 0)
                 c_desc = str(comm_tx.get("description") or "").lower()
-                c_is_commission = "comision" in c_desc or "comisión" in c_desc
+                c_is_commission = any(term in c_desc for term in ["comision", "comisión", "commission"])
                 
                 if c_wth > 0 and c_is_commission:
                     if comm_tx.get("cleaned_reference") == tx_ref and comm_tx.get("date") == tx_date:
                         commission_val = c_wth
                         tx["commission"] = commission_val
+                        comm_tx["is_paired"] = True
                         
                         # Calcular el equivalente en USD
                         if get_exchange_rate:
