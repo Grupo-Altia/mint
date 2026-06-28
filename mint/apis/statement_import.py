@@ -128,9 +128,10 @@ def import_statement(file_url: str, bank_account: str):
         get_exchange_rate = None
 
     for tx in final_transactions:
-        dep = float(tx.get("deposit") or 0)
-        wth = float(tx.get("withdrawal") or 0)
-        if dep > 0 and wth == 0:
+        tx_desc = str(tx.get("description") or "").lower()
+        is_commission = any(term in tx_desc for term in ["comision", "comisión", "commission"])
+        
+        if not is_commission:
             tx_ref = tx.get("cleaned_reference")
             tx_date = tx.get("date")
             
@@ -139,12 +140,18 @@ def import_statement(file_url: str, bank_account: str):
                 
             # Buscar una comisión (retiro) con la misma fecha y referencia
             for comm_tx in final_transactions:
+                if comm_tx.get("is_paired"):
+                    continue
+                    
                 c_wth = float(comm_tx.get("withdrawal") or 0)
-                c_dep = float(comm_tx.get("deposit") or 0)
-                if c_wth > 0 and c_dep == 0:
+                c_desc = str(comm_tx.get("description") or "").lower()
+                c_is_commission = any(term in c_desc for term in ["comision", "comisión", "commission"])
+                
+                if c_wth > 0 and c_is_commission:
                     if comm_tx.get("cleaned_reference") == tx_ref and comm_tx.get("date") == tx_date:
-                        comision_val = c_wth
-                        tx["comision"] = comision_val
+                        commission_val = c_wth
+                        tx["commission"] = commission_val
+                        comm_tx["is_paired"] = True
                         
                         # Calcular el equivalente en USD
                         if get_exchange_rate:
@@ -157,11 +164,11 @@ def import_statement(file_url: str, bank_account: str):
                                 except Exception:
                                     rate = 0.0
                             if rate and rate > 0:
-                                tx["equivalente_de_comision"] = comision_val / rate
+                                tx["equivalent_commission"] = commission_val / rate
                             else:
-                                tx["equivalente_de_comision"] = 0
+                                tx["equivalent_commission"] = 0
                         else:
-                            tx["equivalente_de_comision"] = 0
+                            tx["equivalent_commission"] = 0
                         break
 
     progress = 0
@@ -179,8 +186,8 @@ def import_statement(file_url: str, bank_account: str):
             "transaction_type": transaction.get("transaction_type"),
             "currency": currency,
             "company": company,
-            "comision": transaction.get("comision", 0.0),
-            "equivalente_de_comision": transaction.get("equivalente_de_comision", 0.0),
+            "commission": transaction.get("commission", 0.0),
+            "equivalent_commission": transaction.get("equivalent_commission", 0.0),
         })
         bank_tx.insert()
         bank_tx.submit()
