@@ -81,6 +81,56 @@ def get_statement_details(file_url: str, bank_account: str):
         "currency": account_currency,
     }
 
+def process_statement_import_background(final_transactions, bank_account, currency, company, file_url, data, user):
+    frappe.set_user(user)
+    progress = 0
+
+    for transaction in final_transactions:
+        bank_tx = frappe.get_doc({
+            "doctype": "Bank Transaction",
+            "date": transaction.get("date"),
+            "status": "Unreconciled",
+            "bank_account": bank_account,
+            "withdrawal": transaction.get("withdrawal"),
+            "deposit": transaction.get("deposit"),
+            "description": transaction.get("description"),
+            "reference_number": transaction.get("reference"),
+            "transaction_type": transaction.get("transaction_type"),
+            "currency": currency,
+            "company": company,
+            "commission": transaction.get("commission", 0.0),
+            "equivalent_commission": transaction.get("equivalent_commission", 0.0),
+        })
+        bank_tx.insert()
+        bank_tx.submit()
+        progress += 1
+
+        frappe.publish_realtime("mint-statement-import-progress", {
+            "progress": round((progress / len(final_transactions)) * 100),
+        }, user=user)
+    
+    frappe.publish_realtime("mint-statement-import-progress", {
+        "progress": 100,
+        "total": len(final_transactions),
+    }, user=user)
+    
+    log = frappe.new_doc("Mint Bank Statement Import Log")
+    log.bank_account = bank_account
+    log.file = file_url
+    log.number_of_transactions = len(final_transactions)
+    log.start_date = data.get("statement_start_date")
+    log.end_date = data.get("statement_end_date")
+    log.closing_balance = data.get("closing_balance")
+    log.insert(ignore_permissions=True)
+
+    if data.get("closing_balance") and data.get("closing_balance") > 0 and data.get("statement_end_date"):
+        from mint.apis.statement_import import set_closing_balance_as_per_statement
+        set_closing_balance_as_per_statement(bank_account, frappe.utils.getdate(data.get("statement_end_date")), data.get("closing_balance"))
+    
+    from mint.apis.rules import run_rule_evaluation
+    run_rule_evaluation()
+
+
 @frappe.whitelist(methods=["POST"])
 def import_statement(file_url: str, bank_account: str):
     """
@@ -171,51 +221,29 @@ def import_statement(file_url: str, bank_account: str):
                             tx["equivalent_commission"] = 0
                         break
 
-    progress = 0
-
-    for transaction in final_transactions:
-        bank_tx = frappe.get_doc({
-            "doctype": "Bank Transaction",
-            "date": transaction.get("date"),
-            "status": "Unreconciled",
-            "bank_account": bank_account,
-            "withdrawal": transaction.get("withdrawal"),
-            "deposit": transaction.get("deposit"),
-            "description": transaction.get("description"),
-            "reference_number": transaction.get("reference"),
-            "transaction_type": transaction.get("transaction_type"),
-            "currency": currency,
-            "company": company,
-            "commission": transaction.get("commission", 0.0),
-            "equivalent_commission": transaction.get("equivalent_commission", 0.0),
-        })
-        bank_tx.insert()
-        bank_tx.submit()
-        progress += 1
-
-        frappe.publish_realtime("mint-statement-import-progress", {
-            "progress": round((progress / len(data.get("final_transactions"))) * 100),
-        }, user=frappe.session.user)
-    
-    frappe.publish_realtime("mint-statement-import-progress", {
-        "progress": 100,
-        "total": len(data.get("final_transactions")),
-    }, user=frappe.session.user)
-    
-    log = frappe.new_doc("Mint Bank Statement Import Log")
-    log.bank_account = bank_account
-    log.file = file_url
-    log.number_of_transactions = len(data.get("final_transactions"))
-    log.start_date = data.get("statement_start_date")
-    log.end_date = data.get("statement_end_date")
-    log.closing_balance = data.get("closing_balance")
-    log.insert(ignore_permissions=True)
-
-    if data.get("closing_balance") and data.get("closing_balance") > 0 and data.get("statement_end_date"):
-        set_closing_balance_as_per_statement(bank_account, frappe.utils.getdate(data.get("statement_end_date")), data.get("closing_balance"))
-    
-    from mint.apis.rules import run_rule_evaluation
-    run_rule_evaluation()
+    if len(final_transactions) > 100:
+        frappe.enqueue(
+            "mint.apis.statement_import.process_statement_import_background",
+            queue="long",
+            timeout=7200,
+            final_transactions=final_transactions,
+            bank_account=bank_account,
+            currency=currency,
+            company=company,
+            file_url=file_url,
+            data=data,
+            user=frappe.session.user
+        )
+    else:
+        process_statement_import_background(
+            final_transactions=final_transactions,
+            bank_account=bank_account,
+            currency=currency,
+            company=company,
+            file_url=file_url,
+            data=data,
+            user=frappe.session.user
+        )
 
     return {
         "success": True,
