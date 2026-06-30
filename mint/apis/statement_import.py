@@ -89,6 +89,16 @@ def process_statement_import_background(final_transactions, bank_account, curren
 
     for transaction in final_transactions:
         try:
+            # Evitar reinsertar transacciones ya existentes (misma cuenta + referencia):
+            # sin esto, los duplicados de un extracto inundan el Error Log y degradan
+            # la importación por rollbacks repetidos. Se cuentan como omitidas.
+            ref = transaction.get("reference")
+            if ref and frappe.db.exists(
+                "Bank Transaction", {"bank_account": bank_account, "reference_number": ref}
+            ):
+                errors += 1
+                continue
+
             bank_tx = frappe.get_doc({
                 "doctype": "Bank Transaction",
                 "date": transaction.get("date"),
@@ -135,15 +145,15 @@ def process_statement_import_background(final_transactions, bank_account, curren
     log.insert(ignore_permissions=True)
 
     if data.get("closing_balance") is not None and data.get("statement_end_date"):
-        set_closing_balance_as_per_statement(bank_account, frappe.utils.getdate(data.get("statement_end_date")), data.get("closing_balance"))
+        set_closing_balance_as_per_statement(bank_account, getdate(data.get("statement_end_date")), data.get("closing_balance"))
     
     from mint.apis.rules import run_rule_evaluation
     run_rule_evaluation()
 
-    subject = f"Importación finalizada: {success} exitosos, {errors} fallidos"
-    message = f"Se procesaron {success} transacciones bancarias nuevas de un total de {len(final_transactions)}."
+    subject = _("Importación finalizada: {0} exitosos, {1} fallidos").format(success, errors)
+    message = _("Se procesaron {0} transacciones bancarias nuevas de un total de {1}.").format(success, len(final_transactions))
     if errors > 0:
-        message += f"<br>Se omitieron {errors} transacciones porque ya existían en el sistema (referencias duplicadas) o tuvieron error."
+        message += "<br>" + _("Se omitieron {0} transacciones porque ya existían en el sistema (referencias duplicadas) o tuvieron error.").format(errors)
         
     notification = frappe.new_doc("Notification Log")
     notification.subject = subject
