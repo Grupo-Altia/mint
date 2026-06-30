@@ -110,6 +110,7 @@ def process_statement_import_background(final_transactions, bank_account, curren
             success += 1
         except Exception as e:
             frappe.db.rollback()
+            frappe.log_error(title="Error en importación de transacción bancaria")
             errors += 1
         finally:
             progress += 1
@@ -132,8 +133,7 @@ def process_statement_import_background(final_transactions, bank_account, curren
     log.closing_balance = data.get("closing_balance")
     log.insert(ignore_permissions=True)
 
-    if data.get("closing_balance") and data.get("closing_balance") > 0 and data.get("statement_end_date"):
-        from mint.apis.statement_import import set_closing_balance_as_per_statement
+    if data.get("closing_balance") is not None and data.get("statement_end_date"):
         set_closing_balance_as_per_statement(bank_account, frappe.utils.getdate(data.get("statement_end_date")), data.get("closing_balance"))
     
     from mint.apis.rules import run_rule_evaluation
@@ -201,6 +201,20 @@ def import_statement(file_url: str, bank_account: str):
     except ImportError:
         get_exchange_rate = None
 
+    commissions_map = {}
+    for tx in final_transactions:
+        c_wth = float(tx.get("withdrawal") or 0)
+        if c_wth > 0:
+            c_desc = str(tx.get("description") or "").lower()
+            if any(term in c_desc for term in ["comision", "comisión", "commission"]):
+                c_ref = tx.get("cleaned_reference")
+                c_date = tx.get("date")
+                if c_ref and c_date:
+                    key = (c_ref, c_date)
+                    if key not in commissions_map:
+                        commissions_map[key] = []
+                    commissions_map[key].append(tx)
+
     for tx in final_transactions:
         tx_desc = str(tx.get("description") or "").lower()
         is_commission = any(term in tx_desc for term in ["comision", "comisión", "commission"])
@@ -209,37 +223,29 @@ def import_statement(file_url: str, bank_account: str):
             tx_ref = tx.get("cleaned_reference")
             tx_date = tx.get("date")
             
-            if not tx_ref:
+            if not tx_ref or not tx_date:
                 continue
                 
-            # Buscar una comisión (retiro) con la misma fecha y referencia
-            for comm_tx in final_transactions:
-                if comm_tx.get("is_paired"):
-                    continue
-                    
-                c_wth = float(comm_tx.get("withdrawal") or 0)
-                c_desc = str(comm_tx.get("description") or "").lower()
-                c_is_commission = any(term in c_desc for term in ["comision", "comisión", "commission"])
-                
-                if c_wth > 0 and c_is_commission:
-                    if comm_tx.get("cleaned_reference") == tx_ref and comm_tx.get("date") == tx_date:
-                        # Acumular en caso de que existan varias comisiones (ej. P2C + ITF)
-                        tx["commission"] = tx.get("commission", 0.0) + c_wth
-                        comm_tx["is_paired"] = True
+            key = (tx_ref, tx_date)
+            if key in commissions_map:
+                for comm_tx in commissions_map[key]:
+                    if comm_tx.get("is_paired"):
+                        continue
                         
-                        # Calcular el equivalente en USD
-                        if get_exchange_rate:
+                    c_wth = float(comm_tx.get("withdrawal") or 0)
+                    tx["commission"] = tx.get("commission", 0.0) + c_wth
+                    comm_tx["is_paired"] = True
+                    
+                    if get_exchange_rate:
+                        try:
+                            rate = get_exchange_rate(tx_date, "USD")
+                        except TypeError:
                             try:
-                                rate = get_exchange_rate(tx_date, "USD")
-                            except TypeError:
-                                # Fallback por si la firma es diferente
-                                try:
-                                    rate = get_exchange_rate(tx_date, "USD", "VES")
-                                except Exception:
-                                    rate = 0.0
-                            if rate and rate > 0:
-                                tx["equivalent_commission"] = tx.get("equivalent_commission", 0.0) + (c_wth / rate)
-                        # No hacer break, continuar buscando si hay más comisiones con misma referencia
+                                rate = get_exchange_rate(tx_date, "USD", "VES")
+                            except Exception:
+                                rate = 0.0
+                        if rate and rate > 0:
+                            tx["equivalent_commission"] = tx.get("equivalent_commission", 0.0) + (c_wth / rate)
 
     if len(final_transactions) > 100:
         frappe.enqueue(
@@ -251,7 +257,11 @@ def import_statement(file_url: str, bank_account: str):
             currency=currency,
             company=company,
             file_url=file_url,
-            data=data,
+            data={
+                "statement_start_date": data.get("statement_start_date"),
+                "statement_end_date": data.get("statement_end_date"),
+                "closing_balance": data.get("closing_balance")
+            },
             user=frappe.session.user
         )
     else:
@@ -261,7 +271,11 @@ def import_statement(file_url: str, bank_account: str):
             currency=currency,
             company=company,
             file_url=file_url,
-            data=data,
+            data={
+                "statement_start_date": data.get("statement_start_date"),
+                "statement_end_date": data.get("statement_end_date"),
+                "closing_balance": data.get("closing_balance")
+            },
             user=frappe.session.user
         )
 
