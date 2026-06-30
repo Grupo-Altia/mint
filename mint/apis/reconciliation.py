@@ -631,11 +631,11 @@ def before_submit_receive_payment(doc, method=None) -> None:
     # que ningún campo quede apuntando al monto tecleado original. calculate_igtf_taxes
     # / set_amounts / ... son métodos del CustomPaymentEntry de l10n_ve (runtime).
     _apply_deposit_amount(doc, deposit)
-    # Recalcula impuestos, montos y palabras llamando a los métodos nativos 
-    # y custom (de l10n_ve si existen) sin lanzar AttributeError
-    for method in ("calculate_igtf_taxes", "set_amounts", "set_amounts_after_tax", "set_total_in_words", "set_remarks"):
-        if hasattr(doc, method):
-            getattr(doc, method)()
+    doc.calculate_igtf_taxes()  # recalcula IGTF si el cobro es en divisa
+    doc.set_amounts()
+    doc.set_amounts_after_tax()
+    doc.set_total_in_words()
+    doc.set_remarks()
     doc.custom_reconciliation_status = RECON_DONE
     doc.flags.l10n_ve_matched_deposit = deposit.name
 
