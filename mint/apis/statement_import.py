@@ -111,6 +111,7 @@ def process_statement_import_background(final_transactions, bank_account, curren
         except Exception as e:
             frappe.db.rollback()
             frappe.log_error(title="Error en importación de transacción bancaria")
+            frappe.db.commit()
             errors += 1
         finally:
             progress += 1
@@ -238,12 +239,12 @@ def import_statement(file_url: str, bank_account: str):
                     
                     if get_exchange_rate:
                         try:
-                            rate = get_exchange_rate(tx_date, "USD")
-                        except TypeError:
                             try:
+                                rate = get_exchange_rate(tx_date, "USD")
+                            except TypeError:
                                 rate = get_exchange_rate(tx_date, "USD", "VES")
-                            except Exception:
-                                rate = 0.0
+                        except Exception:
+                            rate = 0.0
                         if rate and rate > 0:
                             tx["equivalent_commission"] = tx.get("equivalent_commission", 0.0) + (c_wth / rate)
 
