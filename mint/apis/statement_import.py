@@ -84,30 +84,39 @@ def get_statement_details(file_url: str, bank_account: str):
 def process_statement_import_background(final_transactions, bank_account, currency, company, file_url, data, user):
     frappe.set_user(user)
     progress = 0
+    success = 0
+    errors = 0
 
     for transaction in final_transactions:
-        bank_tx = frappe.get_doc({
-            "doctype": "Bank Transaction",
-            "date": transaction.get("date"),
-            "status": "Unreconciled",
-            "bank_account": bank_account,
-            "withdrawal": transaction.get("withdrawal"),
-            "deposit": transaction.get("deposit"),
-            "description": transaction.get("description"),
-            "reference_number": transaction.get("reference"),
-            "transaction_type": transaction.get("transaction_type"),
-            "currency": currency,
-            "company": company,
-            "commission": transaction.get("commission", 0.0),
-            "equivalent_commission": transaction.get("equivalent_commission", 0.0),
-        })
-        bank_tx.insert()
-        bank_tx.submit()
-        progress += 1
-
-        frappe.publish_realtime("mint-statement-import-progress", {
-            "progress": round((progress / len(final_transactions)) * 100),
-        }, user=user)
+        try:
+            bank_tx = frappe.get_doc({
+                "doctype": "Bank Transaction",
+                "date": transaction.get("date"),
+                "status": "Unreconciled",
+                "bank_account": bank_account,
+                "withdrawal": transaction.get("withdrawal"),
+                "deposit": transaction.get("deposit"),
+                "description": transaction.get("description"),
+                "reference_number": transaction.get("reference"),
+                "transaction_type": transaction.get("transaction_type"),
+                "currency": currency,
+                "company": company,
+                "commission": transaction.get("commission", 0.0),
+                "equivalent_commission": transaction.get("equivalent_commission", 0.0),
+            })
+            bank_tx.insert(ignore_permissions=True)
+            bank_tx.submit()
+            frappe.db.commit()
+            success += 1
+        except Exception as e:
+            frappe.db.rollback()
+            errors += 1
+        finally:
+            progress += 1
+            if progress % 50 == 0:
+                frappe.publish_realtime("mint-statement-import-progress", {
+                    "progress": round((progress / len(final_transactions)) * 100),
+                }, user=user)
     
     frappe.publish_realtime("mint-statement-import-progress", {
         "progress": 100,
@@ -129,6 +138,21 @@ def process_statement_import_background(final_transactions, bank_account, curren
     
     from mint.apis.rules import run_rule_evaluation
     run_rule_evaluation()
+
+    subject = f"Importación finalizada: {success} exitosos, {errors} fallidos"
+    message = f"Se procesaron {success} transacciones bancarias nuevas de un total de {len(final_transactions)}."
+    if errors > 0:
+        message += f"<br>Se omitieron {errors} transacciones porque ya existían en el sistema (referencias duplicadas) o tuvieron error."
+        
+    notification = frappe.new_doc("Notification Log")
+    notification.subject = subject
+    notification.email_content = message
+    notification.for_user = user
+    notification.type = "Alert"
+    notification.document_type = "Mint Bank Statement Import Log"
+    notification.document_name = log.name
+    notification.insert(ignore_permissions=True)
+    frappe.db.commit()
 
 
 @frappe.whitelist(methods=["POST"])
