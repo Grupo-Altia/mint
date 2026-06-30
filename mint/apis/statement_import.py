@@ -199,8 +199,8 @@ def import_statement(file_url: str, bank_account: str):
                 
                 if c_wth > 0 and c_is_commission:
                     if comm_tx.get("cleaned_reference") == tx_ref and comm_tx.get("date") == tx_date:
-                        commission_val = c_wth
-                        tx["commission"] = commission_val
+                        # Acumular en caso de que existan varias comisiones (ej. P2C + ITF)
+                        tx["commission"] = tx.get("commission", 0.0) + c_wth
                         comm_tx["is_paired"] = True
                         
                         # Calcular el equivalente en USD
@@ -214,12 +214,8 @@ def import_statement(file_url: str, bank_account: str):
                                 except Exception:
                                     rate = 0.0
                             if rate and rate > 0:
-                                tx["equivalent_commission"] = commission_val / rate
-                            else:
-                                tx["equivalent_commission"] = 0
-                        else:
-                            tx["equivalent_commission"] = 0
-                        break
+                                tx["equivalent_commission"] = tx.get("equivalent_commission", 0.0) + (c_wth / rate)
+                        # No hacer break, continuar buscando si hay más comisiones con misma referencia
 
     if len(final_transactions) > 100:
         frappe.enqueue(
