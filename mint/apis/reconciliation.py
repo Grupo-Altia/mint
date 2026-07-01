@@ -268,20 +268,14 @@ def _first_deposit(filters: dict) -> frappe._dict | None:
 
 
 def _find_deposit_by_source_bank_rule(doc) -> frappe._dict | None:
-    """Fallback de matching por la REGLA DEL BANCO ORIGEN del cobro, HACIA ADELANTE.
+    """Fallback de matching por REGLA DE BANCO, HACIA ADELANTE.
 
-    Si el match exacto falla y el cobro tiene `source_bank` con una regla, se aplica la
-    regla a la referencia de cada depósito CANDIDATO (misma cuenta/moneda/saldo) y se
-    compara con la referencia del cobro: apply_format_rule(depósito.ref) == cobro.ref.
-    No se revierte la regla (son forward-only y algunas, como "últimos 8", son lossy):
-    la referencia "completa" siempre es la del depósito y nunca se reconstruye.
+    Si el match exacto falla, se aplica la regla de limpieza a la referencia de
+    cada depósito CANDIDATO (misma cuenta/moneda/saldo) y se compara con la
+    referencia del cobro.
+    Si el cobro tiene `source_bank`, se usa solo esa regla. Si no, se prueban
+    todas las reglas configuradas en los bancos del sistema.
     """
-    source_bank = doc.get("source_bank")
-    if not source_bank:
-        return None
-    rule_name = frappe.get_cached_value("Bank", source_bank, "bank_reference_rule")
-    if not rule_name:
-        return None
     target_ref = str(doc.reference_no or "").strip()
     if not target_ref:
         return None
@@ -305,9 +299,24 @@ def _find_deposit_by_source_bank_rule(doc) -> frappe._dict | None:
         fields=DEPOSIT_FIELDS + ["reference_number"],
         order_by="deposit asc",
     )
+    if not candidates:
+        return None
+
+    rules_to_check = []
+    source_bank = doc.get("source_bank")
+    if source_bank:
+        rule_name = frappe.get_cached_value("Bank", source_bank, "bank_reference_rule")
+        if rule_name:
+            rules_to_check.append(rule_name)
+    else:
+        banks_with_rules = frappe.get_all("Bank", filters={"bank_reference_rule": ["is", "set"]}, fields=["bank_reference_rule"])
+        rules_to_check = list(set(b.bank_reference_rule for b in banks_with_rules))
+
     for cand in candidates:
-        if apply_format_rule(rule_name, cand.reference_number) == target_ref:
-            return cand
+        for rule_name in rules_to_check:
+            if apply_format_rule(rule_name, cand.reference_number) == target_ref:
+                return cand
+                
     return None
 
 
@@ -551,17 +560,28 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
     )
     if pe:
         if not bt.party_type and pe.party_type:
-            bt.party_type = pe.party_type
+            bt.db_set("party_type", pe.party_type)
         if not bt.party and pe.party:
-            bt.party = pe.party
+            bt.db_set("party", pe.party)
         
-        # Guardar también la referencia origen si aplica
+        # Guardar también la referencia origen si aplica usando las reglas globales
         original_ref = str(bt.reference_number or "").strip()
         if pe.reference_no and not bt.source_bank_reference_rule and original_ref and pe.reference_no != original_ref:
-            rule_name = frappe.db.get_value("Bank", pe.source_bank, "bank_reference_rule") if pe.source_bank else None
-            if rule_name and apply_format_rule(rule_name, original_ref) == pe.reference_no:
-                bt.source_bank_reference_rule = pe.reference_no
+            rules_to_check = []
+            if pe.source_bank:
+                rule_name = frappe.db.get_value("Bank", pe.source_bank, "bank_reference_rule")
+                if rule_name:
+                    rules_to_check.append(rule_name)
+            else:
+                banks_with_rules = frappe.get_all("Bank", filters={"bank_reference_rule": ["is", "set"]}, fields=["bank_reference_rule"])
+                rules_to_check = list(set(b.bank_reference_rule for b in banks_with_rules))
+                
+            for rule in rules_to_check:
+                if apply_format_rule(rule, original_ref) == pe.reference_no:
+                    bt.db_set("source_bank_reference_rule", pe.reference_no)
+                    break
 
+    # Guardar las entradas de pago y demás campos permitidos (allow_on_submit)
     bt.save(ignore_permissions=True)
 
     # Forzar actualización del estado visual, ya que bt.save actualiza clearance_date
