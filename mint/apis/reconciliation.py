@@ -308,8 +308,7 @@ def _find_deposit_by_source_bank_rule(doc) -> frappe._dict | None:
         rule_name = frappe.get_cached_value("Bank", source_bank, "bank_reference_rule")
         if rule_name:
             rules_to_check.append(rule_name)
-    
-    if not rules_to_check:
+    else:
         banks_with_rules = frappe.get_all("Bank", filters={"bank_reference_rule": ["is", "set"]}, fields=["bank_reference_rule"])
         rules_to_check = list(set(b.bank_reference_rule for b in banks_with_rules))
 
@@ -573,8 +572,7 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
                 rule_name = frappe.db.get_value("Bank", pe.source_bank, "bank_reference_rule")
                 if rule_name:
                     rules_to_check.append(rule_name)
-            
-            if not rules_to_check:
+            else:
                 banks_with_rules = frappe.get_all("Bank", filters={"bank_reference_rule": ["is", "set"]}, fields=["bank_reference_rule"])
                 rules_to_check = list(set(b.bank_reference_rule for b in banks_with_rules))
                 
