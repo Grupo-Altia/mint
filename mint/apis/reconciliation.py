@@ -309,8 +309,8 @@ def _find_deposit_by_source_bank_rule(doc) -> frappe._dict | None:
         if rule_name:
             rules_to_check.append(rule_name)
     else:
-        banks_with_rules = frappe.get_all("Bank", filters={"bank_reference_rule": ["is", "set"]}, fields=["bank_reference_rule"])
-        rules_to_check = list(set(b.bank_reference_rule for b in banks_with_rules))
+        banks_with_rules = frappe.get_all("Bank", filters={"bank_reference_rule": ["!=", ""]}, fields=["bank_reference_rule"])
+        rules_to_check = list(set(b.bank_reference_rule for b in banks_with_rules if b.bank_reference_rule))
 
     for cand in candidates:
         for rule_name in rules_to_check:
@@ -559,10 +559,11 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
         ["reference_no", "party_type", "party", "source_bank"], as_dict=True,
     )
     if pe:
+        updated_fields = {}
         if not bt.party_type and pe.party_type:
-            bt.db_set("party_type", pe.party_type)
+            updated_fields["party_type"] = pe.party_type
         if not bt.party and pe.party:
-            bt.db_set("party", pe.party)
+            updated_fields["party"] = pe.party
         
         # Guardar también la referencia origen si aplica usando las reglas globales
         original_ref = str(bt.reference_number or "").strip()
@@ -573,13 +574,17 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
                 if rule_name:
                     rules_to_check.append(rule_name)
             else:
-                banks_with_rules = frappe.get_all("Bank", filters={"bank_reference_rule": ["is", "set"]}, fields=["bank_reference_rule"])
-                rules_to_check = list(set(b.bank_reference_rule for b in banks_with_rules))
+                banks_with_rules = frappe.get_all("Bank", filters={"bank_reference_rule": ["!=", ""]}, fields=["bank_reference_rule"])
+                rules_to_check = list(set(b.bank_reference_rule for b in banks_with_rules if b.bank_reference_rule))
                 
             for rule in rules_to_check:
                 if apply_format_rule(rule, original_ref) == pe.reference_no:
-                    bt.db_set("source_bank_reference_rule", pe.reference_no)
+                    updated_fields["source_bank_reference_rule"] = rule
                     break
+
+        if updated_fields:
+            frappe.db.set_value("Bank Transaction", bt.name, updated_fields)
+            bt.update(updated_fields)
 
     # Guardar las entradas de pago y demás campos permitidos (allow_on_submit)
     bt.save(ignore_permissions=True)
