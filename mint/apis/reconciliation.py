@@ -581,6 +581,9 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
                     bt.db_set("source_bank_reference_rule", pe.reference_no)
                     break
 
+    # Guardar las entradas de pago y demás campos permitidos (allow_on_submit)
+    bt.save(ignore_permissions=True)
+
     # Forzar actualización del estado visual, ya que bt.save actualiza clearance_date
     # silenciosamente por db.set_value sin disparar hooks del Payment Entry.
     clearance_date, current_status = frappe.db.get_value(
