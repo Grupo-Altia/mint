@@ -220,8 +220,8 @@ const UnreconciledTransactions = ({ contentHeight }: { contentHeight: number }) 
 
         {results.length === 0 && <NoTransactionsFoundBanner
             onClearFilters={hasFilters ? onClearFilters : undefined}
-            text={hasFilters ? _("No transactions found for the given filters.") : _("No unreconciled transactions found")}
-            description={hasFilters ? _("Try adjusting your search or filter criteria.") : _("Import your bank statement to get started.")} />}
+            text={hasFilters ? _("No se encontraron transacciones con los filtros actuales.") : _("No se encontraron transacciones sin conciliar")}
+            description={hasFilters ? _("Intenta ajustar tu búsqueda o criterios de filtro.") : _("Importa tu estado de cuenta bancario para empezar.")} />}
 
         <Virtuoso
             data={results}
