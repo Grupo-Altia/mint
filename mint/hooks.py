@@ -148,6 +148,7 @@ doc_events = {
         "before_submit": "mint.apis.reconciliation.before_submit_receive_payment",
         "on_submit": "mint.apis.reconciliation.on_submit_receive_payment",
         "on_cancel": "mint.apis.reconciliation.on_cancel_receive_payment",
+        "on_trash": "mint.apis.reconciliation.on_trash_receive_payment",
         "on_change": "mint.apis.reconciliation.on_change_payment_entry",
     },
     "Bank Transaction": {
