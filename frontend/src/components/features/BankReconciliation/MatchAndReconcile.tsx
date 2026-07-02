@@ -209,8 +209,8 @@ const UnreconciledTransactions = ({ contentHeight }: { contentHeight: number }) 
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>
-            <Button type='button' variant="outline" className="h-9" onClick={handleSelectAll} title={_("Seleccionar todos los resultados filtrados")}>
-                {_("Seleccionar todo")}
+            <Button type='button' variant="outline" className="h-9" onClick={handleSelectAll} title={_("Select all filtered results")}>
+                {_("Select all")}
             </Button>
         </div>
 
@@ -220,8 +220,8 @@ const UnreconciledTransactions = ({ contentHeight }: { contentHeight: number }) 
 
         {results.length === 0 && <NoTransactionsFoundBanner
             onClearFilters={hasFilters ? onClearFilters : undefined}
-            text={hasFilters ? _("No se encontraron transacciones con los filtros actuales.") : _("No se encontraron transacciones sin conciliar")}
-            description={hasFilters ? _("Intenta ajustar tu búsqueda o criterios de filtro.") : _("Importa tu estado de cuenta bancario para empezar.")} />}
+            text={hasFilters ? _("No transactions found for the given filters.") : _("No unreconciled transactions found")}
+            description={hasFilters ? _("Try adjusting your search or filter criteria.") : _("Import your bank statement to get started.")} />}
 
         <Virtuoso
             data={results}
@@ -246,7 +246,7 @@ const NoTransactionsFoundBanner = ({ text, description, onClearFilters }: { text
             {description && <EmptyDescription>{description}</EmptyDescription>}
         </EmptyHeader>
         <EmptyContent>
-            {onClearFilters ? <Button type='button' size='sm' variant='outline' onClick={onClearFilters}>{_("Limpiar Filtros")}</Button> :
+            {onClearFilters ? <Button type='button' size='sm' variant='outline' onClick={onClearFilters}>{_("Clear Filters")}</Button> :
                 <Button type='button' asChild size='sm' variant='outline'>
                     <Link to="/statement-importer">
                         {_("Importar Estado de Cuenta")}

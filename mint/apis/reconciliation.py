@@ -690,10 +690,11 @@ def on_cancel_receive_payment(doc, method=None) -> None:
         doc.db_set("custom_reconciliation_status", RECON_PENDING)
 
     if frappe.db.exists("DocType", "ISP Payment Entry"):
-        linked = frappe.get_all("ISP Payment Entry", filters={"payment_entry": doc.name})
-        for l in linked:
-            isp_doc = frappe.get_doc("ISP Payment Entry", l.name)
+        linked = frappe.get_all("ISP Payment Entry", filters={"payment_entry": doc.name}, pluck="name")
+        for name in linked:
+            isp_doc = frappe.get_doc("ISP Payment Entry", name)
             if isp_doc.docstatus == 1:
+                isp_doc.flags.ignore_permissions = True
                 isp_doc.cancel()
 
 
@@ -701,9 +702,9 @@ def on_trash_receive_payment(doc, method=None) -> None:
     """Al eliminar un cobro, elimina también los ISP Payment Entry enlazados para
     evitar el bloqueo por Link Validation de Frappe."""
     if frappe.db.exists("DocType", "ISP Payment Entry"):
-        linked = frappe.get_all("ISP Payment Entry", filters={"payment_entry": doc.name})
-        for l in linked:
-            frappe.delete_doc("ISP Payment Entry", l.name, ignore_permissions=True)
+        linked = frappe.get_all("ISP Payment Entry", filters={"payment_entry": doc.name}, pluck="name")
+        for name in linked:
+            frappe.delete_doc("ISP Payment Entry", name, ignore_permissions=True)
 
 
 def on_change_payment_entry(doc, method=None) -> None:
