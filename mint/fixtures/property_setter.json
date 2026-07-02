@@ -1424,7 +1424,7 @@
   "value": "REF. Standard Selling Rate"
  },
  {
-  "default_value": "Descripci\u00f3n de direcci\u00f3n",
+  "default_value": "Descripción de dirección",
   "doc_type": "Address",
   "docstatus": 0,
   "doctype": "Property Setter",
@@ -1437,7 +1437,7 @@
   "property": "label",
   "property_type": "Data",
   "row_name": null,
-  "value": "Descripci\u00f3n de direcci\u00f3n"
+  "value": "Descripción de dirección"
  },
  {
   "default_value": "1",
@@ -1648,7 +1648,7 @@
   "value": "1"
  },
  {
-  "default_value": "Direcci\u00f3n",
+  "default_value": "Dirección",
   "doc_type": "Address",
   "docstatus": 0,
   "doctype": "Property Setter",
@@ -1661,7 +1661,7 @@
   "property": "label",
   "property_type": "Text",
   "row_name": null,
-  "value": "Direcci\u00f3n"
+  "value": "Dirección"
  },
  {
   "default_value": null,
@@ -2877,7 +2877,7 @@
   "property": "label",
   "property_type": "",
   "row_name": null,
-  "value": "N\u00famero de Documento"
+  "value": "Número de Documento"
  },
  {
   "default_value": "1",
@@ -4205,7 +4205,7 @@
   "property": "description",
   "property_type": "Text",
   "row_name": null,
-  "value": "Si est\u00e1 habilitado, el sistema permitir\u00e1 seleccionar unidades de medida en transacciones de compra y venta solo si la tasa de conversi\u00f3n est\u00e1 configurada en el maestro de art\u00edculos."
+  "value": "Si está habilitado, el sistema permitirá seleccionar unidades de medida en transacciones de compra y venta solo si la tasa de conversión está configurada en el maestro de artículos."
  },
  {
   "default_value": null,
@@ -4221,7 +4221,7 @@
   "property": "description",
   "property_type": "Text",
   "row_name": null,
-  "value": "Si est\u00e1 habilitado, no actualice los valores de serie / lote en las transacciones de stock al crear el Paquete de Serie / Lote autom\u00e1tico."
+  "value": "Si está habilitado, no actualice los valores de serie / lote en las transacciones de stock al crear el Paquete de Serie / Lote automático."
  },
  {
   "default_value": null,
@@ -4397,7 +4397,7 @@
   "property": "label",
   "property_type": "Data",
   "row_name": null,
-  "value": "Descripci\u00f3n"
+  "value": "Descripción"
  },
  {
   "default_value": null,
@@ -6176,6 +6176,262 @@
   "value": "1"
  },
  {
+  "default_value": "USD",
+  "doc_type": "Subscription Plan",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "currency",
+  "is_system_generated": 0,
+  "modified": "2025-12-24 00:00:00",
+  "module": "domina_isp",
+  "name": "Subscription Plan-currency-default",
+  "property": "default",
+  "property_type": "Text",
+  "row_name": null,
+  "value": "USD"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Subscription Plan",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "payment_plan_section",
+  "is_system_generated": 0,
+  "modified": "2025-12-01 00:00:00",
+  "module": "domina_isp",
+  "name": "Subscription Plan-payment_plan_section-hidden",
+  "property": "hidden",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "Configuración del Plan"
+ },
+ {
+  "default_value": "Month",
+  "doc_type": "Subscription Plan",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "billing_interval",
+  "is_system_generated": 0,
+  "modified": "2025-12-01 00:00:00",
+  "module": "domina_isp",
+  "name": "Subscription Plan-billing_interval-default",
+  "property": "default",
+  "property_type": "Text",
+  "row_name": null,
+  "value": "Month"
+ },
+ {
+  "default_value": "Fixed Rate",
+  "doc_type": "Subscription Plan",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "price_determination",
+  "is_system_generated": 0,
+  "modified": "2025-12-24 00:00:00",
+  "module": "domina_isp",
+  "name": "Subscription Plan-price_determination-default",
+  "property": "default",
+  "property_type": "Text",
+  "row_name": null,
+  "value": "Fixed Rate"
+ },
+ {
+  "default_value": "Fixed Rate",
+  "doc_type": "Subscription Plan",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "price_determination",
+  "is_system_generated": 0,
+  "modified": "2025-12-24 00:00:00",
+  "module": "domina_isp",
+  "name": "Subscription Plan-price_determination-options",
+  "property": "options",
+  "property_type": "Text",
+  "row_name": null,
+  "value": "Fixed Rate\nBased On Price List"
+ },
+ {
+  "default_value": "0",
+  "doc_type": "Subscription Plan",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "price_list",
+  "is_system_generated": 0,
+  "modified": "2025-12-24 00:00:00",
+  "module": "domina_isp",
+  "name": "Subscription Plan-price_list-reqd",
+  "property": "reqd",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "0"
+ },
+ {
+  "default_value": "1",
+  "doc_type": "Subscription Plan",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "product_price_id",
+  "is_system_generated": 0,
+  "modified": "2025-12-01 00:00:00",
+  "module": "domina_isp",
+  "name": "Subscription Plan-product_price_id-hidden",
+  "property": "hidden",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": "1",
+  "doc_type": "Subscription Plan",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "payment_gateway",
+  "is_system_generated": 0,
+  "modified": "2025-12-01 00:00:00",
+  "module": "domina_isp",
+  "name": "Subscription Plan-payment_gateway-hidden",
+  "property": "hidden",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": "0",
+  "doc_type": "Subscription Plan",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "item",
+  "is_system_generated": 0,
+  "modified": "2025-12-24 00:00:00",
+  "module": "domina_isp",
+  "name": "Subscription Plan-item-reqd",
+  "property": "reqd",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "0"
+ },
+ {
+  "default_value": "0",
+  "doc_type": "Subscription",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "submit_invoice",
+  "is_system_generated": 0,
+  "modified": "2025-12-01 00:00:00",
+  "module": "domina_isp",
+  "name": "Subscription-submit_invoice-default",
+  "property": "default",
+  "property_type": "Text",
+  "row_name": null,
+  "value": "0"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Subscription Plan",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "cost",
+  "is_system_generated": 0,
+  "modified": "2025-12-01 00:00:00",
+  "module": "domina_isp",
+  "name": "Subscription Plan-cost-depends_on",
+  "property": "depends_on",
+  "property_type": "Data",
+  "row_name": null,
+  "value": null
+ },
+ {
+  "default_value": null,
+  "doc_type": "Subscription Plan",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "cost",
+  "is_system_generated": 0,
+  "modified": "2025-12-01 00:00:00",
+  "module": "domina_isp",
+  "name": "Subscription Plan-cost-reqd",
+  "property": "reqd",
+  "property_type": "Data",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Subscription Plan",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "item",
+  "is_system_generated": 0,
+  "modified": "2025-12-29 00:00:00",
+  "module": "domina_isp",
+  "name": "Subscription Plan-item-description",
+  "property": "description",
+  "property_type": "Small Text",
+  "row_name": null,
+  "value": "Si se deja vacío el campo, se creará el producto con el nombre del plan"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Customer",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "email_id",
+  "is_system_generated": 0,
+  "modified": "2026-01-10 00:00:00",
+  "module": "domina_isp",
+  "name": "Customer-email_id-reqd",
+  "property": "reqd",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Customer",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "mobile_no",
+  "is_system_generated": 0,
+  "modified": "2026-01-10 00:00:00",
+  "module": "domina_isp",
+  "name": "Customer-mobile_no-reqd",
+  "property": "reqd",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "1"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Subscription Plan",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "plan_name",
+  "is_system_generated": 0,
+  "modified": "2026-06-16 10:15:00",
+  "module": "domina_isp",
+  "name": "Subscription Plan-plan_name-read_only_depends_on",
+  "property": "read_only_depends_on",
+  "property_type": "Text",
+  "row_name": null,
+  "value": "eval:!doc.__islocal"
+ },
+ {
   "default_value": null,
   "doc_type": "Mode of Payment",
   "docstatus": 0,
@@ -6190,5 +6446,21 @@
   "property_type": "Select",
   "row_name": null,
   "value": "Cash\nBank\nPhone\nGangway\nGateway"
+ },
+ {
+  "default_value": null,
+  "doc_type": "Bank Transaction",
+  "docstatus": 0,
+  "doctype": "Property Setter",
+  "doctype_or_field": "DocField",
+  "field_name": "transaction_id",
+  "is_system_generated": 0,
+  "modified": "2026-07-02 01:39:06",
+  "module": null,
+  "name": "Bank Transaction-transaction_id-unique",
+  "property": "unique",
+  "property_type": "Check",
+  "row_name": null,
+  "value": "0"
  }
 ]
