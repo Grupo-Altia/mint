@@ -139,6 +139,10 @@ const UnreconciledTransactions = ({ contentHeight }: { contentHeight: number }) 
 
     const hasFilters = search !== '' || typeFilter !== 'All' || amountFilter.value !== 0
 
+    const handleSelectAll = () => {
+        setSelectedTransaction(results || [])
+    }
+
     if (isLoading) {
         return <UnreconciledTransactionsLoadingState />
     }
@@ -205,6 +209,9 @@ const UnreconciledTransactions = ({ contentHeight }: { contentHeight: number }) 
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>
+            <Button type='button' variant="outline" className="h-9" onClick={handleSelectAll} title={_("Seleccionar todos los resultados filtrados")}>
+                {_("Seleccionar todo")}
+            </Button>
         </div>
 
         {error && <ErrorBanner error={error} />}
@@ -239,7 +246,7 @@ const NoTransactionsFoundBanner = ({ text, description, onClearFilters }: { text
             {description && <EmptyDescription>{description}</EmptyDescription>}
         </EmptyHeader>
         <EmptyContent>
-            {onClearFilters ? <Button type='button' size='sm' variant='outline' onClick={onClearFilters}>Clear Filters</Button> :
+            {onClearFilters ? <Button type='button' size='sm' variant='outline' onClick={onClearFilters}>{_("Limpiar Filtros")}</Button> :
                 <Button type='button' asChild size='sm' variant='outline'>
                     <Link to="/statement-importer">
                         {_("Importar Estado de Cuenta")}
