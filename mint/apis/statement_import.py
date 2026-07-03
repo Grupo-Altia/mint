@@ -95,15 +95,18 @@ def process_statement_import_background(final_transactions, bank_account, curren
             ref = transaction.get("reference")
             if ref:
                 is_dep = float(transaction.get("deposit") or 0) > 0
-                filters = {"bank_account": bank_account, "reference_number": ref}
-                if is_dep:
-                    filters["deposit"] = [">", 0]
-                else:
-                    filters["withdrawal"] = [">", 0]
+                is_wth = float(transaction.get("withdrawal") or 0) > 0
                 
-                if frappe.db.exists("Bank Transaction", filters):
-                    errors += 1
-                    continue
+                if is_dep or is_wth:
+                    filters = {"bank_account": bank_account, "reference_number": ref}
+                    if is_dep:
+                        filters["deposit"] = [">", 0]
+                    else:
+                        filters["withdrawal"] = [">", 0]
+                    
+                    if frappe.db.exists("Bank Transaction", filters):
+                        errors += 1
+                        continue
 
             bank_tx = frappe.get_doc({
                 "doctype": "Bank Transaction",
