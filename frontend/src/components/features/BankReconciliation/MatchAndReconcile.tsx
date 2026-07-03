@@ -198,14 +198,14 @@ const UnreconciledTransactions = ({ contentHeight }: { contentHeight: number }) 
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline" className="min-w-32 h-9 text-left">
                             {typeFilter === 'All' ? <DollarSign className="w-4 h-4 text-muted-foreground" /> : typeFilter === 'Debits' ? <ArrowUpRight className="w-4 h-4 text-destructive" /> : <ArrowDownRight className="w-4 h-4 text-green-600" />}
-                            {_(typeFilter)}
+                            {typeFilter === 'All' ? _("Todos") : typeFilter === 'Debits' ? _("Retiros") : _("Depósitos")}
                             <ChevronDown className="w-4 h-4" />
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent>
-                        <DropdownMenuItem onClick={() => onTypeFilterChange('All')}><DollarSign /> {_("All")}</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onTypeFilterChange('Debits')}><ArrowUpRight className="text-destructive" /> {_("Debits")}</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onTypeFilterChange('Credits')}><ArrowDownRight className="text-green-600" /> {_("Credits")}</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onTypeFilterChange('All')}><DollarSign /> {_("Todos")}</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onTypeFilterChange('Debits')}><ArrowUpRight className="text-destructive" /> {_("Retiros")}</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onTypeFilterChange('Credits')}><ArrowDownRight className="text-green-600" /> {_("Depósitos")}</DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>
