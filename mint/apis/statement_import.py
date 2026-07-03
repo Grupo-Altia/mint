@@ -93,11 +93,17 @@ def process_statement_import_background(final_transactions, bank_account, curren
             # sin esto, los duplicados de un extracto inundan el Error Log y degradan
             # la importación por rollbacks repetidos. Se cuentan como omitidas.
             ref = transaction.get("reference")
-            if ref and frappe.db.exists(
-                "Bank Transaction", {"bank_account": bank_account, "reference_number": ref}
-            ):
-                errors += 1
-                continue
+            if ref:
+                is_dep = float(transaction.get("deposit") or 0) > 0
+                filters = {"bank_account": bank_account, "reference_number": ref}
+                if is_dep:
+                    filters["deposit"] = [">", 0]
+                else:
+                    filters["withdrawal"] = [">", 0]
+                
+                if frappe.db.exists("Bank Transaction", filters):
+                    errors += 1
+                    continue
 
             bank_tx = frappe.get_doc({
                 "doctype": "Bank Transaction",

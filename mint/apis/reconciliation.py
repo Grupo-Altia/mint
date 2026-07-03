@@ -735,28 +735,34 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
     if not doc.is_new():
         return
     ref = str(doc.reference_number or "").strip()
-    if not ref or flt(doc.deposit) <= 0:
+    if not ref:
         return
 
-    duplicate = frappe.db.exists(
-        "Bank Transaction",
-        {
-            "name": ["!=", doc.name or ""],
-            "reference_number": ref,
-            "bank_account": doc.bank_account,
-            "company": doc.company,
-            "deposit": [">", 0],
-            "docstatus": ["<", 2],
-        },
-    )
+    is_dep = flt(doc.deposit) > 0
+
+    filters = {
+        "name": ["!=", doc.name or ""],
+        "reference_number": ref,
+        "bank_account": doc.bank_account,
+        "company": doc.company,
+        "docstatus": ["<", 2],
+    }
+
+    if is_dep:
+        filters["deposit"] = [">", 0]
+    else:
+        filters["withdrawal"] = [">", 0]
+
+    duplicate = frappe.db.exists("Bank Transaction", filters)
     if duplicate:
         duplicate_link = frappe.utils.get_link_to_form("Bank Transaction", duplicate)
+        tipo = "depósito" if is_dep else "retiro"
         frappe.throw(
             _(
-                "Ya existe un depósito con la referencia {0} en esta cuenta bancaria "
-                "({1}). No se permiten depósitos duplicados con la misma referencia; "
+                "Ya existe un {0} con la referencia {1} en esta cuenta bancaria "
+                "({2}). No se permiten {0}s duplicados con la misma referencia; "
                 "revise el extracto importado."
-            ).format(frappe.bold(ref), duplicate_link)
+            ).format(tipo, frappe.bold(ref), duplicate_link)
         )
 
 
