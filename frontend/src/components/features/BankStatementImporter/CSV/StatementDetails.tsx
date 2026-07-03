@@ -108,12 +108,12 @@ const StatementDetails = ({ data, bank, onBack }: Props) => {
                 </div>
                 <div className='flex items-start gap-4'>
                     <div className='flex flex-col gap-1'>
-                        <H2 className='text-lg border-0 p-0'>{_("Statement Details")}</H2>
+                        <H2 className='text-lg border-0 p-0'>{_("Detalles del Estado de Cuenta")}</H2>
                         <Paragraph className='text-sm'><span>
-                            {_("We've auto-detected the details of the statement file.")}
+                            {_("Hemos autodetectado los detalles del archivo.")}
                         </span><br />
                             <span>
-                                {_("Please review the details below and click the 'Import' button to proceed.")}
+                                {_("Por favor revisa los detalles a continuación y haz clic en 'Importar' para proceder.")}
                             </span>
                         </Paragraph>
                     </div>
@@ -147,7 +147,7 @@ const StatementDetails = ({ data, bank, onBack }: Props) => {
                             </TableCell>
                         </TableRow>
                         <TableRow>
-                            <TableHead className='bg-muted/70'>{_("Statement File")}</TableHead>
+                            <TableHead className='bg-muted/70'>{_("Archivo de Estado de Cuenta")}</TableHead>
                             <TableCell>
                                 <div className='flex items-center gap-2'>
                                     <FileTypeIcon fileType={getFileExtension(data.file_name)} size='md' showBackground={false} />
@@ -156,24 +156,24 @@ const StatementDetails = ({ data, bank, onBack }: Props) => {
                             </TableCell>
                         </TableRow>
                         <TableRow>
-                            <TableHead className='bg-muted/70'>{_("Transaction Dates")}</TableHead>
-                            <TableCell>{_("{0} to {1}", [formatDate(data.statement_start_date, "Do MMMM YYYY"), formatDate(data.statement_end_date, "Do MMMM YYYY")])}</TableCell>
+                            <TableHead className='bg-muted/70'>{_("Fechas de las Transacciones")}</TableHead>
+                            <TableCell>{_("{0} al {1}", [formatDate(data.statement_start_date, "Do MMMM YYYY"), formatDate(data.statement_end_date, "Do MMMM YYYY")])}</TableCell>
                         </TableRow>
                         <TableRow>
-                            <TableHead className='bg-muted/70'>{_("Number of Transactions")}</TableHead>
+                            <TableHead className='bg-muted/70'>{_("Número de Transacciones")}</TableHead>
                             <TableCell>{data.transaction_rows.length}</TableCell>
                         </TableRow>
                         <TableRow>
-                            <TableHead className='bg-muted/70'>{_("Closing Balance as of {}", [formatDate(data.statement_end_date, "Do MMMM YYYY")])}</TableHead>
+                            <TableHead className='bg-muted/70'>{_("Saldo de cierre al {}", [formatDate(data.statement_end_date, "Do MMMM YYYY")])}</TableHead>
                             <TableCell className='font-mono'>{formatCurrency(flt(data.closing_balance, 2))}</TableCell>
                         </TableRow>
                         <TableRow>
                             <TableHead className='bg-muted/70'>
                                 <div className='flex items-center gap-2'>
-                                    {_("Detected Amount Format")} <Tooltip>
+                                    {_("Formato de Monto Detectado")} <Tooltip>
                                         <TooltipTrigger><InfoIcon size={16} /></TooltipTrigger>
                                         <TooltipContent>
-                                            {_("The amount format detected in the statement file. This is used to parse the deposit and withdrawal values from each row.")}
+                                            {_("El formato de monto detectado en el archivo. Se utiliza para identificar los valores de depósito y retiro de cada fila.")}
                                         </TooltipContent>
                                     </Tooltip>
                                 </div>
@@ -183,11 +183,11 @@ const StatementDetails = ({ data, bank, onBack }: Props) => {
                         <TableRow>
                             <TableHead className='bg-muted/70'>
                                 <div className='flex items-center gap-2'>
-                                    {_("Detected Date Format")}
+                                    {_("Formato de Fecha Detectado")}
                                     <Tooltip>
                                         <TooltipTrigger><InfoIcon size={16} /></TooltipTrigger>
                                         <TooltipContent>
-                                            {_("The date format detected in the statement file. This is used to parse the date values.")}
+                                            {_("El formato de fecha detectado en el archivo. Se utiliza para identificar las fechas.")}
                                         </TooltipContent>
                                     </Tooltip>
                                 </div>
@@ -205,23 +205,23 @@ const StatementDetails = ({ data, bank, onBack }: Props) => {
 
             {data.conflicting_transactions.length > 0 ? <div className='flex flex-col gap-4'>
                 <div className='flex flex-col gap-1'>
-                    <H3 className='text-base border-0 p-0'>{_("Conflicting Transactions")}</H3>
+                    <H3 className='text-base border-0 p-0'>{_("Transacciones en Conflicto")}</H3>
                     {data.conflicting_transactions.length === 1 ? (
-                        <Paragraph className='text-sm'>{_("We've found 1 existing transaction in the system that conflicts with the transactions in the statement file. Are you sure you want to proceed with the import?")}</Paragraph>
+                        <Paragraph className='text-sm'>{_("Hemos encontrado 1 transacción existente en el sistema que entra en conflicto con las transacciones del archivo. ¿Estás seguro de que deseas proceder con la importación?")}</Paragraph>
                     ) : (
-                        <Paragraph className='text-sm'>{_("We've found {0} existing transactions in the system that conflict with the transactions in the statement file. Are you sure you want to proceed with the import?", [data.conflicting_transactions.length.toString()])}</Paragraph>
+                        <Paragraph className='text-sm'>{_("Hemos encontrado {0} transacciones existentes en el sistema que entran en conflicto con las transacciones del archivo. ¿Estás seguro de que deseas proceder con la importación?", [data.conflicting_transactions.length.toString()])}</Paragraph>
                     )}
                 </div>
                 <div className='max-h-[400px] overflow-scroll border border-border rounded-md pb-2'>
                     <Table>
-                        <TableCaption>{_("Existing transactions in the system belonging to the same bank account and date range")}</TableCaption>
+                        <TableCaption>{_("Transacciones existentes en el sistema que pertenecen a la misma cuenta bancaria y al mismo rango de fechas")}</TableCaption>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>{_("Date")}</TableHead>
-                                <TableHead>{_("Description")}</TableHead>
+                                <TableHead>{_("Fecha")}</TableHead>
+                                <TableHead>{_("Descripción")}</TableHead>
                                 <TableHead>{_("Ref.")}</TableHead>
-                                <TableHead className='text-right'>{_("Withdrawal")}</TableHead>
-                                <TableHead className='text-right'>{_("Deposit")}</TableHead>
+                                <TableHead className='text-right'>{_("Retiro")}</TableHead>
+                                <TableHead className='text-right'>{_("Depósito")}</TableHead>
 
                                 <TableHead></TableHead>
                             </TableRow>
@@ -244,7 +244,7 @@ const StatementDetails = ({ data, bank, onBack }: Props) => {
                                                 </Button>
                                             </TooltipTrigger>
                                             <TooltipContent>
-                                                {_("Open {0} in a new tab", [transaction.name])}
+                                                {_("Abrir {0} en una nueva pestaña", [transaction.name])}
                                             </TooltipContent>
                                         </Tooltip>
 
@@ -261,24 +261,24 @@ const StatementDetails = ({ data, bank, onBack }: Props) => {
 
             <div className='flex flex-col gap-4'>
                 <div className='flex flex-col gap-1'>
-                    <H3 className='text-base border-0 p-0'>{_("Preview Transactions")}</H3>
+                    <H3 className='text-base border-0 p-0'>{_("Vista Previa de Transacciones")}</H3>
                     {data.final_transactions?.length === 1 ? (
-                        <Paragraph className='text-sm'>{_("We've found 1 transaction in the statement file that will be imported into the system. Please review the details below and click the 'Import' button to proceed.")}</Paragraph>
+                        <Paragraph className='text-sm'>{_("Hemos encontrado 1 transacción en el archivo que será importada al sistema. Por favor, revisa los detalles a continuación y haz clic en 'Importar' para proceder.")}</Paragraph>
                     ) : (
-                        <Paragraph className='text-sm'>{_("{0} transactions will be imported into the system. Please review the details below and click the 'Import' button to proceed.", [data.final_transactions?.length?.toString() || "0"])}</Paragraph>
+                        <Paragraph className='text-sm'>{_("{0} transacciones serán importadas al sistema. Por favor, revisa los detalles a continuación y haz clic en 'Importar' para proceder.", [data.final_transactions?.length?.toString() || "0"])}</Paragraph>
                     )}
                 </div>
                 <div className='max-h-[400px] overflow-scroll border border-border rounded-md pb-2'>
                     <Table>
-                        <TableCaption>{_("Transactions to be imported into the system")}</TableCaption>
+                        <TableCaption>{_("Transacciones a ser importadas al sistema")}</TableCaption>
                         <TableHeader>
                             <TableRow>
                                 <TableHead className='w-8'>#</TableHead>
-                                <TableHead>{_("Date")}</TableHead>
-                                <TableHead>{_("Description")}</TableHead>
+                                <TableHead>{_("Fecha")}</TableHead>
+                                <TableHead>{_("Descripción")}</TableHead>
                                 <TableHead>{_("Ref.")}</TableHead>
-                                <TableHead className='text-right'>{_("Withdrawal")}</TableHead>
-                                <TableHead className='text-right'>{_("Deposit")}</TableHead>
+                                <TableHead className='text-right'>{_("Retiro")}</TableHead>
+                                <TableHead className='text-right'>{_("Depósito")}</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
