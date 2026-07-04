@@ -1,7 +1,7 @@
 import { useAtom, useAtomValue, useSetAtom } from "jotai"
 import { bankRecAmountFilter, bankRecDateAtom, bankRecRecordJournalEntryModalAtom, bankRecRecordPaymentModalAtom, bankRecSelectedTransactionAtom, bankRecStrictMatchingAtom, bankRecTransactionTypeFilter, bankRecTransferModalAtom, selectedBankAccountAtom } from "./bankRecAtoms"
 import { H4 } from "@/components/ui/typography"
-import { useMemo, useRef } from "react"
+import { useMemo, useRef, useState } from "react"
 import { getCompanyCurrency } from "@/lib/company"
 import ErrorBanner from "@/components/ui/error-banner"
 import { Separator } from "@/components/ui/separator"
@@ -198,19 +198,19 @@ const UnreconciledTransactions = ({ contentHeight }: { contentHeight: number }) 
                     <DropdownMenuTrigger asChild>
                         <Button variant="outline" className="min-w-32 h-9 text-left">
                             {typeFilter === 'All' ? <DollarSign className="w-4 h-4 text-muted-foreground" /> : typeFilter === 'Debits' ? <ArrowUpRight className="w-4 h-4 text-destructive" /> : <ArrowDownRight className="w-4 h-4 text-green-600" />}
-                            {_(typeFilter)}
+                            {typeFilter === 'All' ? _("Todos") : typeFilter === 'Debits' ? _("Retiros") : _("Depósitos")}
                             <ChevronDown className="w-4 h-4" />
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent>
-                        <DropdownMenuItem onClick={() => onTypeFilterChange('All')}><DollarSign /> {_("All")}</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onTypeFilterChange('Debits')}><ArrowUpRight className="text-destructive" /> {_("Debits")}</DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => onTypeFilterChange('Credits')}><ArrowDownRight className="text-green-600" /> {_("Credits")}</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onTypeFilterChange('All')}><DollarSign /> {_("Todos")}</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onTypeFilterChange('Debits')}><ArrowUpRight className="text-destructive" /> {_("Retiros")}</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onTypeFilterChange('Credits')}><ArrowDownRight className="text-green-600" /> {_("Depósitos")}</DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>
-            <Button type='button' variant="outline" className="h-9" onClick={handleSelectAll} title={_("Seleccionar todos los resultados filtrados")}>
-                {_("Seleccionar todo")}
+            <Button type='button' variant="outline" className="h-9" onClick={handleSelectAll} title={_("Select all filtered results")}>
+                {_("Select all")}
             </Button>
         </div>
 
@@ -220,8 +220,8 @@ const UnreconciledTransactions = ({ contentHeight }: { contentHeight: number }) 
 
         {results.length === 0 && <NoTransactionsFoundBanner
             onClearFilters={hasFilters ? onClearFilters : undefined}
-            text={hasFilters ? _("No se encontraron transacciones con los filtros actuales.") : _("No se encontraron transacciones sin conciliar")}
-            description={hasFilters ? _("Intenta ajustar tu búsqueda o criterios de filtro.") : _("Importa tu estado de cuenta bancario para empezar.")} />}
+            text={hasFilters ? _("No transactions found for the given filters.") : _("No unreconciled transactions found")}
+            description={hasFilters ? _("Try adjusting your search or filter criteria.") : _("Import your bank statement to get started.")} />}
 
         <Virtuoso
             data={results}
@@ -246,7 +246,7 @@ const NoTransactionsFoundBanner = ({ text, description, onClearFilters }: { text
             {description && <EmptyDescription>{description}</EmptyDescription>}
         </EmptyHeader>
         <EmptyContent>
-            {onClearFilters ? <Button type='button' size='sm' variant='outline' onClick={onClearFilters}>{_("Limpiar Filtros")}</Button> :
+            {onClearFilters ? <Button type='button' size='sm' variant='outline' onClick={onClearFilters}>{_("Clear Filters")}</Button> :
                 <Button type='button' asChild size='sm' variant='outline'>
                     <Link to="/statement-importer">
                         {_("Importar Estado de Cuenta")}
@@ -829,6 +829,7 @@ const OlderUnreconciledTransactionsBanner = () => {
     // A banner to show when there are unreconciled transactions for the given bank account before the current selected date
     const [dates, setDates] = useAtom(bankRecDateAtom)
     const selectedBank = useAtomValue(selectedBankAccountAtom)
+    const [dismissed, setDismissed] = useState(false)
 
     const { data } = useFrappeGetCall<{
         message: {
@@ -843,9 +844,40 @@ const OlderUnreconciledTransactionsBanner = () => {
     })
 
     if (data && data.message.count > 0) {
+        if (dismissed) {
+            return (
+                <div className="flex justify-end -mb-2 z-10 relative">
+                    <TooltipProvider>
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="text-amber-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30 rounded-full h-8 w-8"
+                                    onClick={() => setDismissed(false)}
+                                >
+                                    <AlertCircle className="w-5 h-5" />
+                                </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                <p>{_("Mostrar advertencia de transacciones no conciliadas")}</p>
+                            </TooltipContent>
+                        </Tooltip>
+                    </TooltipProvider>
+                </div>
+            )
+        }
 
-        return <div className="flex flex-col gap-2">
-            <div className="border border-amber-500 rounded-md p-4 flex items-center justify-between">
+        return <div className="flex flex-col gap-2 relative">
+            <div className="border border-amber-500 rounded-md p-4 flex items-center justify-between pr-10">
+                <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="absolute top-2 right-2 h-6 w-6 text-amber-600 hover:bg-amber-100 dark:hover:bg-amber-900/50 rounded-full" 
+                    onClick={() => setDismissed(true)}
+                >
+                    <XCircle className="w-4 h-4" />
+                </Button>
                 <div className="flex items-center gap-2">
                     <div className="min-w-8">
                         <AlertCircle className="w-6 h-6 text-amber-600" />
