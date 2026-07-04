@@ -111,23 +111,30 @@ def process_statement_import_background(final_transactions, bank_account, curren
 
     for transaction in final_transactions:
         try:
-            if transaction.get("is_paired"):
-                continue
-
-            # Evitar reinsertar transacciones ya existentes (misma cuenta + referencia):
-            # sin esto, los duplicados de un extracto inundan el Error Log y degradan
-            # la importación por rollbacks repetidos. Se cuentan como omitidas.
+            # Todas las filas del extracto se importan como transacciones bancarias separadas.
+            # Las comisiones emparejadas enriquecen el campo 'commission' de la tx principal,
+            # pero también se crean como su propia Bank Transaction (comportamiento esperado).
+            # Evitar reinsertar transacciones ya existentes (misma cuenta + referencia + monto).
+            # Para depósitos: referencia duplicada = duplicado real (no hay comisiones de depósito).
+            # Para retiros: si la referencia existe pero el monto es distinto, es una comisión
+            # bancaria legítima y se permite importar (ej: retiro 160.000 + comisión 120).
             ref = transaction.get("reference")
-            
-            # Verificar si existe como depósito
+
+            # Verificar si existe como depósito (referencia es suficiente para detectar duplicado)
             if ref and float(transaction.get("deposit") or 0) > 0:
                 if frappe.db.exists("Bank Transaction", {"bank_account": bank_account, "reference_number": ref, "deposit": [">", 0]}):
                     errors += 1
                     continue
 
-            # Verificar si existe como retiro
+            # Verificar si existe como retiro: solo es duplicado si el monto también coincide
             if ref and float(transaction.get("withdrawal") or 0) > 0:
-                if frappe.db.exists("Bank Transaction", {"bank_account": bank_account, "reference_number": ref, "withdrawal": [">", 0]}):
+                new_amount = float(transaction.get("withdrawal") or 0)
+                existing = frappe.db.get_value(
+                    "Bank Transaction",
+                    {"bank_account": bank_account, "reference_number": ref, "withdrawal": [">", 0]},
+                    "withdrawal"
+                )
+                if existing is not None and float(existing) == new_amount:
                     errors += 1
                     continue
 
@@ -167,17 +174,29 @@ def process_statement_import_background(final_transactions, bank_account, curren
         "total": len(final_transactions),
     }, user=user)
     
+    # DECIMAL(21,9) en MySQL soporta máximo 12 dígitos antes del punto decimal.
+    # Si el saldo parseado supera ese rango (error de formato en el archivo), guardamos None
+    # para no lanzar un DataError y permitir que la importación continúe.
+    _MAX_DECIMAL_21_9 = 999_999_999_999.999999999
+    raw_balance = data.get("closing_balance")
+    safe_closing_balance = raw_balance if (raw_balance is None or abs(raw_balance) <= _MAX_DECIMAL_21_9) else None
+    if raw_balance is not None and safe_closing_balance is None:
+        frappe.log_error(
+            f"closing_balance {raw_balance} fuera del rango DECIMAL(21,9) — se omite del log.",
+            "Statement Import: closing_balance overflow"
+        )
+
     log = frappe.new_doc("Mint Bank Statement Import Log")
     log.bank_account = bank_account
     log.file = file_url
     log.number_of_transactions = len(final_transactions)
     log.start_date = data.get("statement_start_date")
     log.end_date = data.get("statement_end_date")
-    log.closing_balance = data.get("closing_balance")
+    log.closing_balance = safe_closing_balance
     log.insert(ignore_permissions=True)
 
-    if data.get("closing_balance") is not None and data.get("statement_end_date"):
-        set_closing_balance_as_per_statement(bank_account, getdate(data.get("statement_end_date")), data.get("closing_balance"))
+    if safe_closing_balance is not None and data.get("statement_end_date"):
+        set_closing_balance_as_per_statement(bank_account, getdate(data.get("statement_end_date")), safe_closing_balance)
     
     from mint.apis.rules import run_rule_evaluation
     run_rule_evaluation()
@@ -244,12 +263,33 @@ def import_statement(file_url: str, bank_account: str):
     except ImportError:
         get_exchange_rate = None
 
+    # Keywords largos: suficientemente específicos para buscar en cualquier parte
+    COMMISSION_SUBSTRINGS = ("comision", "comisión", "commission", "comis")
+    # Keywords cortos: solo como palabra completa para evitar falsos positivos
+    # ("com" en "comercial" no es comisión, pero "com" solo sí)
+    COMMISSION_WORDS = {"com", "com."}
+
+    def _is_commission_desc(desc: str) -> bool:
+        d = desc.lower().strip()
+        # Substrings específicos largos (comision, comis, commission...)
+        if any(kw in d for kw in COMMISSION_SUBSTRINGS):
+            return True
+        # Palabras exactas: "com" o "com." solas
+        words = d.split()
+        if any(w in COMMISSION_WORDS for w in words):
+            return True
+        # Abreviaturas con punto como prefijo: "com.op.pag.movil", "com.p2p", etc.
+        # Cualquier token que empiece con "com." es una abreviatura de comisión
+        if any(w.startswith("com.") for w in words):
+            return True
+        return False
+
     commissions_map = {}
     for tx in final_transactions:
         c_wth = float(tx.get("withdrawal") or 0)
         if c_wth > 0:
-            c_desc = str(tx.get("description") or "").lower()
-            if any(term in c_desc for term in ("comision", "comisión", "commission", "comis", "com.", "com ")):
+            c_desc = str(tx.get("description") or "")
+            if _is_commission_desc(c_desc):
                 c_ref = tx.get("cleaned_reference")
                 c_date = tx.get("date")
                 if c_ref and c_date:
@@ -259,8 +299,8 @@ def import_statement(file_url: str, bank_account: str):
                     commissions_map[key].append(tx)
 
     for tx in final_transactions:
-        tx_desc = str(tx.get("description") or "").lower()
-        is_commission = any(term in tx_desc for term in ("comision", "comisión", "commission", "comis", "com.", "com "))
+        tx_desc = str(tx.get("description") or "")
+        is_commission = _is_commission_desc(tx_desc)
         
         if not is_commission:
             tx_ref = tx.get("cleaned_reference")
