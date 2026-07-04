@@ -185,7 +185,7 @@ def get_vouchers_without_clearance(filters):
             pe.posting_date,
             pe.payment_type,
             pe.paid_amount,
-            pe.currency,
+            IF(pe.payment_type='Receive', pe.paid_to_account_currency, pe.paid_from_account_currency) as currency,
             pe.party,
             pe.party_type,
             'Payment Entry' as doctype
@@ -204,15 +204,18 @@ def get_vouchers_without_clearance(filters):
             je.posting_date,
             'Pay' as payment_type,
             je.total_amount as paid_amount,
-            je.currency,
+            je.total_amount_currency as currency,
             '' as party,
             '' as party_type,
             'Journal Entry' as doctype
         FROM `tabJournal Entry` je
+        INNER JOIN `tabJournal Entry Account` jea ON jea.parent = je.name
         WHERE je.docstatus = 1
+            AND jea.bank_account = %(account)s
             AND (je.clearance_date IS NULL OR je.clearance_date = '')
             AND je.posting_date BETWEEN %(from_date)s AND %(to_date)s
             AND je.total_amount > 0
+        GROUP BY je.name
     """
     
     pe_results = frappe.db.sql(pe_query, filters, as_dict=True)
@@ -369,13 +372,22 @@ def get_report_summary(data, filters):
 
 def get_account_balance(filters):
     """Obtiene el saldo de la cuenta bancaria en el mayor contable"""
+    # Obtain GL Account linked to Bank Account
+    gl_account = frappe.db.get_value('Bank Account', filters.get('account'), 'account')
+    
+    if not gl_account:
+        return 0
+        
+    filters_copy = filters.copy()
+    filters_copy['gl_account'] = gl_account
+    
     query = """
         SELECT SUM(debit) - SUM(credit) as balance
         FROM `tabGL Entry`
-        WHERE account = %(account)s
+        WHERE account = %(gl_account)s
             AND company = %(company)s
             AND posting_date <= %(to_date)s
             AND is_cancelled = 0
     """
-    result = frappe.db.sql(query, filters, as_dict=True)
-    return result[0].balance if result else 0
+    result = frappe.db.sql(query, filters_copy, as_dict=True)
+    return result[0].balance if result and result[0].balance else 0

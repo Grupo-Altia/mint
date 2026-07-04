@@ -15,17 +15,13 @@ frappe.query_reports["Advanced Bank Reconciliation"] = {
             "fieldname":"account",
             "label": __("Cuenta Bancaria"),
             "fieldtype": "Link",
-            "options": "Account",
+            "options": "Bank Account",
             "reqd": 1,
             "get_query": function() {
                 var company = frappe.query_report.get_filter_value('company');
                 return {
-                    "query": "erpnext.controllers.queries.get_account_list",
                     "filters": [
-                        ['Account', 'account_type', 'in', 'Bank, Cash'],
-                        ['Account', 'is_group', '=', 0],
-                        ['Account', 'disabled', '=', 0],
-                        ['Account', 'company', '=', company]
+                        ['Bank Account', 'company', '=', company]
                     ]
                 };
             }
