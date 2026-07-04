@@ -114,20 +114,27 @@ def process_statement_import_background(final_transactions, bank_account, curren
             if transaction.get("is_paired"):
                 continue
 
-            # Evitar reinsertar transacciones ya existentes (misma cuenta + referencia):
-            # sin esto, los duplicados de un extracto inundan el Error Log y degradan
-            # la importación por rollbacks repetidos. Se cuentan como omitidas.
+            # Evitar reinsertar transacciones ya existentes (misma cuenta + referencia + monto).
+            # Para depósitos: referencia duplicada = duplicado real (no hay comisiones de depósito).
+            # Para retiros: si la referencia existe pero el monto es distinto, es una comisión
+            # bancaria legítima y se permite importar (ej: retiro 160.000 + comisión 120).
             ref = transaction.get("reference")
-            
-            # Verificar si existe como depósito
+
+            # Verificar si existe como depósito (referencia es suficiente para detectar duplicado)
             if ref and float(transaction.get("deposit") or 0) > 0:
                 if frappe.db.exists("Bank Transaction", {"bank_account": bank_account, "reference_number": ref, "deposit": [">", 0]}):
                     errors += 1
                     continue
 
-            # Verificar si existe como retiro
+            # Verificar si existe como retiro: solo es duplicado si el monto también coincide
             if ref and float(transaction.get("withdrawal") or 0) > 0:
-                if frappe.db.exists("Bank Transaction", {"bank_account": bank_account, "reference_number": ref, "withdrawal": [">", 0]}):
+                new_amount = float(transaction.get("withdrawal") or 0)
+                existing = frappe.db.get_value(
+                    "Bank Transaction",
+                    {"bank_account": bank_account, "reference_number": ref, "withdrawal": [">", 0]},
+                    "withdrawal"
+                )
+                if existing is not None and float(existing) == new_amount:
                     errors += 1
                     continue
 
