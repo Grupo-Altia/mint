@@ -174,17 +174,29 @@ def process_statement_import_background(final_transactions, bank_account, curren
         "total": len(final_transactions),
     }, user=user)
     
+    # DECIMAL(21,9) en MySQL soporta máximo 12 dígitos antes del punto decimal.
+    # Si el saldo parseado supera ese rango (error de formato en el archivo), guardamos None
+    # para no lanzar un DataError y permitir que la importación continúe.
+    _MAX_DECIMAL_21_9 = 999_999_999_999.999999999
+    raw_balance = data.get("closing_balance")
+    safe_closing_balance = raw_balance if (raw_balance is None or abs(raw_balance) <= _MAX_DECIMAL_21_9) else None
+    if raw_balance is not None and safe_closing_balance is None:
+        frappe.log_error(
+            f"closing_balance {raw_balance} fuera del rango DECIMAL(21,9) — se omite del log.",
+            "Statement Import: closing_balance overflow"
+        )
+
     log = frappe.new_doc("Mint Bank Statement Import Log")
     log.bank_account = bank_account
     log.file = file_url
     log.number_of_transactions = len(final_transactions)
     log.start_date = data.get("statement_start_date")
     log.end_date = data.get("statement_end_date")
-    log.closing_balance = data.get("closing_balance")
+    log.closing_balance = safe_closing_balance
     log.insert(ignore_permissions=True)
 
-    if data.get("closing_balance") is not None and data.get("statement_end_date"):
-        set_closing_balance_as_per_statement(bank_account, getdate(data.get("statement_end_date")), data.get("closing_balance"))
+    if safe_closing_balance is not None and data.get("statement_end_date"):
+        set_closing_balance_as_per_statement(bank_account, getdate(data.get("statement_end_date")), safe_closing_balance)
     
     from mint.apis.rules import run_rule_evaluation
     run_rule_evaluation()
