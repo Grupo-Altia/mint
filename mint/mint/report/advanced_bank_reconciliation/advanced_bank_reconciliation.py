@@ -294,24 +294,28 @@ def process_bank_transaction(bt, filters):
     
     return row
 
+def get_mint_bank_balance(bank_account, to_date):
+    """Obtiene el saldo ingresado en el estado de cuenta de Mint"""
+    query = """
+        SELECT balance 
+        FROM `tabMint Bank Statement Balance`
+        WHERE bank_account = %(bank_account)s
+          AND date <= %(to_date)s
+        ORDER BY date DESC
+        LIMIT 1
+    """
+    result = frappe.db.sql(query, {'bank_account': bank_account, 'to_date': to_date}, as_dict=True)
+    return result[0].balance if result else 0
+
 def get_report_summary(data, filters):
     """Calcula el resumen ejecutivo para mostrar en la parte superior"""
     # Inicializar acumuladores
-    total_deposits = 0
-    total_withdrawals = 0
     deposits_in_transit = 0
     cheques_in_circulation = 0
     abonos_no_registrados = 0
     cargos_bancarios = 0
     
     for row in data:
-        # Sum transactions for bank balance ONLY if they are bank transactions
-        if row.get('status') != 'Solo en Libros':
-            if row.get('deposit'):
-                total_deposits += row['deposit']
-            if row.get('withdrawal'):
-                total_withdrawals += row['withdrawal']
-        
         classification = row.get('classification', '')
         if classification == 'Depósito en Tránsito':
             deposits_in_transit += row.get('deposit', 0)
@@ -322,11 +326,13 @@ def get_report_summary(data, filters):
         elif classification == 'Cargo Bancario':
             cargos_bancarios += row.get('withdrawal', 0)
     
+    # Obtener saldo según el banco ingresado en Mint
+    bank_balance = get_mint_bank_balance(filters.get('account'), filters.get('to_date'))
+    
     # Obtener saldo contable de la cuenta
     account_balance = get_account_balance(filters)
     
     # Calcular saldos ajustados
-    bank_balance = total_deposits - total_withdrawals
     adjusted_bank_balance = bank_balance + deposits_in_transit - cheques_in_circulation
     adjusted_books_balance = account_balance + abonos_no_registrados - cargos_bancarios
     difference = adjusted_bank_balance - adjusted_books_balance
