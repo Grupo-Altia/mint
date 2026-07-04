@@ -251,12 +251,18 @@ def import_statement(file_url: str, bank_account: str):
     except ImportError:
         get_exchange_rate = None
 
+    COMMISSION_PREFIXES = ("comision", "comisión", "commission", "comis", "com.")
+    # Umbral: montos muy grandes (>500) no son comisiones bancarias típicas
+    COMMISSION_MAX_AMOUNT = 500.0
+
     commissions_map = {}
     for tx in final_transactions:
         c_wth = float(tx.get("withdrawal") or 0)
-        if c_wth > 0:
-            c_desc = str(tx.get("description") or "").lower()
-            if any(term in c_desc for term in ("comision", "comisión", "commission", "comis", "com.", "com ")):
+        if c_wth > 0 and c_wth <= COMMISSION_MAX_AMOUNT:
+            c_desc = str(tx.get("description") or "").lower().strip()
+            # Solo es comisión si la descripción EMPIEZA con una palabra de comisión
+            # (evita clasificar "COM TRANSF CRED INMED" como comisión)
+            if any(c_desc.startswith(term) for term in COMMISSION_PREFIXES):
                 c_ref = tx.get("cleaned_reference")
                 c_date = tx.get("date")
                 if c_ref and c_date:
@@ -266,8 +272,8 @@ def import_statement(file_url: str, bank_account: str):
                     commissions_map[key].append(tx)
 
     for tx in final_transactions:
-        tx_desc = str(tx.get("description") or "").lower()
-        is_commission = any(term in tx_desc for term in ("comision", "comisión", "commission", "comis", "com.", "com "))
+        tx_desc = str(tx.get("description") or "").lower().strip()
+        is_commission = any(tx_desc.startswith(term) for term in COMMISSION_PREFIXES)
         
         if not is_commission:
             tx_ref = tx.get("cleaned_reference")
