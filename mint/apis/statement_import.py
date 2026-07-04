@@ -251,16 +251,25 @@ def import_statement(file_url: str, bank_account: str):
     except ImportError:
         get_exchange_rate = None
 
-    COMMISSION_PREFIXES = ("comision", "comisión", "commission", "comis", "com.")
+    # Keywords largos: suficientemente específicos para buscar en cualquier parte
+    COMMISSION_SUBSTRINGS = ("comision", "comisión", "commission", "comis")
+    # Keywords cortos: solo como palabra completa para evitar falsos positivos
+    # ("com" en "comercial" no es comisión, pero "com" solo sí)
+    COMMISSION_WORDS = {"com", "com."}
+
+    def _is_commission_desc(desc: str) -> bool:
+        d = desc.lower().strip()
+        if any(kw in d for kw in COMMISSION_SUBSTRINGS):
+            return True
+        words = set(d.split())
+        return bool(words & COMMISSION_WORDS)
 
     commissions_map = {}
     for tx in final_transactions:
         c_wth = float(tx.get("withdrawal") or 0)
         if c_wth > 0:
-            c_desc = str(tx.get("description") or "").lower().strip()
-            # Solo es comisión si la descripción EMPIEZA con una palabra de comisión
-            # (evita clasificar "COM TRANSF CRED INMED" como comisión)
-            if any(c_desc.startswith(term) for term in COMMISSION_PREFIXES):
+            c_desc = str(tx.get("description") or "")
+            if _is_commission_desc(c_desc):
                 c_ref = tx.get("cleaned_reference")
                 c_date = tx.get("date")
                 if c_ref and c_date:
@@ -270,8 +279,8 @@ def import_statement(file_url: str, bank_account: str):
                     commissions_map[key].append(tx)
 
     for tx in final_transactions:
-        tx_desc = str(tx.get("description") or "").lower().strip()
-        is_commission = any(tx_desc.startswith(term) for term in COMMISSION_PREFIXES)
+        tx_desc = str(tx.get("description") or "")
+        is_commission = _is_commission_desc(tx_desc)
         
         if not is_commission:
             tx_ref = tx.get("cleaned_reference")
