@@ -769,13 +769,18 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
                 ).format(frappe.bold(ref), duplicate_link)
             )
         else:
-            frappe.throw(
-                _(
-                    "Ya existe un retiro con la referencia {0} en esta cuenta bancaria "
-                    "({1}). No se permiten retiros duplicados con la misma referencia; "
-                    "revise el extracto importado."
-                ).format(frappe.bold(ref), duplicate_link)
-            )
+            # Para retiros: si los montos son distintos, uno es la transacción real
+            # y el otro es la comisión bancaria. Se permite la coexistencia.
+            existing_amount = frappe.db.get_value("Bank Transaction", duplicate, "withdrawal")
+            new_amount = flt(doc.withdrawal)
+            if flt(existing_amount) == new_amount:
+                frappe.throw(
+                    _(
+                        "Ya existe un retiro con la referencia {0} y el mismo monto en esta "
+                        "cuenta bancaria ({1}). No se permiten retiros duplicados con la misma "
+                        "referencia y monto; revise el extracto importado."
+                    ).format(frappe.bold(ref), duplicate_link)
+                )
 
 
 def reconcile_drafts_for_deposit(doc, method=None) -> None:
