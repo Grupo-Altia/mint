@@ -6,10 +6,8 @@ import frappe
 from frappe import _
 
 def execute(filters=None):
-    columns, data = get_columns(), get_data(filters)
-    
-    # Resumen ejecutivo (retornar como chart o report_summary)
-    report_summary = get_report_summary(data, filters)
+    columns = get_columns()
+    data, report_summary = get_data_and_summary(filters)
     
     return columns, data, None, None, report_summary
 
@@ -100,8 +98,8 @@ def get_columns():
         }
     ]
 
-def get_data(filters):
-    """Obtiene los datos del reporte"""
+def get_data_and_summary(filters):
+    """Obtiene los datos del reporte y calcula el resumen"""
     # Validar filtros
     if not filters.get('company'):
         frappe.throw(_('La Compañía es obligatoria'))
@@ -109,16 +107,19 @@ def get_data(filters):
         frappe.throw(_('La Cuenta Bancaria es obligatoria'))
     
     # 1. Obtener transacciones bancarias
-    bank_transactions = get_bank_transactions(filters)
+    # Siempre obtenemos todas las transacciones del periodo para calcular bien el resumen
+    filters_all = filters.copy()
+    filters_all['include_reconciled'] = 1
+    bank_transactions = get_bank_transactions(filters_all)
     
     # 2. Obtener vouchers con clearance_date (para cotejo)
     vouchers = get_vouchers_without_clearance(filters)
     
     # 3. Procesar y clasificar cada transacción
-    data = []
+    full_data = []
     for bt in bank_transactions:
         row = process_bank_transaction(bt, filters)
-        data.append(row)
+        full_data.append(row)
     
     # 4. Agregar movimientos "solo en libros" al final
     for voucher in vouchers:
@@ -137,9 +138,20 @@ def get_data(filters):
             'party': voucher.get('party'),
             'clearance_date': ''
         }
+        full_data.append(row)
+    
+    # 5. Calcular el resumen con TODA la información
+    report_summary = get_report_summary(full_data, filters)
+    
+    # 6. Filtrar para la vista según el check 'include_reconciled'
+    data = []
+    include_reconciled = filters.get('include_reconciled')
+    for row in full_data:
+        if not include_reconciled and row.get('status') in ['Reconciled', 'Conciliado']:
+            continue
         data.append(row)
     
-    return data
+    return data, report_summary
 
 def get_bank_transactions(filters):
     """Obtiene Bank Transactions del período filtrado"""
@@ -293,10 +305,12 @@ def get_report_summary(data, filters):
     cargos_bancarios = 0
     
     for row in data:
-        if row.get('deposit'):
-            total_deposits += row['deposit']
-        if row.get('withdrawal'):
-            total_withdrawals += row['withdrawal']
+        # Sum transactions for bank balance ONLY if they are bank transactions
+        if row.get('status') != 'Solo en Libros':
+            if row.get('deposit'):
+                total_deposits += row['deposit']
+            if row.get('withdrawal'):
+                total_withdrawals += row['withdrawal']
         
         classification = row.get('classification', '')
         if classification == 'Depósito en Tránsito':
