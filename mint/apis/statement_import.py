@@ -259,10 +259,18 @@ def import_statement(file_url: str, bank_account: str):
 
     def _is_commission_desc(desc: str) -> bool:
         d = desc.lower().strip()
+        # Substrings específicos largos (comision, comis, commission...)
         if any(kw in d for kw in COMMISSION_SUBSTRINGS):
             return True
-        words = set(d.split())
-        return bool(words & COMMISSION_WORDS)
+        # Palabras exactas: "com" o "com." solas
+        words = d.split()
+        if any(w in COMMISSION_WORDS for w in words):
+            return True
+        # Abreviaturas con punto como prefijo: "com.op.pag.movil", "com.p2p", etc.
+        # Cualquier token que empiece con "com." es una abreviatura de comisión
+        if any(w.startswith("com.") for w in words):
+            return True
+        return False
 
     commissions_map = {}
     for tx in final_transactions:
