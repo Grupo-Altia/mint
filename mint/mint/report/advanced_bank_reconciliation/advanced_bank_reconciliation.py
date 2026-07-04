@@ -251,7 +251,7 @@ def process_bank_transaction(bt, filters):
             pe.payment_entry,
             pe.allocated_amount,
             pe.clearance_date
-        FROM `tabBank Transaction Payment` pe
+        FROM `tabBank Transaction Payments` pe
         WHERE pe.parent = %s
     """, bt.name, as_dict=True)
     
