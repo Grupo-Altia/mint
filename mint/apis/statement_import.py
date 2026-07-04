@@ -111,9 +111,9 @@ def process_statement_import_background(final_transactions, bank_account, curren
 
     for transaction in final_transactions:
         try:
-            if transaction.get("is_paired"):
-                continue
-
+            # Todas las filas del extracto se importan como transacciones bancarias separadas.
+            # Las comisiones emparejadas enriquecen el campo 'commission' de la tx principal,
+            # pero también se crean como su propia Bank Transaction (comportamiento esperado).
             # Evitar reinsertar transacciones ya existentes (misma cuenta + referencia + monto).
             # Para depósitos: referencia duplicada = duplicado real (no hay comisiones de depósito).
             # Para retiros: si la referencia existe pero el monto es distinto, es una comisión
