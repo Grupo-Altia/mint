@@ -240,15 +240,31 @@ def get_vouchers_without_clearance(filters):
 
 def process_bank_transaction(bt, filters):
     """Procesa una Bank Transaction y determina su clasificación"""
+    # Traducir estado a español
+    estado = bt.status
+    estado_map = {
+        'Unreconciled': 'No Conciliado',
+        'Reconciled': 'Conciliado',
+        'Pending': 'Pendiente',
+        'Settled': 'Liquidado',
+        'Cancelled': 'Cancelado'
+    }
+    estado_es = estado_map.get(estado, estado)
+
+    # Determinar tipo si está vacío
+    tipo = bt.transaction_type
+    if not tipo:
+        tipo = 'Ingreso' if bt.deposit > 0 else 'Egreso'
+
     row = {
         'date': bt.date,
         'description': bt.description,
         'reference': bt.reference,
-        'transaction_type': bt.transaction_type,
+        'transaction_type': tipo,
         'deposit': bt.deposit,
         'withdrawal': bt.withdrawal,
         'currency': bt.currency,
-        'status': bt.status,
+        'status': estado_es,
         'party': bt.party,
         'payment_document': '',
         'payment_entry': '',
