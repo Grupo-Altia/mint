@@ -252,13 +252,11 @@ def import_statement(file_url: str, bank_account: str):
         get_exchange_rate = None
 
     COMMISSION_PREFIXES = ("comision", "comisión", "commission", "comis", "com.")
-    # Umbral: montos muy grandes (>500) no son comisiones bancarias típicas
-    COMMISSION_MAX_AMOUNT = 500.0
 
     commissions_map = {}
     for tx in final_transactions:
         c_wth = float(tx.get("withdrawal") or 0)
-        if c_wth > 0 and c_wth <= COMMISSION_MAX_AMOUNT:
+        if c_wth > 0:
             c_desc = str(tx.get("description") or "").lower().strip()
             # Solo es comisión si la descripción EMPIEZA con una palabra de comisión
             # (evita clasificar "COM TRANSF CRED INMED" como comisión)
