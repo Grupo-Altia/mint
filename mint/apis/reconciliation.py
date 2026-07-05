@@ -690,10 +690,11 @@ def on_cancel_receive_payment(doc, method=None) -> None:
         doc.db_set("custom_reconciliation_status", RECON_PENDING)
 
     if frappe.db.exists("DocType", "ISP Payment Entry"):
-        linked = frappe.get_all("ISP Payment Entry", filters={"payment_entry": doc.name})
-        for l in linked:
-            isp_doc = frappe.get_doc("ISP Payment Entry", l.name)
+        linked = frappe.get_all("ISP Payment Entry", filters={"payment_entry": doc.name}, pluck="name")
+        for name in linked:
+            isp_doc = frappe.get_doc("ISP Payment Entry", name)
             if isp_doc.docstatus == 1:
+                isp_doc.flags.ignore_permissions = True
                 isp_doc.cancel()
 
 
@@ -701,9 +702,9 @@ def on_trash_receive_payment(doc, method=None) -> None:
     """Al eliminar un cobro, elimina también los ISP Payment Entry enlazados para
     evitar el bloqueo por Link Validation de Frappe."""
     if frappe.db.exists("DocType", "ISP Payment Entry"):
-        linked = frappe.get_all("ISP Payment Entry", filters={"payment_entry": doc.name})
-        for l in linked:
-            frappe.delete_doc("ISP Payment Entry", l.name, ignore_permissions=True)
+        linked = frappe.get_all("ISP Payment Entry", filters={"payment_entry": doc.name}, pluck="name")
+        for name in linked:
+            frappe.delete_doc("ISP Payment Entry", name, ignore_permissions=True)
 
 
 def on_change_payment_entry(doc, method=None) -> None:
@@ -734,29 +735,52 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
     if not doc.is_new():
         return
     ref = str(doc.reference_number or "").strip()
-    if not ref or flt(doc.deposit) <= 0:
+    if not ref:
         return
 
-    duplicate = frappe.db.exists(
-        "Bank Transaction",
-        {
-            "name": ["!=", doc.name or ""],
-            "reference_number": ref,
-            "bank_account": doc.bank_account,
-            "company": doc.company,
-            "deposit": [">", 0],
-            "docstatus": ["<", 2],
-        },
-    )
+    is_dep = flt(doc.deposit) > 0
+    is_wth = flt(doc.withdrawal) > 0
+
+    if not is_dep and not is_wth:
+        return
+
+    filters = {
+        "name": ["!=", doc.name or ""],
+        "reference_number": ref,
+        "bank_account": doc.bank_account,
+        "company": doc.company,
+        "docstatus": ["<", 2],
+    }
+
+    if is_dep:
+        filters["deposit"] = [">", 0]
+    else:
+        filters["withdrawal"] = [">", 0]
+
+    duplicate = frappe.db.exists("Bank Transaction", filters)
     if duplicate:
         duplicate_link = frappe.utils.get_link_to_form("Bank Transaction", duplicate)
-        frappe.throw(
-            _(
-                "Ya existe un depósito con la referencia {0} en esta cuenta bancaria "
-                "({1}). No se permiten depósitos duplicados con la misma referencia; "
-                "revise el extracto importado."
-            ).format(frappe.bold(ref), duplicate_link)
-        )
+        if is_dep:
+            frappe.throw(
+                _(
+                    "Ya existe un depósito con la referencia {0} en esta cuenta bancaria "
+                    "({1}). No se permiten depósitos duplicados con la misma referencia; "
+                    "revise el extracto importado."
+                ).format(frappe.bold(ref), duplicate_link)
+            )
+        else:
+            # Para retiros: si los montos son distintos, uno es la transacción real
+            # y el otro es la comisión bancaria. Se permite la coexistencia.
+            existing_amount = frappe.db.get_value("Bank Transaction", duplicate, "withdrawal")
+            new_amount = flt(doc.withdrawal)
+            if flt(existing_amount) == new_amount:
+                frappe.throw(
+                    _(
+                        "Ya existe un retiro con la referencia {0} y el mismo monto en esta "
+                        "cuenta bancaria ({1}). No se permiten retiros duplicados con la misma "
+                        "referencia y monto; revise el extracto importado."
+                    ).format(frappe.bold(ref), duplicate_link)
+                )
 
 
 def reconcile_drafts_for_deposit(doc, method=None) -> None:

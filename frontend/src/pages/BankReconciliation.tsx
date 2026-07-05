@@ -11,6 +11,7 @@ import BankTransferList from "@/components/features/BankReconciliation/BankTrans
 import MatchAndReconcile from "@/components/features/BankReconciliation/MatchAndReconcile"
 import RuleConfigureButton from "@/components/features/BankReconciliation/Rules/RuleConfigureButton"
 import Settings from "@/components/features/Settings/Settings"
+import AdvancedReportButton from "@/components/features/BankReconciliation/AdvancedReportButton"
 import ActionLog from "@/components/features/ActionLog/ActionLog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -45,6 +46,7 @@ const BankReconciliation = () => {
                         <TooltipProvider>
                             <RuleConfigureButton />
                             <Settings />
+                            <AdvancedReportButton />
                             <ActionLog />
                         </TooltipProvider>
                         <CompanySelector />
