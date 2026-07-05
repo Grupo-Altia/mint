@@ -152,6 +152,7 @@ def get_data_and_summary(filters):
             fields = ['name']
             if meta.has_field('party'): fields.append('party')
             if meta.has_field('clearance_date'): fields.append('clearance_date')
+            if meta.has_field('custom_reconciliation_status'): fields.append('custom_reconciliation_status')
             
             docs = frappe.db.get_all(doctype, filters={'name': ('in', names)}, fields=fields)
             for d in docs:
@@ -331,15 +332,18 @@ def process_bank_transaction(bt, filters, payments_dict=None, doc_data_cache=Non
         row['clearance_date'] = first.clearance_date
         
         # Si la transacción no tiene Parte o fecha, intentar sacarla del documento vinculado
+        is_mint_reconciled = False
         doc_data = doc_data_cache.get(f"{first.payment_document}-{first.payment_entry}")
         if doc_data:
             if not row['party'] and doc_data.get('party'):
                 row['party'] = doc_data.party
             if not row['clearance_date'] and doc_data.get('clearance_date'):
                 row['clearance_date'] = doc_data.clearance_date
+            if doc_data.get('custom_reconciliation_status') == 'Conciliado':
+                is_mint_reconciled = True
         
         # Clasificación
-        if bt.status == 'Reconciled' or (row['clearance_date'] and not flt(bt.unallocated_amount)):
+        if bt.status == 'Reconciled' or (row['clearance_date'] and not flt(bt.unallocated_amount)) or is_mint_reconciled:
             row['status'] = 'Conciliado'
             row['classification'] = 'Conciliado'
     else:
