@@ -72,10 +72,16 @@ def get_columns():
             'width': 180
         },
         {
-            'fieldname': 'payment_document',
+            'fieldname': 'payment_document_display',
             'label': _('Documento Vinculado'),
             'fieldtype': 'Data',
             'width': 140
+        },
+        {
+            'fieldname': 'payment_document',
+            'label': _('DocType Real'),
+            'fieldtype': 'Data',
+            'hidden': 1
         },
         {
             'fieldname': 'payment_entry',
@@ -134,6 +140,7 @@ def get_data_and_summary(filters):
             'status': 'Solo en Libros',
             'classification': 'Pendiente en Libros',
             'payment_document': voucher.get('doctype'),
+            'payment_document_display': 'Factura de Venta' if voucher.get('doctype') == 'Payment Entry' else _(voucher.get('doctype')),
             'payment_entry': voucher.get('name'),
             'party': voucher.get('party'),
             'clearance_date': ''
@@ -267,6 +274,7 @@ def process_bank_transaction(bt, filters):
         'status': estado_es,
         'party': bt.party,
         'payment_document': '',
+        'payment_document_display': '',
         'payment_entry': '',
         'clearance_date': '',
         'classification': ''
@@ -287,11 +295,22 @@ def process_bank_transaction(bt, filters):
         # Tomar el primer pago vinculado (o sumar todos según necesidad)
         first = linked_payments[0]
         row['payment_document'] = first.payment_document
+        row['payment_document_display'] = 'Factura de Venta' if first.payment_document == 'Payment Entry' else _(first.payment_document)
         row['payment_entry'] = first.payment_entry
         row['clearance_date'] = first.clearance_date
         
+        # Si la transacción no tiene Parte, intentar sacarla del Payment Entry
+        if first.payment_document == 'Payment Entry':
+            pe_data = frappe.db.get_value('Payment Entry', first.payment_entry, ['party', 'clearance_date'], as_dict=True)
+            if pe_data:
+                if not row['party']:
+                    row['party'] = pe_data.party
+                if not row['clearance_date']:
+                    row['clearance_date'] = pe_data.clearance_date
+        
         # Clasificación
-        if bt.status == 'Reconciled':
+        if bt.status == 'Reconciled' or row['clearance_date']:
+            row['status'] = 'Conciliado'
             row['classification'] = 'Conciliado'
     else:
         # Sin Payment Entry vinculado
@@ -400,8 +419,8 @@ def get_report_summary(data, filters):
             'datatype': 'Currency'
         },
         {
-            'label': _('¿Cuadra?'),
-            'value': '✅ SÍ' if difference == 0 else '❌ REVISAR',
+            'label': _('¿Balanceado?'),
+            'value': '✅ BALANCEADO' if difference == 0 else '❌ REVISAR',
             'datatype': 'Data'
         }
     ]
