@@ -66,8 +66,14 @@ frappe.query_reports["Advanced Bank Reconciliation"] = {
     },
     
     "onload": function(report) {
-        report.page.add_inner_button(__("Exportar (PDF / Excel)"), function() {
+        report.page.set_title(__("Conciliación Bancaria Avanzada"));
+        
+        report.page.add_inner_button(__("Descargar PDF"), function() {
+            frappe.ui.get_print_settings(false, print_settings => report.pdf_report(print_settings), report.report_doc.custom_report || report.report_name);
+        }, __("Exportar"));
+        
+        report.page.add_inner_button(__("Descargar Excel / CSV"), function() {
             report.export_report();
-        });
+        }, __("Exportar"));
     }
 };
