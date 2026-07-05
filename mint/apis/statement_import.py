@@ -28,11 +28,33 @@ def get_statement_details(file_url: str, bank_account: str):
 
     file_name = file_url.split("/")[-1]
 
-    header_index = get_header_row_index(data)
+    header_index, max_valid_columns = get_header_row_index(data)
 
-    header_row = data[header_index]
+    if max_valid_columns >= 2:
+        header_row = data[header_index]
+        columns, column_mapping = get_column_mapping(header_row)
 
-    columns, column_mapping = get_column_mapping(header_row)
+        # Fallback for empty header columns using auto_detect on the first data row
+        if len(data) > header_index + 1:
+            first_data_row = data[header_index + 1]
+            auto_columns, auto_mapping = auto_detect_columns(first_data_row)
+            
+            # For any crucial column missing, see if auto_detect found it
+            for crucial in ["Date", "Description", "Reference", "Amount", "Balance"]:
+                if crucial not in column_mapping and crucial in auto_mapping:
+                    idx = auto_mapping[crucial]
+                    column_mapping[crucial] = idx
+                    for col in columns:
+                        if col["index"] == idx:
+                            col["maps_to"] = crucial
+                            break
+    else:
+        # No headers found. Synthesize a header row and auto-detect columns from the first data row (header_index + 1)
+        header_index = 0
+        header_row = ["Col 1", "Col 2", "Col 3", "Col 4", "Col 5", "Col 6", "Col 7", "Col 8", "Col 9", "Col 10"]
+        first_data_row = data[1] if len(data) > 1 else data[0]
+        columns, column_mapping = auto_detect_columns(first_data_row)
+        header_row = [column["header_text"] for column in columns]
 
     transaction_rows, transaction_starting_index, transaction_ending_index = get_transaction_rows(data, header_index, column_mapping)
 
@@ -89,15 +111,32 @@ def process_statement_import_background(final_transactions, bank_account, curren
 
     for transaction in final_transactions:
         try:
-            # Evitar reinsertar transacciones ya existentes (misma cuenta + referencia):
-            # sin esto, los duplicados de un extracto inundan el Error Log y degradan
-            # la importación por rollbacks repetidos. Se cuentan como omitidas.
+            # Todas las filas del extracto se importan como transacciones bancarias separadas.
+            # Las comisiones emparejadas enriquecen el campo 'commission' de la tx principal,
+            # pero también se crean como su propia Bank Transaction (comportamiento esperado).
+            # Evitar reinsertar transacciones ya existentes (misma cuenta + referencia + monto).
+            # Para depósitos: referencia duplicada = duplicado real (no hay comisiones de depósito).
+            # Para retiros: si la referencia existe pero el monto es distinto, es una comisión
+            # bancaria legítima y se permite importar (ej: retiro 160.000 + comisión 120).
             ref = transaction.get("reference")
-            if ref and frappe.db.exists(
-                "Bank Transaction", {"bank_account": bank_account, "reference_number": ref}
-            ):
-                errors += 1
-                continue
+
+            # Verificar si existe como depósito (referencia es suficiente para detectar duplicado)
+            if ref and float(transaction.get("deposit") or 0) > 0:
+                if frappe.db.exists("Bank Transaction", {"bank_account": bank_account, "reference_number": ref, "deposit": [">", 0]}):
+                    errors += 1
+                    continue
+
+            # Verificar si existe como retiro: solo es duplicado si el monto también coincide
+            if ref and float(transaction.get("withdrawal") or 0) > 0:
+                new_amount = float(transaction.get("withdrawal") or 0)
+                existing = frappe.db.get_value(
+                    "Bank Transaction",
+                    {"bank_account": bank_account, "reference_number": ref, "withdrawal": [">", 0]},
+                    "withdrawal"
+                )
+                if existing is not None and float(existing) == new_amount:
+                    errors += 1
+                    continue
 
             bank_tx = frappe.get_doc({
                 "doctype": "Bank Transaction",
@@ -135,17 +174,29 @@ def process_statement_import_background(final_transactions, bank_account, curren
         "total": len(final_transactions),
     }, user=user)
     
+    # DECIMAL(21,9) en MySQL soporta máximo 12 dígitos antes del punto decimal.
+    # Si el saldo parseado supera ese rango (error de formato en el archivo), guardamos None
+    # para no lanzar un DataError y permitir que la importación continúe.
+    _MAX_DECIMAL_21_9 = 999_999_999_999.999999999
+    raw_balance = data.get("closing_balance")
+    safe_closing_balance = raw_balance if (raw_balance is None or abs(raw_balance) <= _MAX_DECIMAL_21_9) else None
+    if raw_balance is not None and safe_closing_balance is None:
+        frappe.log_error(
+            f"closing_balance {raw_balance} fuera del rango DECIMAL(21,9) — se omite del log.",
+            "Statement Import: closing_balance overflow"
+        )
+
     log = frappe.new_doc("Mint Bank Statement Import Log")
     log.bank_account = bank_account
     log.file = file_url
     log.number_of_transactions = len(final_transactions)
     log.start_date = data.get("statement_start_date")
     log.end_date = data.get("statement_end_date")
-    log.closing_balance = data.get("closing_balance")
+    log.closing_balance = safe_closing_balance
     log.insert(ignore_permissions=True)
 
-    if data.get("closing_balance") is not None and data.get("statement_end_date"):
-        set_closing_balance_as_per_statement(bank_account, getdate(data.get("statement_end_date")), data.get("closing_balance"))
+    if safe_closing_balance is not None and data.get("statement_end_date"):
+        set_closing_balance_as_per_statement(bank_account, getdate(data.get("statement_end_date")), safe_closing_balance)
     
     from mint.apis.rules import run_rule_evaluation
     run_rule_evaluation()
@@ -212,12 +263,33 @@ def import_statement(file_url: str, bank_account: str):
     except ImportError:
         get_exchange_rate = None
 
+    # Keywords largos: suficientemente específicos para buscar en cualquier parte
+    COMMISSION_SUBSTRINGS = ("comision", "comisión", "commission", "comis")
+    # Keywords cortos: solo como palabra completa para evitar falsos positivos
+    # ("com" en "comercial" no es comisión, pero "com" solo sí)
+    COMMISSION_WORDS = {"com", "com."}
+
+    def _is_commission_desc(desc: str) -> bool:
+        d = desc.lower().strip()
+        # Substrings específicos largos (comision, comis, commission...)
+        if any(kw in d for kw in COMMISSION_SUBSTRINGS):
+            return True
+        # Palabras exactas: "com" o "com." solas
+        words = d.split()
+        if any(w in COMMISSION_WORDS for w in words):
+            return True
+        # Abreviaturas con punto como prefijo: "com.op.pag.movil", "com.p2p", etc.
+        # Cualquier token que empiece con "com." es una abreviatura de comisión
+        if any(w.startswith("com.") for w in words):
+            return True
+        return False
+
     commissions_map = {}
     for tx in final_transactions:
         c_wth = float(tx.get("withdrawal") or 0)
         if c_wth > 0:
-            c_desc = str(tx.get("description") or "").lower()
-            if any(term in c_desc for term in ["comision", "comisión", "commission"]):
+            c_desc = str(tx.get("description") or "")
+            if _is_commission_desc(c_desc):
                 c_ref = tx.get("cleaned_reference")
                 c_date = tx.get("date")
                 if c_ref and c_date:
@@ -227,8 +299,8 @@ def import_statement(file_url: str, bank_account: str):
                     commissions_map[key].append(tx)
 
     for tx in final_transactions:
-        tx_desc = str(tx.get("description") or "").lower()
-        is_commission = any(term in tx_desc for term in ["comision", "comisión", "commission"])
+        tx_desc = str(tx.get("description") or "")
+        is_commission = _is_commission_desc(tx_desc)
         
         if not is_commission:
             tx_ref = tx.get("cleaned_reference")
@@ -521,13 +593,13 @@ def get_header_row_index(data: list[list[str]]):
             if not isinstance(cell, str):
                 continue
 #buscamos todo el diccionario contable si es posible en español, ingles, chino
-            if any(keyword in cell.lower() for keyword in ["date", "amount", "description", "reference", "transaction", "type", "cr", "dr", "deposit", "withdrawal", "balance", "fecha", "concepto", "referencia", "débito", "debito", "crédito", "credito", "saldo"]):
+            if any(keyword in cell.lower() for keyword in ["date", "amount", "description", "reference", "transaction", "type", "cr", "dr", "deposit", "withdrawal", "balance", "fecha", "concepto", "referencia", "débito", "debito", "crédito", "credito", "saldo", "cargo", "cargos", "abono", "abonos"]):
                 valid_columns += 1
         if valid_columns > max_valid_columns:
             max_valid_columns = valid_columns
             row_index = idx
 
-    return row_index
+    return row_index, max_valid_columns
 
 def get_column_mapping(header_row: list[str]):
     """
@@ -535,8 +607,8 @@ def get_column_mapping(header_row: list[str]):
     """
     standard_variables = {
         "Date": ["date", "transaction date", "fecha"], 
-        "Withdrawal": ["withdrawal", "debit", "débito", "debito"],
-        "Deposit": ["deposit", "credit", "crédito", "credito"],
+        "Withdrawal": ["withdrawal", "debit", "débito", "debito", "cargo", "cargos"],
+        "Deposit": ["deposit", "credit", "crédito", "credito", "abono", "abonos"],
         "Amount": ["amount", "monto", "importe"], 
         "Description": ["description", "particulars", "remarks", "narration", "detail", "reference", "concepto", "descripción", "descripcion"], 
         "Reference": ["reference", "ref", "tran id", "transaction id", "cheque", "check", "id", "chq", "referencia", "nro"], 
@@ -554,24 +626,27 @@ def get_column_mapping(header_row: list[str]):
     columns = []
 
     for idx, cell in enumerate(header_row):
-
-       
-
-        if not cell:
+        if not cell or str(cell).strip() == "":
+            header_text = f"Columna {idx + 1}"
+            column = {
+                "index": idx,
+                "header_text": header_text,
+                "variable": header_text.lower().replace(" ", "_"),
+                "maps_to": "Do not import",
+            }
+            columns.append(column)
             continue
 
-        if not isinstance(cell, str):
-            continue
-
+        cell_str = str(cell)
         column = {
             "index": idx,
-            "header_text": cell,
-            "variable": cell.strip().lower().replace(" ", "_").replace("?", "").replace(".", ""),
+            "header_text": cell_str,
+            "variable": cell_str.strip().lower().replace(" ", "_").replace("?", "").replace(".", ""),
             "maps_to": "Do not import",
         }
 
         for standard_variable, names in standard_variables.items():
-            if any(name in cell.lower().replace(".", "") for name in names):
+            if any(name in cell_str.lower().replace(".", "") for name in names):
 
                 if not column_mapping.get(standard_variable, None):
                     column["maps_to"] = standard_variable
@@ -582,6 +657,62 @@ def get_column_mapping(header_row: list[str]):
         
         columns.append(column)
     
+
+    return columns, column_mapping
+
+def auto_detect_columns(row: list[str]):
+    """
+    Auto-detect columns based on data types for files without headers.
+    """
+    columns = []
+    column_mapping = {}
+
+    for idx, cell in enumerate(row):
+        col_type = "Do not import"
+        header_text = f"Columna {idx + 1}"
+
+        if not cell:
+            pass
+        elif "Date" not in column_mapping and frappe.utils.guess_date_format(str(cell)):
+            col_type = "Date"
+            header_text = "Fecha"
+        elif idx == 1 and "Description" not in column_mapping:
+            col_type = "Description"
+            header_text = "Descripción"
+        elif get_float_amount(cell) is not None:
+            # We found a number.
+            # Usually: 1st number = Reference/Amount, but Ref is often a string/number.
+            # Let's check length or position to guess.
+            # For Banco Exterior: Date, Desc, Ref, Amount, FormattedAmount, Sign, Balance
+            # Index 2: Reference
+            # Index 3: Amount (signed)
+            # Index 6: Balance
+            if idx == 2 and "Reference" not in column_mapping:
+                col_type = "Reference"
+                header_text = "Referencia"
+            elif idx == 3 and "Amount" not in column_mapping:
+                col_type = "Amount"
+                header_text = "Monto"
+            elif idx == 6 and "Balance" not in column_mapping:
+                col_type = "Balance"
+                header_text = "Saldo"
+            elif "Amount" not in column_mapping and idx > 2:
+                # Fallback for Amount
+                col_type = "Amount"
+                header_text = "Monto"
+        elif isinstance(cell, str) and len(cell) > 5 and "Description" not in column_mapping:
+            col_type = "Description"
+            header_text = "Descripción"
+        
+        column = {
+            "index": idx,
+            "header_text": header_text,
+            "variable": header_text.lower().replace(" ", "_").replace("ó", "o"),
+            "maps_to": col_type,
+        }
+        if col_type != "Do not import":
+            column_mapping[col_type] = idx
+        columns.append(column)
 
     return columns, column_mapping
 
@@ -678,27 +809,46 @@ def get_transaction_rows(data: list[list[str]], header_index: int, column_mappin
     return transaction_rows, transaction_starting_index, transaction_ending_index
 
 def get_float_amount(amount):
-
     if not amount:
         return None
 
     if isinstance(amount, str):
-        amount = amount.lower().replace(",", "").replace(" ", "").replace("cr", "").replace("dr", "")
-        # Remove any other alphabets and currency symbols - do not remove the minus or decimal sign
-        amount = re.sub(r'[^\d.-]', '', amount)
-        try:
-            amount = float(amount)
-        except ValueError:
-            return None
-    elif isinstance(amount, int):
-        amount = float(amount)
-    else:
-        try:
-            amount = float(amount)
-        except ValueError:
+        # Limpiar texto de espacios y prefijos
+        amount = amount.lower().replace(" ", "").replace("cr", "").replace("dr", "")
+        # Mantener solo dígitos, punto, coma y guión
+        amount = re.sub(r'[^\d.,-]', '', amount)
+        if not amount:
             return None
 
-    return amount
+        last_dot = amount.rfind('.')
+        last_comma = amount.rfind(',')
+
+        last_sep = max(last_dot, last_comma)
+        if last_sep != -1:
+            chars_after = len(amount) - last_sep - 1
+            # Si solo hay un separador y le siguen 3 dígitos, asumimos separador de miles.
+            if chars_after == 3 and (last_dot == -1 or last_comma == -1):
+                amount = amount.replace(',', '').replace('.', '')
+                try:
+                    return float(amount)
+                except ValueError:
+                    return None
+
+        # Reemplazos finales para float()
+        if last_comma > last_dot:
+            amount = amount.replace('.', '').replace(',', '.')
+        elif last_dot > last_comma:
+            amount = amount.replace(',', '')
+
+        try:
+            return float(amount)
+        except ValueError:
+            return None
+            
+    try:
+        return float(amount)
+    except (ValueError, TypeError):
+        return None
 
 def get_file_properties(transactions: list):
     """

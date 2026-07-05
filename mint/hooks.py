@@ -249,6 +249,11 @@ export_python_type_annotations = True
 fixtures = [
     {
         "dt": "Property Setter",
+        "filters": [
+            ["name", "in", [
+                "Bank Transaction-transaction_id-unique"
+            ]]
+        ]
     },
     {
         "dt": "Translation",

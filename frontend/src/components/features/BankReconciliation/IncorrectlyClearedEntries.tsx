@@ -99,10 +99,10 @@ const IncorrectlyClearedEntriesView = () => {
                 <br />
                 {data && data.message.result.length > 0 && <span>
                     <span dangerouslySetInnerHTML={{
-                        __html: _("Entries below have a posting date after {0} but the clearance date is before {1}.", [`<strong>${formattedToDate}</strong>`, `<strong>${formattedToDate}</strong>`])
+                        __html: _("Las siguientes entradas tienen una fecha de contabilización posterior al {0} pero la fecha de liquidación es anterior al {1}.", [`<strong>${formattedToDate}</strong>`, `<strong>${formattedToDate}</strong>`])
                     }} />
                     <br />
-                    {_("You can reset the clearing dates of these entries here.")}
+                    {_("Puedes restablecer las fechas de liquidación de estas entradas aquí.")}
                 </span>}
             </Paragraph>
         </div>
@@ -111,16 +111,16 @@ const IncorrectlyClearedEntriesView = () => {
 
         {data && data.message.result.length > 0 &&
             <Table>
-                <TableCaption>{_("Incorrectly cleared entries as per the report.")}</TableCaption>
+                <TableCaption>{_("Entradas liquidadas incorrectamente según el reporte.")}</TableCaption>
                 <TableHeader>
                     <TableRow>
-                        <TableHead className="w-[100px]">{_("Document Type")}</TableHead>
-                        <TableHead>{_("Payment Document")}</TableHead>
-                        <TableHead className="text-right">{_("Debit")}</TableHead>
-                        <TableHead className="text-right">{_("Credit")}</TableHead>
-                        <TableHead>{_("Posting Date")}</TableHead>
-                        <TableHead>{_("Clearance Date")}</TableHead>
-                        <TableHead>{_("Actions")}</TableHead>
+                        <TableHead className="w-[100px]">{_("Tipo de Documento")}</TableHead>
+                        <TableHead>{_("Documento de Pago")}</TableHead>
+                        <TableHead className="text-right">{_("Débito")}</TableHead>
+                        <TableHead className="text-right">{_("Crédito")}</TableHead>
+                        <TableHead>{_("Fecha de Contabilización")}</TableHead>
+                        <TableHead>{_("Fecha de Liquidación")}</TableHead>
+                        <TableHead>{_("Acciones")}</TableHead>
                     </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -137,7 +137,7 @@ const IncorrectlyClearedEntriesView = () => {
                                     variant='link'
                                     size="sm"
                                     className="text-destructive px-0"
-                                    onClick={() => onClearClick(row.payment_document, row.payment_entry)}>{_("Reset Clearing Date")}</Button>
+                                    onClick={() => onClearClick(row.payment_document, row.payment_entry)}>{_("Restablecer Fecha de Liquidación")}</Button>
                             </TableCell>
                         </TableRow>
                     ))}
@@ -149,7 +149,7 @@ const IncorrectlyClearedEntriesView = () => {
                 <PartyPopper />
                 <AlertTitle>{_("¡Todo está bien!")}</AlertTitle>
                 <AlertDescription>
-                    {_("There are no entries in the system where the clearance date is before the posting date.")}
+                    {_("No hay entradas en el sistema donde la fecha de liquidación sea anterior a la fecha de contabilización.")}
                 </AlertDescription>
             </Alert>
         }
