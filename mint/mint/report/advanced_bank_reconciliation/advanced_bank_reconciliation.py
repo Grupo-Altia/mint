@@ -4,6 +4,7 @@
 from __future__ import unicode_literals
 import frappe
 from frappe import _
+from frappe.utils import flt
 
 def execute(filters=None):
     columns = get_columns()
@@ -121,13 +122,48 @@ def get_data_and_summary(filters):
     # 2. Obtener vouchers con clearance_date (para cotejo)
     vouchers = get_vouchers_without_clearance(filters)
     
-    # 3. Procesar y clasificar cada transacción
+    # 3. Precargar Bank Transaction Payments y doc data (para evitar N+1)
+    payments_dict = {}
+    doc_data_cache = {}
+    bt_names = [bt.name for bt in bank_transactions]
+    
+    if bt_names:
+        bt_payments = frappe.db.sql("""
+            SELECT 
+                parent,
+                payment_document,
+                payment_entry,
+                allocated_amount,
+                clearance_date
+            FROM `tabBank Transaction Payments`
+            WHERE parent IN %s
+            ORDER BY parent, idx ASC
+        """, (tuple(bt_names),), as_dict=True)
+        
+        doc_names_by_type = {}
+        for p in bt_payments:
+            payments_dict.setdefault(p.parent, []).append(p)
+            if p.payment_document and p.payment_entry:
+                doc_names_by_type.setdefault(p.payment_document, []).append(p.payment_entry)
+                
+        for doctype, names in doc_names_by_type.items():
+            if not names: continue
+            meta = frappe.get_meta(doctype)
+            fields = ['name']
+            if meta.has_field('party'): fields.append('party')
+            if meta.has_field('clearance_date'): fields.append('clearance_date')
+            
+            docs = frappe.db.get_all(doctype, filters={'name': ('in', names)}, fields=fields)
+            for d in docs:
+                doc_data_cache[f"{doctype}-{d.name}"] = d
+
+    # 4. Procesar y clasificar cada transacción
     full_data = []
     for bt in bank_transactions:
-        row = process_bank_transaction(bt, filters)
+        row = process_bank_transaction(bt, filters, payments_dict, doc_data_cache)
         full_data.append(row)
     
-    # 4. Agregar movimientos "solo en libros" al final
+    # 5. Agregar movimientos "solo en libros" al final
     for voucher in vouchers:
         row = {
             'date': voucher.get('posting_date'),
@@ -140,17 +176,17 @@ def get_data_and_summary(filters):
             'status': 'Solo en Libros',
             'classification': 'Pendiente en Libros',
             'payment_document': voucher.get('doctype'),
-            'payment_document_display': 'Factura de Venta' if voucher.get('doctype') == 'Payment Entry' else _(voucher.get('doctype')),
+            'payment_document_display': _(voucher.get('doctype')),
             'payment_entry': voucher.get('name'),
             'party': voucher.get('party'),
             'clearance_date': ''
         }
         full_data.append(row)
     
-    # 5. Calcular el resumen con TODA la información
+    # 6. Calcular el resumen con TODA la información
     report_summary = get_report_summary(full_data, filters)
     
-    # 6. Filtrar para la vista según el check 'include_reconciled'
+    # 7. Filtrar para la vista según el check 'include_reconciled'
     data = []
     include_reconciled = filters.get('include_reconciled')
     for row in full_data:
@@ -245,8 +281,11 @@ def get_vouchers_without_clearance(filters):
     
     return pe_results + je_results
 
-def process_bank_transaction(bt, filters):
+def process_bank_transaction(bt, filters, payments_dict=None, doc_data_cache=None):
     """Procesa una Bank Transaction y determina su clasificación"""
+    payments_dict = payments_dict or {}
+    doc_data_cache = doc_data_cache or {}
+    
     # Traducir estado a español
     estado = bt.status
     estado_map = {
@@ -280,36 +319,27 @@ def process_bank_transaction(bt, filters):
         'classification': ''
     }
     
-    # Obtener Payment Entries vinculados
-    linked_payments = frappe.db.sql("""
-        SELECT 
-            pe.payment_document,
-            pe.payment_entry,
-            pe.allocated_amount,
-            pe.clearance_date
-        FROM `tabBank Transaction Payments` pe
-        WHERE pe.parent = %s
-    """, bt.name, as_dict=True)
+    # Obtener Payment Entries vinculados (usando prefetch si está disponible)
+    linked_payments = payments_dict.get(bt.name)
     
     if linked_payments:
-        # Tomar el primer pago vinculado (o sumar todos según necesidad)
+        # Tomar el primer pago vinculado
         first = linked_payments[0]
         row['payment_document'] = first.payment_document
-        row['payment_document_display'] = 'Factura de Venta' if first.payment_document == 'Payment Entry' else _(first.payment_document)
+        row['payment_document_display'] = _(first.payment_document)
         row['payment_entry'] = first.payment_entry
         row['clearance_date'] = first.clearance_date
         
-        # Si la transacción no tiene Parte, intentar sacarla del Payment Entry
-        if first.payment_document == 'Payment Entry':
-            pe_data = frappe.db.get_value('Payment Entry', first.payment_entry, ['party', 'clearance_date'], as_dict=True)
-            if pe_data:
-                if not row['party']:
-                    row['party'] = pe_data.party
-                if not row['clearance_date']:
-                    row['clearance_date'] = pe_data.clearance_date
+        # Si la transacción no tiene Parte o fecha, intentar sacarla del documento vinculado
+        doc_data = doc_data_cache.get(f"{first.payment_document}-{first.payment_entry}")
+        if doc_data:
+            if not row['party'] and doc_data.get('party'):
+                row['party'] = doc_data.party
+            if not row['clearance_date'] and doc_data.get('clearance_date'):
+                row['clearance_date'] = doc_data.clearance_date
         
         # Clasificación
-        if bt.status == 'Reconciled' or row['clearance_date']:
+        if bt.status == 'Reconciled' or (row['clearance_date'] and not flt(bt.unallocated_amount)):
             row['status'] = 'Conciliado'
             row['classification'] = 'Conciliado'
     else:
@@ -419,8 +449,8 @@ def get_report_summary(data, filters):
             'datatype': 'Currency'
         },
         {
-            'label': _('¿Balanceado?'),
-            'value': '✅ BALANCEADO' if difference == 0 else '❌ REVISAR',
+            'label': _('¿Cuadre?'),
+            'value': '✅ CUADRA' if difference == 0 else '❌ REVISAR',
             'datatype': 'Data'
         }
     ]
