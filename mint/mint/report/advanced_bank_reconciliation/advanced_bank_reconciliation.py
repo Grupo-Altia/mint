@@ -343,7 +343,7 @@ def process_bank_transaction(bt, filters, payments_dict=None, doc_data_cache=Non
                 is_mint_reconciled = True
         
         # Clasificación
-        if bt.status == 'Reconciled' or (row['clearance_date'] and not flt(bt.unallocated_amount)) or is_mint_reconciled:
+        if bt.status == 'Reconciled' or row['clearance_date'] or is_mint_reconciled:
             row['status'] = 'Conciliado'
             row['classification'] = 'Conciliado'
     else:
