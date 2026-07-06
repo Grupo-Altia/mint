@@ -157,6 +157,9 @@ doc_events = {
         "on_submit": "mint.apis.reconciliation.reconcile_drafts_for_deposit",
         "on_update_after_submit": "mint.apis.reconciliation.update_source_reference_on_reconcile",
     },
+    "Journal Entry": {
+        "on_submit": "mint.apis.reconciliation.reconcile_journal_entry"
+    },
     # NOTA: modify_venezuela_reference (before_insert) queda INACTIVO a propósito
     # (decisión pendiente de revisión — ver TODO de integración mint↔l10n_ve).
 }

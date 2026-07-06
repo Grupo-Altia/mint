@@ -791,15 +791,23 @@ def reconcile_drafts_for_deposit(doc, method=None) -> None:
     del depósito.
     """
     ref = str(doc.reference_number or "").strip()
-    if not ref or flt(doc.deposit) <= 0:
+    if not ref:
         return
 
-    frappe.enqueue(
-        "mint.apis.reconciliation.reconcile_drafts_job",
-        queue="short",
-        reference=ref,
-        enqueue_after_commit=True,
-    )
+    if flt(doc.deposit) > 0:
+        frappe.enqueue(
+            "mint.apis.reconciliation.reconcile_drafts_job",
+            queue="short",
+            reference=ref,
+            enqueue_after_commit=True,
+        )
+    elif flt(doc.withdrawal) > 0:
+        frappe.enqueue(
+            "mint.apis.reconciliation.reconcile_je_job",
+            queue="short",
+            bank_transaction_name=doc.name,
+            enqueue_after_commit=True,
+        )
 
 
 def reconcile_drafts_job(reference: str) -> None:
@@ -1058,3 +1066,107 @@ def update_source_reference_on_reconcile(doc, method=None) -> None:
     if modified:
         # Trigger reload in UI by touching modified
         doc.db_set("modified", frappe.utils.now(), update_modified=True)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Auto-reconciliation of Journal Entries (Expenses/Withdrawals)
+# ════════════════════════════════════════════════════════════════════════════
+
+def _link_withdrawal_to_je(bank_transaction_name: str, je_name: str) -> None:
+    bt = frappe.get_doc("Bank Transaction", bank_transaction_name)
+    already = any(
+        row.payment_entry == je_name and row.payment_document == "Journal Entry"
+        for row in bt.payment_entries
+    )
+    if already or flt(bt.unallocated_amount) <= 0:
+        return
+    bt.add_payment_entries(
+        [{"payment_doctype": "Journal Entry", "payment_name": je_name}]
+    )
+    bt.save(ignore_permissions=True)
+
+def reconcile_journal_entry(doc, method=None):
+    if not doc.cheque_no:
+        return
+        
+    ref = str(doc.cheque_no).strip()
+    
+    bank_gl_account = None
+    je_amount = 0
+    for acc in doc.accounts:
+        is_bank = frappe.db.get_value("Account", acc.account, "account_type") == "Bank"
+        if is_bank and flt(acc.credit) > 0:
+            bank_gl_account = acc.account
+            je_amount = flt(acc.credit)
+            break
+            
+    if not bank_gl_account or je_amount <= 0:
+        return
+        
+    bank_account = frappe.db.get_value("Bank Account", {"account": bank_gl_account})
+    if not bank_account:
+        return
+        
+    cand_filters = {
+        "docstatus": 1,
+        "withdrawal": [">", 0],
+        "unallocated_amount": [">", 0.001],
+        "bank_account": bank_account,
+        "company": doc.company,
+        "reference_number": ref
+    }
+    
+    candidates = frappe.get_all(
+        "Bank Transaction",
+        filters=cand_filters,
+        fields=["name", "withdrawal"],
+        order_by="withdrawal asc"
+    )
+    
+    for cand in candidates:
+        if abs(flt(cand.withdrawal) - je_amount) < 1.0:
+            _link_withdrawal_to_je(cand.name, doc.name)
+            break
+
+def reconcile_je_job(bank_transaction_name: str) -> None:
+    bt = frappe.db.get_values(
+        "Bank Transaction", 
+        bank_transaction_name, 
+        ["name", "reference_number", "withdrawal", "bank_account", "company", "unallocated_amount"], 
+        as_dict=True
+    )
+    if not bt: return
+    bt = bt[0]
+    
+    if flt(bt.unallocated_amount) <= 0: return
+    
+    ref = str(bt.reference_number or "").strip()
+    if not ref: return
+    
+    bank_gl_account = frappe.db.get_value("Bank Account", bt.bank_account, "account")
+    if not bank_gl_account: return
+    
+    jes = frappe.get_all(
+        "Journal Entry",
+        filters={"docstatus": 1, "cheque_no": ref, "company": bt.company},
+        pluck="name"
+    )
+    
+    for je_name in jes:
+        je_doc = frappe.get_doc("Journal Entry", je_name)
+        
+        match = False
+        for acc in je_doc.accounts:
+            if acc.account == bank_gl_account and abs(flt(acc.credit) - flt(bt.withdrawal)) < 1.0:
+                match = True
+                break
+                
+        if match:
+            try:
+                _link_withdrawal_to_je(bt.name, je_name)
+                frappe.db.commit()
+                break
+            except Exception:
+                frappe.db.rollback()
+                frappe.log_error(f"Error auto-reconciling JE {je_name}", frappe.get_traceback())
+
