@@ -555,6 +555,27 @@ def get_data(file_path: str):
             else:
                 raise
 
+    # Fix for files where all columns are merged into a single column separated by commas or semicolons
+    if data and all(len(row) == 1 for row in data[:10] if row) and len(data) > 1:
+        import csv
+        delimiter = ','
+        first_row_str = str(data[0][0]) if data[0] else ""
+        if first_row_str.count(';') > first_row_str.count(','):
+            delimiter = ';'
+        
+        new_data = []
+        for row in data:
+            if not row:
+                new_data.append([])
+                continue
+            row_str = str(row[0])
+            parsed = list(csv.reader([row_str], delimiter=delimiter))
+            if parsed:
+                new_data.append([val.strip() for val in parsed[0]])
+            else:
+                new_data.append([])
+        data = new_data
+
     # Limitar decimales a 2 para evitar errores de precisión de punto flotante en la UI
     if data:
         for row_idx in range(len(data)):
@@ -687,7 +708,7 @@ def auto_detect_columns(row: list[str]):
             # Index 2: Reference
             # Index 3: Amount (signed)
             # Index 6: Balance
-            if idx == 2 and "Reference" not in column_mapping:
+            if idx in [1, 2] and "Reference" not in column_mapping:
                 col_type = "Reference"
                 header_text = "Referencia"
             elif idx == 3 and "Amount" not in column_mapping:
