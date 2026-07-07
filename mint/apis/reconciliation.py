@@ -117,6 +117,37 @@ def apply_format_rule(rule_name, reference_number):
         )
         return ref
 
+def get_bank_rules(bank_name=None):
+    """Devuelve una lista de nombres de reglas configuradas para el banco."""
+    filters = {}
+    if bank_name:
+        filters["parent"] = bank_name
+    rules = frappe.get_all(
+        "Mint Bank Reference Rule Link", 
+        filters=filters, 
+        pluck="bank_reference_rule"
+    )
+    return list(dict.fromkeys(r for r in rules if r))
+
+def validate_bank_rules(doc, method=None):
+    """Evita que un banco tenga múltiples reglas para agregar ceros."""
+    if not hasattr(doc, "bank_reference_rule"):
+        return
+        
+    rules = [row.bank_reference_rule for row in doc.get("bank_reference_rule", []) if row.bank_reference_rule]
+    agregar_ceros_count = 0
+    for rule in rules:
+        r_lower = str(rule).lower()
+        if "agregar" in r_lower and "cero" in r_lower:
+            agregar_ceros_count += 1
+            
+    if agregar_ceros_count > 1:
+        frappe.throw(
+            "No se permite tener múltiples reglas de tipo 'Agregar ceros' activas para un mismo banco al mismo tiempo.",
+            title="Reglas en conflicto"
+        )
+
+
 
 def custom_get_matching_rules(bank_transaction_doc):
     """Parche (Monkey Patch): filtra reglas de Mint por banco."""
@@ -305,12 +336,9 @@ def _find_deposit_by_source_bank_rule(doc) -> frappe._dict | None:
     rules_to_check = []
     source_bank = doc.get("source_bank")
     if source_bank:
-        rule_name = frappe.get_cached_value("Bank", source_bank, "bank_reference_rule")
-        if rule_name:
-            rules_to_check.append(rule_name)
+        rules_to_check = get_bank_rules(source_bank)
     else:
-        banks_with_rules = frappe.get_all("Bank", filters={"bank_reference_rule": ["!=", ""]}, fields=["bank_reference_rule"])
-        rules_to_check = list(set(b.bank_reference_rule for b in banks_with_rules if b.bank_reference_rule))
+        rules_to_check = get_bank_rules()
 
     for cand in candidates:
         for rule_name in rules_to_check:
@@ -565,22 +593,15 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
         if not bt.party and pe.party:
             updated_fields["party"] = pe.party
         
-        # Guardar también la referencia origen si aplica usando las reglas globales
         original_ref = str(bt.reference_number or "").strip()
-        if pe.reference_no and not bt.source_bank_reference_rule and original_ref and pe.reference_no != original_ref:
-            rules_to_check = []
-            if pe.source_bank:
-                rule_name = frappe.db.get_value("Bank", pe.source_bank, "bank_reference_rule")
-                if rule_name:
-                    rules_to_check.append(rule_name)
-            else:
-                banks_with_rules = frappe.get_all("Bank", filters={"bank_reference_rule": ["!=", ""]}, fields=["bank_reference_rule"])
-                rules_to_check = list(set(b.bank_reference_rule for b in banks_with_rules if b.bank_reference_rule))
-                
-            for rule in rules_to_check:
-                if apply_format_rule(rule, original_ref) == pe.reference_no:
-                    updated_fields["source_bank_reference_rule"] = rule
-                    break
+        if pe.reference_no and original_ref and pe.reference_no != original_ref:
+            # Si ya tenía una regla guardada, no la tocamos
+            if not bt.source_bank_reference_rule:
+                rules_to_check = get_bank_rules(pe.source_bank) if pe.source_bank else get_bank_rules()
+                for rule in rules_to_check:
+                    if apply_format_rule(rule, original_ref) == pe.reference_no:
+                        updated_fields["source_bank_reference_rule"] = rule
+                        break
 
         if updated_fields:
             frappe.db.set_value("Bank Transaction", bt.name, updated_fields)
@@ -825,14 +846,14 @@ def reconcile_drafts_job(reference: str) -> None:
         )
     )
 
-    # Borradores cuya referencia es la del extracto transformada por la regla del banco.
-    banks_with_rules = frappe.get_all(
-        "Bank",
-        filters={"bank_reference_rule": ["!=", ""]},
-        fields=["name", "bank_reference_rule"],
+    # Borradores cuya referencia es la del extracto transformada por reglas
+    # Buscar qué bancos tienen reglas
+    banks = frappe.get_all(
+        "Mint Bank Reference Rule Link", 
+        fields=["parent", "bank_reference_rule"]
     )
-    for bank in banks_with_rules:
-        modified_ref = apply_format_rule(bank.bank_reference_rule, reference)
+    for b in banks:
+        modified_ref = apply_format_rule(b.bank_reference_rule, reference)
         if modified_ref == reference:
             continue
         drafts.update(
@@ -842,7 +863,7 @@ def reconcile_drafts_job(reference: str) -> None:
                     "docstatus": 0,
                     "payment_type": "Receive",
                     "reference_no": modified_ref,
-                    "source_bank": bank.name,
+                    "source_bank": b.parent,
                 },
                 pluck="name",
             )
@@ -892,10 +913,10 @@ def _tag_existing_matches_by_rule(matches, original_ref, banks_with_rules):
         if not source_bank:
             continue
             
-        for bank in banks_with_rules:
-            if source_bank != bank.name:
+        for b in banks_with_rules:
+            if source_bank != b.parent:
                 continue
-            mod_ref = apply_format_rule(bank.bank_reference_rule, original_ref)
+            mod_ref = apply_format_rule(b.bank_reference_rule, original_ref)
             if mod_ref == pe_ref:
                 if isinstance(match, dict):
                     match["matched_by_rule"] = True
@@ -911,8 +932,8 @@ def _find_extra_matches_by_rule(matches, transaction, original_ref, banks_with_r
     
     existing_keys = set(f"{m.get('doctype') or m.doctype}-{m.get('name') or m.name}" for m in matches)
     
-    for bank in banks_with_rules:
-        modified_ref = apply_format_rule(bank.bank_reference_rule, original_ref)
+    for b in banks_with_rules:
+        modified_ref = apply_format_rule(b.bank_reference_rule, original_ref)
         if modified_ref == original_ref:
             continue
 
@@ -935,7 +956,7 @@ def _find_extra_matches_by_rule(matches, transaction, original_ref, banks_with_r
             
             if doctype == "Payment Entry":
                 source_bank = source_banks.get(name)
-                if source_bank == bank.name:
+                if source_bank == b.parent:
                     key = f"{doctype}-{name}"
                     if key not in existing_keys:
                         if not isinstance(match, dict):
@@ -1003,8 +1024,8 @@ def get_linked_payments(
         return matches
 
     banks_with_rules = frappe.get_all(
-        "Bank", filters={"bank_reference_rule": ["!=", ""]},
-        fields=["name", "bank_reference_rule"],
+        "Mint Bank Reference Rule Link", 
+        fields=["parent", "bank_reference_rule"],
     )
     
     if not banks_with_rules:
@@ -1055,13 +1076,13 @@ def update_source_reference_on_reconcile(doc, method=None) -> None:
             continue
         if pe.reference_no == original_ref:
             continue
-        rule_name = (
-            frappe.db.get_value("Bank", pe.source_bank, "bank_reference_rule")
-            if pe.source_bank else None
-        )
-        if rule_name and apply_format_rule(rule_name, original_ref) == pe.reference_no:
-            doc.db_set("source_bank_reference_rule", pe.reference_no, update_modified=False)
-            modified = True
+            
+        rules_to_check = get_bank_rules(pe.source_bank) if pe.source_bank else []
+        for rule in rules_to_check:
+            if apply_format_rule(rule, original_ref) == pe.reference_no:
+                doc.db_set("source_bank_reference_rule", pe.reference_no, update_modified=False)
+                modified = True
+                break
 
     if modified:
         # Trigger reload in UI by touching modified

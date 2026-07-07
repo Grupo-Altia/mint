@@ -160,6 +160,9 @@ doc_events = {
     "Journal Entry": {
         "on_submit": "mint.apis.reconciliation.reconcile_journal_entry"
     },
+    "Bank": {
+        "validate": "mint.apis.reconciliation.validate_bank_rules"
+    },
     "Expense": {
         "on_submit": "mint.apis.reconciliation.update_expense_journal_entry"
     },

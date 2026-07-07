@@ -6,30 +6,24 @@ def create_bank_reference_rules():
     frappe.local.module_app['mint'] = 'mint'
     frappe.reload_doc("mint", "doctype", "bank_reference_rule")
     rules = [
-        {
-            "rule_name": "Tomar los últimos 8 dígitos",
-            "rule": "f'{str(reference_number)[-8:]}'"
-        },
-        {
-            "rule_name": "Duplicar referencia",
-            "rule": "f'{reference_number}{reference_number}'"
-        },
-        {
-            "rule_name": "Agregar 6 ceros a la izquierda",
-            "rule": "f'000000{reference_number}'"
-        },
-        {
-            "rule_name": "Agregar 3 ceros a la izquierda",
-            "rule": "f'000{reference_number}'"
-        },
-        {
-            "rule_name": "Agregar 7 ceros a la izquierda",
-            "rule": "f'0000000{reference_number}'"
-        },
-        {
-            "rule_name": "Agregar 1 cero a la izquierda",
-            "rule": "f'0{reference_number}'"
-        }
+        # Agregar ceros
+        {"rule_name": "Agregar 1 cero a la izquierda", "rule": "f'0{reference_number}'"},
+        {"rule_name": "Agregar 2 ceros a la izquierda", "rule": "f'00{reference_number}'"},
+        {"rule_name": "Agregar 3 ceros a la izquierda", "rule": "f'000{reference_number}'"},
+        {"rule_name": "Agregar 4 ceros a la izquierda", "rule": "f'0000{reference_number}'"},
+        {"rule_name": "Agregar 5 ceros a la izquierda", "rule": "f'00000{reference_number}'"},
+        {"rule_name": "Agregar 6 ceros a la izquierda", "rule": "f'000000{reference_number}'"},
+        {"rule_name": "Agregar 7 ceros a la izquierda", "rule": "f'0000000{reference_number}'"},
+        {"rule_name": "Agregar 8 ceros a la izquierda", "rule": "f'00000000{reference_number}'"},
+        {"rule_name": "Agregar 9 ceros a la izquierda", "rule": "f'000000000{reference_number}'"},
+        # Tomar digitos
+        {"rule_name": "Tomar los últimos 4 dígitos", "rule": "f'{str(reference_number)[-4:]}'"},
+        {"rule_name": "Tomar los últimos 5 dígitos", "rule": "f'{str(reference_number)[-5:]}'"},
+        {"rule_name": "Tomar los últimos 6 dígitos", "rule": "f'{str(reference_number)[-6:]}'"},
+        {"rule_name": "Tomar los últimos 7 dígitos", "rule": "f'{str(reference_number)[-7:]}'"},
+        {"rule_name": "Tomar los últimos 8 dígitos", "rule": "f'{str(reference_number)[-8:]}'"},
+        # Otros
+        {"rule_name": "Duplicar referencia", "rule": "f'{reference_number}{reference_number}'"}
     ]
     
     for rule_data in rules:
