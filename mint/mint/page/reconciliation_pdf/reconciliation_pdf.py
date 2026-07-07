@@ -29,7 +29,7 @@ def download_pdf(company, bank_account, month, year, bank_statement_closing_bala
 		"account": bank_account,
 		"from_date": start_date,
 		"to_date": end_date,
-		"include_reconciled": 1
+		"status": "All"
 	})
 	
 	data, summary = get_data_and_summary(filters)
@@ -61,7 +61,7 @@ def download_pdf(company, bank_account, month, year, bank_statement_closing_bala
 		"account": bank_account,
 		"from_date": "1900-01-01",
 		"to_date": prev_end_date,
-		"include_reconciled": 1
+		"status": "All"
 	})
 	
 	cache_key_balance = f"bank_recon_prev_bal_{company}_{bank_account}_{prev_end_date}"

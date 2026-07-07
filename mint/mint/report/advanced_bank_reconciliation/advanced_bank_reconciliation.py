@@ -116,7 +116,7 @@ def get_data_and_summary(filters):
     # 1. Obtener transacciones bancarias
     # Siempre obtenemos todas las transacciones del periodo para calcular bien el resumen
     filters_all = filters.copy()
-    filters_all['include_reconciled'] = 1
+    filters_all['status'] = 'All'
     bank_transactions = get_bank_transactions(filters_all)
     
     # 2. Obtener vouchers con clearance_date (para cotejo)
@@ -187,11 +187,14 @@ def get_data_and_summary(filters):
     # 6. Calcular el resumen con TODA la información
     report_summary = get_report_summary(full_data, filters)
     
-    # 7. Filtrar para la vista según el check 'include_reconciled'
+    # 7. Filtrar para la vista según el status
     data = []
-    include_reconciled = filters.get('include_reconciled')
+    status_filter = filters.get('status', 'Unreconciled')
     for row in full_data:
-        if not include_reconciled and row.get('status') in ['Reconciled', 'Conciliado']:
+        is_reconciled = row.get('status') in ['Reconciled', 'Conciliado']
+        if status_filter == 'Unreconciled' and is_reconciled:
+            continue
+        if status_filter == 'Reconciled' and not is_reconciled:
             continue
         data.append(row)
     
@@ -204,8 +207,11 @@ def get_bank_transactions(filters):
         "bt.date BETWEEN %(from_date)s AND %(to_date)s"
     ]
     
-    if not filters.get('include_reconciled'):
+    status_filter = filters.get('status', 'Unreconciled')
+    if status_filter == 'Unreconciled':
         conditions.append("bt.status != 'Reconciled'")
+    elif status_filter == 'Reconciled':
+        conditions.append("bt.status = 'Reconciled'")
     
     where_clause = " AND ".join(conditions)
     
