@@ -40,7 +40,7 @@ def get_statement_details(file_url: str, bank_account: str):
             auto_columns, auto_mapping = auto_detect_columns(first_data_row)
             
             # For any crucial column missing, see if auto_detect found it
-            for crucial in ["Date", "Description", "Reference", "Amount", "Balance"]:
+            for crucial in ["Date", "Description", "Reference", "Amount", "Balance", "Transaction Type"]:
                 if crucial not in column_mapping and crucial in auto_mapping:
                     idx = auto_mapping[crucial]
                     column_mapping[crucial] = idx
@@ -609,9 +609,9 @@ def get_column_mapping(header_row: list[str]):
         "Date": ["date", "transaction date", "fecha"], 
         "Withdrawal": ["withdrawal", "debit", "débito", "debito", "cargo", "cargos"],
         "Deposit": ["deposit", "credit", "crédito", "credito", "abono", "abonos"],
-        "Amount": ["amount", "monto", "importe"], 
+        "Amount": ["amount", "monto", "importe", "$"], 
         "Description": ["description", "particulars", "remarks", "narration", "detail", "reference", "concepto", "descripción", "descripcion"], 
-        "Reference": ["reference", "ref", "tran id", "transaction id", "cheque", "check", "id", "chq", "referencia", "nro"], 
+        "Reference": ["reference", "ref", "tran id", "transaction id", "cheque", "check", "id", "chq", "referencia"], 
         "Transaction Type": ["transaction type", "cr/dr", "dr/cr", "debit/credit", "credit/debit", "tipo", "d/c", "c/d", "signo"], 
         "Balance": ["balance", "saldo"],
     }
@@ -816,8 +816,16 @@ def get_float_amount(amount):
         return None
 
     if isinstance(amount, str):
+        original_lower = amount.lower().strip()
+        
+        # Evitar que descripciones con números (ej. "NC P2C") sean parseadas como montos
+        test_str = original_lower.replace("bs.", "").replace("bs", "").replace("usd", "").replace("eur", "").replace("$", "").replace(" ", "")
+        test_str = re.sub(r'^(cr|dr|c|d)|(cr|dr|c|d)$', '', test_str)
+        if re.search(r'[a-z]', test_str):
+            return None
+
         # Limpiar texto de espacios y prefijos
-        amount = amount.lower().replace(" ", "").replace("cr", "").replace("dr", "")
+        amount = original_lower.replace(" ", "").replace("cr", "").replace("dr", "")
         # Mantener solo dígitos, punto, coma y guión
         amount = re.sub(r'[^\d.,-]', '', amount)
         if not amount:
