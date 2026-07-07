@@ -298,6 +298,30 @@ def _first_deposit(filters: dict) -> frappe._dict | None:
     return rows[0] if rows else None
 
 
+import itertools
+
+def check_rules_match(rules, raw_ref, target_ref):
+    if raw_ref == target_ref:
+        return True, None
+        
+    # Single rules
+    for rule in rules:
+        if apply_format_rule(rule, raw_ref) == target_ref:
+            return True, rule
+            
+    # Combinations (Pipeline logic, any order)
+    if len(rules) > 1:
+        for r_len in range(2, len(rules) + 1):
+            for perm in itertools.permutations(rules, r_len):
+                p_ref = raw_ref
+                for r in perm:
+                    p_ref = apply_format_rule(r, p_ref)
+                if p_ref == target_ref:
+                    return True, " + ".join(perm)
+                    
+    return False, None
+
+
 def _find_deposit_by_source_bank_rule(doc) -> frappe._dict | None:
     """Fallback de matching por REGLA DE BANCO, HACIA ADELANTE.
 
@@ -341,9 +365,9 @@ def _find_deposit_by_source_bank_rule(doc) -> frappe._dict | None:
         rules_to_check = get_bank_rules()
 
     for cand in candidates:
-        for rule_name in rules_to_check:
-            if apply_format_rule(rule_name, cand.reference_number) == target_ref:
-                return cand
+        match, _ = check_rules_match(rules_to_check, cand.reference_number, target_ref)
+        if match:
+            return cand
                 
     return None
 
@@ -598,10 +622,9 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
             # Si ya tenía una regla guardada, no la tocamos
             if not bt.source_bank_reference_rule:
                 rules_to_check = get_bank_rules(pe.source_bank) if pe.source_bank else get_bank_rules()
-                for rule in rules_to_check:
-                    if apply_format_rule(rule, original_ref) == pe.reference_no:
-                        updated_fields["source_bank_reference_rule"] = rule
-                        break
+                match, matched_rule = check_rules_match(rules_to_check, original_ref, pe.reference_no)
+                if match and matched_rule:
+                    updated_fields["source_bank_reference_rule"] = matched_rule[:140]
 
         if updated_fields:
             frappe.db.set_value("Bank Transaction", bt.name, updated_fields)
@@ -1078,11 +1101,10 @@ def update_source_reference_on_reconcile(doc, method=None) -> None:
             continue
             
         rules_to_check = get_bank_rules(pe.source_bank) if pe.source_bank else []
-        for rule in rules_to_check:
-            if apply_format_rule(rule, original_ref) == pe.reference_no:
-                doc.db_set("source_bank_reference_rule", pe.reference_no, update_modified=False)
-                modified = True
-                break
+        match, matched_rule = check_rules_match(rules_to_check, original_ref, pe.reference_no)
+        if match and matched_rule:
+            doc.db_set("source_bank_reference_rule", matched_rule[:140], update_modified=False)
+            modified = True
 
     if modified:
         # Trigger reload in UI by touching modified
