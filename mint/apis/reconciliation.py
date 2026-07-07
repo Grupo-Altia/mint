@@ -1170,3 +1170,17 @@ def reconcile_je_job(bank_transaction_name: str) -> None:
                 frappe.db.rollback()
                 frappe.log_error(f"Error auto-reconciling JE {je_name}", frappe.get_traceback())
 
+def update_expense_journal_entry(doc, method=None):
+    """Inyectado al validar un Gasto (Expense). Copia el número de referencia
+    al Asiento Contable (Journal Entry) y dispara la conciliación bancaria."""
+    if doc.journal_entry and doc.reference_no:
+        frappe.db.set_value("Journal Entry", doc.journal_entry, {
+            "cheque_no": doc.reference_no,
+            "cheque_date": doc.expense_date
+        }, update_modified=False)
+        
+        # Disparar la conciliación de este JE, ya que el hook estándar on_submit
+        # de Journal Entry pasó antes de que le inyectáramos la referencia.
+        je_doc = frappe.get_doc("Journal Entry", doc.journal_entry)
+        reconcile_journal_entry(je_doc)
+
