@@ -631,7 +631,7 @@ def get_column_mapping(header_row: list[str]):
         "Withdrawal": ["withdrawal", "debit", "débito", "debito", "cargo", "cargos"],
         "Deposit": ["deposit", "credit", "crédito", "credito", "abono", "abonos"],
         "Amount": ["amount", "monto", "importe", "$"], 
-        "Description": ["description", "particulars", "remarks", "narration", "detail", "reference", "concepto", "descripción", "descripcion"], 
+        "Description": ["description", "particulars", "remarks", "narration", "detail", "reference", "concepto", "descripción", "descripcion", "descripci"], 
         "Reference": ["reference", "ref", "tran id", "transaction id", "cheque", "check", "id", "chq", "referencia"], 
         "Transaction Type": ["transaction type", "cr/dr", "dr/cr", "debit/credit", "credit/debit", "tipo", "d/c", "c/d", "signo"], 
         "Balance": ["balance", "saldo"],
@@ -697,9 +697,6 @@ def auto_detect_columns(row: list[str]):
         elif "Date" not in column_mapping and frappe.utils.guess_date_format(str(cell)):
             col_type = "Date"
             header_text = "Fecha"
-        elif idx == 1 and "Description" not in column_mapping:
-            col_type = "Description"
-            header_text = "Descripción"
         elif get_float_amount(cell) is not None:
             # We found a number.
             # Usually: 1st number = Reference/Amount, but Ref is often a string/number.
@@ -721,7 +718,7 @@ def auto_detect_columns(row: list[str]):
                 # Fallback for Amount
                 col_type = "Amount"
                 header_text = "Monto"
-        elif isinstance(cell, str) and len(cell) > 5 and "Description" not in column_mapping:
+        elif isinstance(cell, str) and (idx == 1 or len(cell) > 5) and "Description" not in column_mapping:
             col_type = "Description"
             header_text = "Descripción"
         elif isinstance(cell, str) and str(cell).strip().upper() in ["C", "D", "CR", "DR"] and "Transaction Type" not in column_mapping:
