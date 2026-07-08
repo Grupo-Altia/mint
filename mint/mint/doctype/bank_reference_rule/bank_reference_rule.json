@@ -51,8 +51,8 @@
  "row_format": "Dynamic",
  "rows_threshold_for_grid_search": 20,
  "search_fields": "rule_name",
- "sort_field": "modified",
- "sort_order": "DESC",
+ "sort_field": "rule_name",
+ "sort_order": "ASC",
  "states": [],
  "title_field": "rule_name"
 }

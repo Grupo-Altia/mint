@@ -117,6 +117,37 @@ def apply_format_rule(rule_name, reference_number):
         )
         return ref
 
+def get_bank_rules(bank_name=None):
+    """Devuelve una lista de nombres de reglas configuradas para el banco."""
+    filters = {}
+    if bank_name:
+        filters["parent"] = bank_name
+    rules = frappe.get_all(
+        "Mint Bank Reference Rule Link", 
+        filters=filters, 
+        pluck="bank_reference_rule"
+    )
+    return list(dict.fromkeys(r for r in rules if r))
+
+def validate_bank_rules(doc, method=None):
+    """Evita que un banco tenga múltiples reglas para agregar ceros."""
+    if not hasattr(doc, "bank_reference_rule"):
+        return
+        
+    rules = [row.bank_reference_rule for row in doc.get("bank_reference_rule", []) if row.bank_reference_rule]
+    agregar_ceros_count = 0
+    for rule in rules:
+        r_lower = str(rule).lower()
+        if "agregar" in r_lower and "cero" in r_lower:
+            agregar_ceros_count += 1
+            
+    if agregar_ceros_count > 1:
+        frappe.throw(
+            "No se permite tener múltiples reglas de tipo 'Agregar ceros' activas para un mismo banco al mismo tiempo.",
+            title="Reglas en conflicto"
+        )
+
+
 
 def custom_get_matching_rules(bank_transaction_doc):
     """Parche (Monkey Patch): filtra reglas de Mint por banco."""
@@ -267,6 +298,30 @@ def _first_deposit(filters: dict) -> frappe._dict | None:
     return rows[0] if rows else None
 
 
+import itertools
+
+def check_rules_match(rules, raw_ref, target_ref):
+    if raw_ref == target_ref:
+        return True, None
+        
+    # Single rules
+    for rule in rules:
+        if apply_format_rule(rule, raw_ref) == target_ref:
+            return True, rule
+            
+    # Combinations (Pipeline logic, any order)
+    if len(rules) > 1:
+        for r_len in range(2, len(rules) + 1):
+            for perm in itertools.permutations(rules, r_len):
+                p_ref = raw_ref
+                for r in perm:
+                    p_ref = apply_format_rule(r, p_ref)
+                if p_ref == target_ref:
+                    return True, " + ".join(perm)
+                    
+    return False, None
+
+
 def _find_deposit_by_source_bank_rule(doc) -> frappe._dict | None:
     """Fallback de matching por REGLA DE BANCO, HACIA ADELANTE.
 
@@ -305,17 +360,14 @@ def _find_deposit_by_source_bank_rule(doc) -> frappe._dict | None:
     rules_to_check = []
     source_bank = doc.get("source_bank")
     if source_bank:
-        rule_name = frappe.get_cached_value("Bank", source_bank, "bank_reference_rule")
-        if rule_name:
-            rules_to_check.append(rule_name)
+        rules_to_check = get_bank_rules(source_bank)
     else:
-        banks_with_rules = frappe.get_all("Bank", filters={"bank_reference_rule": ["!=", ""]}, fields=["bank_reference_rule"])
-        rules_to_check = list(set(b.bank_reference_rule for b in banks_with_rules if b.bank_reference_rule))
+        rules_to_check = get_bank_rules()
 
     for cand in candidates:
-        for rule_name in rules_to_check:
-            if apply_format_rule(rule_name, cand.reference_number) == target_ref:
-                return cand
+        match, _ = check_rules_match(rules_to_check, cand.reference_number, target_ref)
+        if match:
+            return cand
                 
     return None
 
@@ -565,22 +617,14 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
         if not bt.party and pe.party:
             updated_fields["party"] = pe.party
         
-        # Guardar también la referencia origen si aplica usando las reglas globales
         original_ref = str(bt.reference_number or "").strip()
-        if pe.reference_no and not bt.source_bank_reference_rule and original_ref and pe.reference_no != original_ref:
-            rules_to_check = []
-            if pe.source_bank:
-                rule_name = frappe.db.get_value("Bank", pe.source_bank, "bank_reference_rule")
-                if rule_name:
-                    rules_to_check.append(rule_name)
-            else:
-                banks_with_rules = frappe.get_all("Bank", filters={"bank_reference_rule": ["!=", ""]}, fields=["bank_reference_rule"])
-                rules_to_check = list(set(b.bank_reference_rule for b in banks_with_rules if b.bank_reference_rule))
-                
-            for rule in rules_to_check:
-                if apply_format_rule(rule, original_ref) == pe.reference_no:
-                    updated_fields["source_bank_reference_rule"] = rule
-                    break
+        if pe.reference_no and original_ref and pe.reference_no != original_ref:
+            # Si ya tenía una regla guardada, no la tocamos
+            if not bt.source_bank_reference_rule:
+                rules_to_check = get_bank_rules(pe.source_bank) if pe.source_bank else get_bank_rules()
+                match, matched_rule = check_rules_match(rules_to_check, original_ref, pe.reference_no)
+                if match and matched_rule:
+                    updated_fields["source_bank_reference_rule"] = matched_rule[:140]
 
         if updated_fields:
             frappe.db.set_value("Bank Transaction", bt.name, updated_fields)
@@ -595,7 +639,7 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
         "Payment Entry", payment_entry_name, ["clearance_date", "custom_reconciliation_status"]
     )
     if clearance_date and current_status != RECON_DONE:
-        frappe.db.set_value("Payment Entry", payment_entry_name, "custom_reconciliation_status", RECON_DONE, update_modified=False)
+        frappe.db.set_value("Payment Entry", payment_entry_name, "custom_reconciliation_status", RECON_DONE, update_modified=True)
 
 
 def strip_leading_quote_from_reference(doc, method):
@@ -712,9 +756,9 @@ def on_change_payment_entry(doc, method=None) -> None:
     sincroniza el estado visual con la existencia de la fecha de liquidación."""
     if doc.docstatus == 1:
         if doc.clearance_date and doc.get("custom_reconciliation_status") != RECON_DONE:
-            doc.db_set("custom_reconciliation_status", RECON_DONE, update_modified=False)
+            doc.db_set("custom_reconciliation_status", RECON_DONE, update_modified=True)
         elif not doc.clearance_date and doc.get("custom_reconciliation_status") != RECON_PENDING:
-            doc.db_set("custom_reconciliation_status", RECON_PENDING, update_modified=False)
+            doc.db_set("custom_reconciliation_status", RECON_PENDING, update_modified=True)
 
 
 
@@ -791,15 +835,23 @@ def reconcile_drafts_for_deposit(doc, method=None) -> None:
     del depósito.
     """
     ref = str(doc.reference_number or "").strip()
-    if not ref or flt(doc.deposit) <= 0:
+    if not ref:
         return
 
-    frappe.enqueue(
-        "mint.apis.reconciliation.reconcile_drafts_job",
-        queue="short",
-        reference=ref,
-        enqueue_after_commit=True,
-    )
+    if flt(doc.deposit) > 0:
+        frappe.enqueue(
+            "mint.apis.reconciliation.reconcile_drafts_job",
+            queue="short",
+            reference=ref,
+            enqueue_after_commit=True,
+        )
+    elif flt(doc.withdrawal) > 0:
+        frappe.enqueue(
+            "mint.apis.reconciliation.reconcile_je_job",
+            queue="short",
+            bank_transaction_name=doc.name,
+            enqueue_after_commit=True,
+        )
 
 
 def reconcile_drafts_job(reference: str) -> None:
@@ -817,14 +869,14 @@ def reconcile_drafts_job(reference: str) -> None:
         )
     )
 
-    # Borradores cuya referencia es la del extracto transformada por la regla del banco.
-    banks_with_rules = frappe.get_all(
-        "Bank",
-        filters={"bank_reference_rule": ["!=", ""]},
-        fields=["name", "bank_reference_rule"],
+    # Borradores cuya referencia es la del extracto transformada por reglas
+    # Buscar qué bancos tienen reglas
+    banks = frappe.get_all(
+        "Mint Bank Reference Rule Link", 
+        fields=["parent", "bank_reference_rule"]
     )
-    for bank in banks_with_rules:
-        modified_ref = apply_format_rule(bank.bank_reference_rule, reference)
+    for b in banks:
+        modified_ref = apply_format_rule(b.bank_reference_rule, reference)
         if modified_ref == reference:
             continue
         drafts.update(
@@ -834,7 +886,7 @@ def reconcile_drafts_job(reference: str) -> None:
                     "docstatus": 0,
                     "payment_type": "Receive",
                     "reference_no": modified_ref,
-                    "source_bank": bank.name,
+                    "source_bank": b.parent,
                 },
                 pluck="name",
             )
@@ -884,10 +936,10 @@ def _tag_existing_matches_by_rule(matches, original_ref, banks_with_rules):
         if not source_bank:
             continue
             
-        for bank in banks_with_rules:
-            if source_bank != bank.name:
+        for b in banks_with_rules:
+            if source_bank != b.parent:
                 continue
-            mod_ref = apply_format_rule(bank.bank_reference_rule, original_ref)
+            mod_ref = apply_format_rule(b.bank_reference_rule, original_ref)
             if mod_ref == pe_ref:
                 if isinstance(match, dict):
                     match["matched_by_rule"] = True
@@ -903,8 +955,8 @@ def _find_extra_matches_by_rule(matches, transaction, original_ref, banks_with_r
     
     existing_keys = set(f"{m.get('doctype') or m.doctype}-{m.get('name') or m.name}" for m in matches)
     
-    for bank in banks_with_rules:
-        modified_ref = apply_format_rule(bank.bank_reference_rule, original_ref)
+    for b in banks_with_rules:
+        modified_ref = apply_format_rule(b.bank_reference_rule, original_ref)
         if modified_ref == original_ref:
             continue
 
@@ -927,7 +979,7 @@ def _find_extra_matches_by_rule(matches, transaction, original_ref, banks_with_r
             
             if doctype == "Payment Entry":
                 source_bank = source_banks.get(name)
-                if source_bank == bank.name:
+                if source_bank == b.parent:
                     key = f"{doctype}-{name}"
                     if key not in existing_keys:
                         if not isinstance(match, dict):
@@ -995,8 +1047,8 @@ def get_linked_payments(
         return matches
 
     banks_with_rules = frappe.get_all(
-        "Bank", filters={"bank_reference_rule": ["!=", ""]},
-        fields=["name", "bank_reference_rule"],
+        "Mint Bank Reference Rule Link", 
+        fields=["parent", "bank_reference_rule"],
     )
     
     if not banks_with_rules:
@@ -1036,10 +1088,10 @@ def update_source_reference_on_reconcile(doc, method=None) -> None:
 
         # Mapeo automático del tercero si está vacío.
         if not doc.party_type and pe.party_type:
-            doc.db_set("party_type", pe.party_type, update_modified=False)
+            doc.db_set("party_type", pe.party_type, update_modified=True)
             modified = True
         if not doc.party and pe.party:
-            doc.db_set("party", pe.party, update_modified=False)
+            doc.db_set("party", pe.party, update_modified=True)
             modified = True
 
         # Referencia origen: solo si difiere de la del depósito y aún no se guardó.
@@ -1047,14 +1099,131 @@ def update_source_reference_on_reconcile(doc, method=None) -> None:
             continue
         if pe.reference_no == original_ref:
             continue
-        rule_name = (
-            frappe.db.get_value("Bank", pe.source_bank, "bank_reference_rule")
-            if pe.source_bank else None
-        )
-        if rule_name and apply_format_rule(rule_name, original_ref) == pe.reference_no:
-            doc.db_set("source_bank_reference_rule", pe.reference_no, update_modified=False)
+            
+        rules_to_check = get_bank_rules(pe.source_bank) if pe.source_bank else []
+        match, matched_rule = check_rules_match(rules_to_check, original_ref, pe.reference_no)
+        if match and matched_rule:
+            doc.db_set("source_bank_reference_rule", matched_rule[:140], update_modified=True)
             modified = True
 
     if modified:
         # Trigger reload in UI by touching modified
         doc.db_set("modified", frappe.utils.now(), update_modified=True)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Auto-reconciliation of Journal Entries (Expenses/Withdrawals)
+# ════════════════════════════════════════════════════════════════════════════
+
+def _link_withdrawal_to_je(bank_transaction_name: str, je_name: str) -> None:
+    bt = frappe.get_doc("Bank Transaction", bank_transaction_name)
+    already = any(
+        row.payment_entry == je_name and row.payment_document == "Journal Entry"
+        for row in bt.payment_entries
+    )
+    if already or flt(bt.unallocated_amount) <= 0:
+        return
+    bt.add_payment_entries(
+        [{"payment_doctype": "Journal Entry", "payment_name": je_name}]
+    )
+    bt.save(ignore_permissions=True)
+
+def reconcile_journal_entry(doc, method=None):
+    if not doc.cheque_no:
+        return
+        
+    ref = str(doc.cheque_no).strip()
+    
+    bank_gl_account = None
+    je_amount = 0
+    for acc in doc.accounts:
+        is_bank = frappe.db.get_value("Account", acc.account, "account_type") == "Bank"
+        if is_bank and flt(acc.credit) > 0:
+            bank_gl_account = acc.account
+            je_amount = flt(acc.credit)
+            break
+            
+    if not bank_gl_account or je_amount <= 0:
+        return
+        
+    bank_account = frappe.db.get_value("Bank Account", {"account": bank_gl_account})
+    if not bank_account:
+        return
+        
+    cand_filters = {
+        "docstatus": 1,
+        "withdrawal": [">", 0],
+        "unallocated_amount": [">", 0.001],
+        "bank_account": bank_account,
+        "company": doc.company,
+        "reference_number": ref
+    }
+    
+    candidates = frappe.get_all(
+        "Bank Transaction",
+        filters=cand_filters,
+        fields=["name", "withdrawal"],
+        order_by="withdrawal asc"
+    )
+    
+    for cand in candidates:
+        if abs(flt(cand.withdrawal) - je_amount) < 1.0:
+            _link_withdrawal_to_je(cand.name, doc.name)
+            break
+
+def reconcile_je_job(bank_transaction_name: str) -> None:
+    bt = frappe.db.get_values(
+        "Bank Transaction", 
+        bank_transaction_name, 
+        ["name", "reference_number", "withdrawal", "bank_account", "company", "unallocated_amount"], 
+        as_dict=True
+    )
+    if not bt: return
+    bt = bt[0]
+    
+    if flt(bt.unallocated_amount) <= 0: return
+    
+    ref = str(bt.reference_number or "").strip()
+    if not ref: return
+    
+    bank_gl_account = frappe.db.get_value("Bank Account", bt.bank_account, "account")
+    if not bank_gl_account: return
+    
+    jes = frappe.get_all(
+        "Journal Entry",
+        filters={"docstatus": 1, "cheque_no": ref, "company": bt.company},
+        pluck="name"
+    )
+    
+    for je_name in jes:
+        je_doc = frappe.get_doc("Journal Entry", je_name)
+        
+        match = False
+        for acc in je_doc.accounts:
+            if acc.account == bank_gl_account and abs(flt(acc.credit) - flt(bt.withdrawal)) < 1.0:
+                match = True
+                break
+                
+        if match:
+            try:
+                _link_withdrawal_to_je(bt.name, je_name)
+                frappe.db.commit()
+                break
+            except Exception:
+                frappe.db.rollback()
+                frappe.log_error(f"Error auto-reconciling JE {je_name}", frappe.get_traceback())
+
+def update_expense_journal_entry(doc, method=None):
+    """Inyectado al validar un Gasto (Expense). Copia el número de referencia
+    al Asiento Contable (Journal Entry) y dispara la conciliación bancaria."""
+    if doc.journal_entry and doc.reference_no:
+        frappe.db.set_value("Journal Entry", doc.journal_entry, {
+            "cheque_no": doc.reference_no,
+            "cheque_date": doc.expense_date
+        }, update_modified=True)
+        
+        # Disparar la conciliación de este JE, ya que el hook estándar on_submit
+        # de Journal Entry pasó antes de que le inyectáramos la referencia.
+        je_doc = frappe.get_doc("Journal Entry", doc.journal_entry)
+        reconcile_journal_entry(je_doc)
+
