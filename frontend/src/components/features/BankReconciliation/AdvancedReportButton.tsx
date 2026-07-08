@@ -16,7 +16,7 @@ const AdvancedReportButton = () => {
                 </Button>
             </TooltipTrigger>
             <TooltipContent>
-                {_("Conciliación Bancaria Avanzada")}
+                {_("Bank Reconciliation Report")}
             </TooltipContent>
         </Tooltip>
     )

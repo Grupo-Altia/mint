@@ -40,7 +40,7 @@ def get_statement_details(file_url: str, bank_account: str):
             auto_columns, auto_mapping = auto_detect_columns(first_data_row)
             
             # For any crucial column missing, see if auto_detect found it
-            for crucial in ["Date", "Description", "Reference", "Amount", "Balance"]:
+            for crucial in ["Date", "Description", "Reference", "Amount", "Balance", "Transaction Type"]:
                 if crucial not in column_mapping and crucial in auto_mapping:
                     idx = auto_mapping[crucial]
                     column_mapping[crucial] = idx
@@ -555,6 +555,27 @@ def get_data(file_path: str):
             else:
                 raise
 
+    # Fix for files where all columns are merged into a single column separated by commas or semicolons
+    if data and all(len(row) == 1 for row in data[:10] if row) and len(data) > 1:
+        import csv
+        delimiter = ','
+        first_row_str = str(data[0][0]) if data[0] else ""
+        if first_row_str.count(';') > first_row_str.count(','):
+            delimiter = ';'
+        
+        new_data = []
+        for row in data:
+            if not row:
+                new_data.append([])
+                continue
+            row_str = str(row[0])
+            parsed = list(csv.reader([row_str], delimiter=delimiter))
+            if parsed:
+                new_data.append([val.strip() for val in parsed[0]])
+            else:
+                new_data.append([])
+        data = new_data
+
     # Limitar decimales a 2 para evitar errores de precisión de punto flotante en la UI
     if data:
         for row_idx in range(len(data)):
@@ -609,10 +630,10 @@ def get_column_mapping(header_row: list[str]):
         "Date": ["date", "transaction date", "fecha"], 
         "Withdrawal": ["withdrawal", "debit", "débito", "debito", "cargo", "cargos"],
         "Deposit": ["deposit", "credit", "crédito", "credito", "abono", "abonos"],
-        "Amount": ["amount", "monto", "importe"], 
-        "Description": ["description", "particulars", "remarks", "narration", "detail", "reference", "concepto", "descripción", "descripcion"], 
-        "Reference": ["reference", "ref", "tran id", "transaction id", "cheque", "check", "id", "chq", "referencia", "nro"], 
-        "Transaction Type": ["transaction type", "cr/dr", "dr/cr", "debit/credit", "credit/debit", "tipo"], 
+        "Amount": ["amount", "monto", "importe", "$"], 
+        "Description": ["description", "particulars", "remarks", "narration", "detail", "reference", "concepto", "descripción", "descripcion", "descripci"], 
+        "Reference": ["reference", "ref", "tran id", "transaction id", "cheque", "check", "id", "chq", "referencia"], 
+        "Transaction Type": ["transaction type", "cr/dr", "dr/cr", "debit/credit", "credit/debit", "tipo", "d/c", "c/d", "signo"], 
         "Balance": ["balance", "saldo"],
     }
     # A standard variable can be represented by multiple names
@@ -676,9 +697,6 @@ def auto_detect_columns(row: list[str]):
         elif "Date" not in column_mapping and frappe.utils.guess_date_format(str(cell)):
             col_type = "Date"
             header_text = "Fecha"
-        elif idx == 1 and "Description" not in column_mapping:
-            col_type = "Description"
-            header_text = "Descripción"
         elif get_float_amount(cell) is not None:
             # We found a number.
             # Usually: 1st number = Reference/Amount, but Ref is often a string/number.
@@ -687,7 +705,7 @@ def auto_detect_columns(row: list[str]):
             # Index 2: Reference
             # Index 3: Amount (signed)
             # Index 6: Balance
-            if idx == 2 and "Reference" not in column_mapping:
+            if idx in [1, 2] and "Reference" not in column_mapping:
                 col_type = "Reference"
                 header_text = "Referencia"
             elif idx == 3 and "Amount" not in column_mapping:
@@ -700,9 +718,12 @@ def auto_detect_columns(row: list[str]):
                 # Fallback for Amount
                 col_type = "Amount"
                 header_text = "Monto"
-        elif isinstance(cell, str) and len(cell) > 5 and "Description" not in column_mapping:
+        elif isinstance(cell, str) and (idx == 1 or len(cell) > 5) and "Description" not in column_mapping:
             col_type = "Description"
             header_text = "Descripción"
+        elif isinstance(cell, str) and str(cell).strip().upper() in ["C", "D", "CR", "DR"] and "Transaction Type" not in column_mapping:
+            col_type = "Transaction Type"
+            header_text = "Tipo"
         
         column = {
             "index": idx,
@@ -813,8 +834,16 @@ def get_float_amount(amount):
         return None
 
     if isinstance(amount, str):
+        original_lower = amount.lower().strip()
+        
+        # Evitar que descripciones con números (ej. "NC P2C") sean parseadas como montos
+        test_str = original_lower.replace("bs.", "").replace("bs", "").replace("usd", "").replace("eur", "").replace("$", "").replace(" ", "")
+        test_str = re.sub(r'^(cr|dr|c|d)|(cr|dr|c|d)$', '', test_str)
+        if re.search(r'[a-z]', test_str):
+            return None
+
         # Limpiar texto de espacios y prefijos
-        amount = amount.lower().replace(" ", "").replace("cr", "").replace("dr", "")
+        amount = original_lower.replace(" ", "").replace("cr", "").replace("dr", "")
         # Mantener solo dígitos, punto, coma y guión
         amount = re.sub(r'[^\d.,-]', '', amount)
         if not amount:
@@ -891,9 +920,10 @@ def get_file_properties(transactions: list):
         
         # Check if there's a transaction type column containing "cr"/"dr"
         if transaction.get("transaction_type", None):
-            if "cr" in transaction.get("transaction_type", "").lower() or "dr" in transaction.get("transaction_type", "").lower():
+            t_type = transaction.get("transaction_type", "").lower().strip()
+            if "cr" in t_type or "dr" in t_type or t_type in ["c", "d"] or "credito" in t_type or "debito" in t_type or "crédito" in t_type or "débito" in t_type:
                 amount_format_frequency["cr_dr_in_transaction_type"] += 1
-            if "deposit" in transaction.get("transaction_type", "").lower() or "withdrawal" in transaction.get("transaction_type", "").lower():
+            if "deposit" in t_type or "withdrawal" in t_type or "abono" in t_type or "cargo" in t_type:
                 amount_format_frequency["deposit_withdrawal_in_transaction_type"] += 1
         
         # Else assume that the amount is expressed as positive/negative value
@@ -982,17 +1012,17 @@ def get_final_transactions(transactions: list, date_format: str, amount_format: 
                 return abs(amount), 0
         
         if amount_format == "cr_dr_in_transaction_type":
-            transaction_type = transaction_row.get("transaction_type")
+            transaction_type = transaction_row.get("transaction_type", "").lower().strip()
             amount = get_float_amount(transaction_row.get("amount", "0"))
-            if "cr" in transaction_type.lower():
+            if "cr" in transaction_type or transaction_type == "c" or "cred" in transaction_type or "créd" in transaction_type:
                 return 0, abs(amount)
             else:
                 return abs(amount), 0
         
         if amount_format == "deposit_withdrawal_in_transaction_type":
-            transaction_type = transaction_row.get("transaction_type")
+            transaction_type = transaction_row.get("transaction_type", "").lower().strip()
             amount = get_float_amount(transaction_row.get("amount", "0"))
-            if "deposit" in transaction_type.lower():
+            if "deposit" in transaction_type or "abono" in transaction_type:
                 return 0, abs(amount)
             else:
                 return abs(amount), 0

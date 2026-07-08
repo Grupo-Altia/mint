@@ -41,10 +41,11 @@ frappe.query_reports["Advanced Bank Reconciliation"] = {
             "default": frappe.datetime.month_end()
         },
         {
-            "fieldname":"include_reconciled",
-            "label": __("Incluir Conciliados"),
-            "fieldtype": "Check",
-            "default": 0
+            "fieldname":"status",
+            "label": __("Estado"),
+            "fieldtype": "Select",
+            "options": "Unreconciled\nReconciled\nAll",
+            "default": "Unreconciled"
         }
     ],
     
