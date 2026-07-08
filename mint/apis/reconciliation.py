@@ -639,7 +639,7 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
         "Payment Entry", payment_entry_name, ["clearance_date", "custom_reconciliation_status"]
     )
     if clearance_date and current_status != RECON_DONE:
-        frappe.db.set_value("Payment Entry", payment_entry_name, "custom_reconciliation_status", RECON_DONE, update_modified=False)
+        frappe.db.set_value("Payment Entry", payment_entry_name, "custom_reconciliation_status", RECON_DONE, update_modified=True)
 
 
 def strip_leading_quote_from_reference(doc, method):
@@ -756,9 +756,9 @@ def on_change_payment_entry(doc, method=None) -> None:
     sincroniza el estado visual con la existencia de la fecha de liquidación."""
     if doc.docstatus == 1:
         if doc.clearance_date and doc.get("custom_reconciliation_status") != RECON_DONE:
-            doc.db_set("custom_reconciliation_status", RECON_DONE, update_modified=False)
+            doc.db_set("custom_reconciliation_status", RECON_DONE, update_modified=True)
         elif not doc.clearance_date and doc.get("custom_reconciliation_status") != RECON_PENDING:
-            doc.db_set("custom_reconciliation_status", RECON_PENDING, update_modified=False)
+            doc.db_set("custom_reconciliation_status", RECON_PENDING, update_modified=True)
 
 
 
@@ -1088,10 +1088,10 @@ def update_source_reference_on_reconcile(doc, method=None) -> None:
 
         # Mapeo automático del tercero si está vacío.
         if not doc.party_type and pe.party_type:
-            doc.db_set("party_type", pe.party_type, update_modified=False)
+            doc.db_set("party_type", pe.party_type, update_modified=True)
             modified = True
         if not doc.party and pe.party:
-            doc.db_set("party", pe.party, update_modified=False)
+            doc.db_set("party", pe.party, update_modified=True)
             modified = True
 
         # Referencia origen: solo si difiere de la del depósito y aún no se guardó.
@@ -1103,7 +1103,7 @@ def update_source_reference_on_reconcile(doc, method=None) -> None:
         rules_to_check = get_bank_rules(pe.source_bank) if pe.source_bank else []
         match, matched_rule = check_rules_match(rules_to_check, original_ref, pe.reference_no)
         if match and matched_rule:
-            doc.db_set("source_bank_reference_rule", matched_rule[:140], update_modified=False)
+            doc.db_set("source_bank_reference_rule", matched_rule[:140], update_modified=True)
             modified = True
 
     if modified:
@@ -1220,7 +1220,7 @@ def update_expense_journal_entry(doc, method=None):
         frappe.db.set_value("Journal Entry", doc.journal_entry, {
             "cheque_no": doc.reference_no,
             "cheque_date": doc.expense_date
-        }, update_modified=False)
+        }, update_modified=True)
         
         # Disparar la conciliación de este JE, ya que el hook estándar on_submit
         # de Journal Entry pasó antes de que le inyectáramos la referencia.
