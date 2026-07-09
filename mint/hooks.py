@@ -177,6 +177,15 @@ scheduler_events = {
 	"hourly": [
 		"mint.apis.rules.scheduler_run_rule_evaluation"
 	],
+	"cron": {
+		# 22:00 (10 pm) hora del site: barrido de reintento de conciliación de los
+		# cobros en borrador pendientes (cierra el hueco de los que se crean después
+		# de que su depósito ya se importó — la auto-conciliación solo dispara desde
+		# el lado del depósito).
+		"0 22 * * *": [
+			"mint.apis.reconciliation.reconcile_pending_drafts_nightly"
+		]
+	},
 }
 
 # Testing
