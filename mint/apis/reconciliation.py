@@ -71,6 +71,19 @@ DEPOSIT_COVERAGE_TOLERANCE = 1.0
 
 DEPOSIT_FIELDS = ["name", "deposit", "unallocated_amount", "currency", "bank_account"]
 
+# Cotas anti-explosión del motor de reglas (incidente 2026-07-09: el barrido nocturno
+# quedó 30+ min de CPU en un solo cobro, atrapado con py-spy en apply_format_rule):
+# - MAX_REFERENCE_LENGTH: reference_no es Data(140); un resultado más largo no puede
+#   matchear nunca y, encadenado en pipelines, crece exponencialmente (una regla
+#   duplicadora dobla la longitud en cada paso).
+# - MAX_PIPELINE_ATTEMPTS: itertools.permutations es FACTORIAL — con las reglas de
+#   todo el sistema (cobro sin source_bank) 10 reglas ≈ 9,8M pipelines. Se cubren
+#   completas hasta 4 reglas (60 permutaciones) y se trunca el resto. Truncar nunca
+#   produce un match falso: las reglas SUELTAS se prueban todas siempre, y un cobro
+#   sin match queda en revisión manual.
+MAX_REFERENCE_LENGTH = 140
+MAX_PIPELINE_ATTEMPTS = 100
+
 
 # ════════════════════════════════════════════════════════════════════════════
 # Reglas de formato de referencia por banco (data-driven vía Bank Reference Rule)
@@ -109,7 +122,7 @@ def apply_format_rule(rule_name, reference_number):
     if not rule_expr:
         return ref
     try:
-        return str(
+        result = str(
             safe_eval(
                 rule_expr,
                 eval_globals=dict(_SAFE_BUILTINS),
@@ -122,6 +135,10 @@ def apply_format_rule(rule_name, reference_number):
             message=frappe.get_traceback(),
         )
         return ref
+    if len(result) > MAX_REFERENCE_LENGTH:
+        # No puede matchear un reference_no real (Data 140) y encadenado explota.
+        return ref
+    return result
 
 def get_bank_rules(bank_name=None):
     """Devuelve una lista de nombres de reglas configuradas para el banco."""
@@ -315,16 +332,26 @@ def check_rules_match(rules, raw_ref, target_ref):
         if apply_format_rule(rule, raw_ref) == target_ref:
             return True, rule
             
-    # Combinations (Pipeline logic, any order)
+    # Combinations (pipeline en cualquier orden) — ACOTADO: permutations es factorial
+    # y con las reglas de TODO el sistema (cobro sin source_bank) explota (ver
+    # MAX_PIPELINE_ATTEMPTS). Truncar solo omite pipelines exóticos, no falsea matches.
     if len(rules) > 1:
+        attempts = 0
         for r_len in range(2, len(rules) + 1):
             for perm in itertools.permutations(rules, r_len):
+                attempts += 1
+                if attempts > MAX_PIPELINE_ATTEMPTS:
+                    frappe.logger("mint.reconciliation").warning(
+                        "check_rules_match: %s reglas; pipelines truncados en %s intentos (ref destino %s)",
+                        len(rules), MAX_PIPELINE_ATTEMPTS, target_ref,
+                    )
+                    return False, None
                 p_ref = raw_ref
                 for r in perm:
                     p_ref = apply_format_rule(r, p_ref)
                 if p_ref == target_ref:
                     return True, " + ".join(perm)
-                    
+
     return False, None
 
 
