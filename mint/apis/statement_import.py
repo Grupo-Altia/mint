@@ -721,7 +721,7 @@ def auto_detect_columns(row: list[str]):
         elif isinstance(cell, str) and (idx == 1 or len(cell) > 5) and "Description" not in column_mapping:
             col_type = "Description"
             header_text = "Descripción"
-        elif isinstance(cell, str) and str(cell).strip().upper() in ["C", "D", "CR", "DR"] and "Transaction Type" not in column_mapping:
+        elif isinstance(cell, str) and str(cell).strip().upper() in ["C", "D", "CR", "DR", "+", "-"] and "Transaction Type" not in column_mapping:
             col_type = "Transaction Type"
             header_text = "Tipo"
         
@@ -896,6 +896,7 @@ def get_file_properties(transactions: list):
         "positive_negative_in_amount": 0,
         "cr_dr_in_transaction_type": 0,
         "deposit_withdrawal_in_transaction_type": 0,
+        "positive_negative_in_transaction_type": 0,
     }
 
     for transaction in transactions:
@@ -925,6 +926,8 @@ def get_file_properties(transactions: list):
                 amount_format_frequency["cr_dr_in_transaction_type"] += 1
             if "deposit" in t_type or "withdrawal" in t_type or "abono" in t_type or "cargo" in t_type:
                 amount_format_frequency["deposit_withdrawal_in_transaction_type"] += 1
+            if "+" in t_type or "-" in t_type:
+                amount_format_frequency["positive_negative_in_transaction_type"] += 1
         
         # Else assume that the amount is expressed as positive/negative value
         else:
@@ -1023,6 +1026,14 @@ def get_final_transactions(transactions: list, date_format: str, amount_format: 
             transaction_type = transaction_row.get("transaction_type", "").lower().strip()
             amount = get_float_amount(transaction_row.get("amount", "0"))
             if "deposit" in transaction_type or "abono" in transaction_type:
+                return 0, abs(amount)
+            else:
+                return abs(amount), 0
+        
+        if amount_format == "positive_negative_in_transaction_type":
+            transaction_type = transaction_row.get("transaction_type", "").strip()
+            amount = get_float_amount(transaction_row.get("amount", "0"))
+            if "+" in transaction_type:
                 return 0, abs(amount)
             else:
                 return abs(amount), 0

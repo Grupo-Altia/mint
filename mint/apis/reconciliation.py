@@ -54,6 +54,12 @@ RECON_REVIEW = "Revisar"
 # anomalía en el dashboard (domina_isp get_payment_review_detail) para explicar qué revisar.
 REVIEW_OTHER_BANK = "other_bank"
 REVIEW_DUPLICATE_REFERENCE = "duplicate_reference"
+# El depósito de la referencia existe EMITIDO pero ya fue conciliado con OTRO cobro
+# (sin saldo libre): señal de cobro duplicado o depósito mal atribuido.
+REVIEW_ALREADY_RECONCILED = "already_reconciled"
+# El depósito de la referencia existe pero NO está emitido (borrador/cancelado): no
+# es usable hasta emitirlo/depurarlo.
+REVIEW_DEPOSIT_NOT_SUBMITTED = "deposit_not_submitted"
 
 # Modos que no exigen depósito bancario para aprobarse.
 CASH_LIKE_TYPES = ("Cash", "Gateway", "Gangway")
@@ -394,6 +400,50 @@ def find_matching_deposit(doc) -> frappe._dict | None:
     return _find_deposit_by_source_bank_rule(doc)
 
 
+def _adopt_deposit_bank_account(doc, deposit) -> bool:
+    """Regla 'manda la cuenta del extracto': el depósito de la referencia cayó en
+    OTRA cuenta bancaria distinta a la del cobro → se adopta la cuenta del extracto
+    en el cobro para poder conciliar contra ese depósito.
+
+    Mecánica: se busca el Modo de Pago cuya cuenta contable (para la compañía del
+    cobro) es la del banco del depósito, y se monta en el cobro (lo que reapunta
+    `paid_to` a esa cuenta). El monto lo sigue fijando el banco (`_apply_deposit_amount`).
+
+    Devuelve True si pudo montar el Modo de Pago (existe EXACTAMENTE uno para esa
+    cuenta y compañía); False si no hay ninguno o hay ambigüedad (>1) — en ese caso
+    el llamador deja el cobro para revisión manual, sin adivinar.
+
+    Nota: NO se toca `branch`/`cost_center` del cobro (el servicio del cliente puede
+    estar en otra sucursal que el banco donde depositó); solo se corrige el banco.
+    """
+    gl_account = frappe.get_cached_value("Bank Account", deposit.bank_account, "account")
+    if not gl_account:
+        return False
+
+    mops = list(dict.fromkeys(frappe.get_all(
+        "Mode of Payment Account",
+        filters={"company": doc.company, "default_account": gl_account},
+        pluck="parent",
+    )))
+    if len(mops) != 1:
+        return False  # 0 = sin Modo de Pago para esa cuenta; >1 = ambiguo → revisión
+
+    mop = mops[0]
+    old_paid_to = doc.paid_to
+    doc.mode_of_payment = mop
+    doc.paid_to = gl_account
+    doc.paid_to_account_currency = frappe.get_cached_value("Account", gl_account, "account_currency")
+    doc.add_comment(
+        "Comment",
+        _(
+            "Conciliación: el depósito de la referencia {0} cayó en {1}. Se cambió la "
+            "cuenta del cobro de {2} a {3} (Modo de Pago «{4}») — manda la cuenta del "
+            "extracto — y se concilió."
+        ).format(doc.reference_no or "", deposit.bank_account, old_paid_to, gl_account, mop),
+    )
+    return True
+
+
 def find_deposit_other_bank(doc) -> frappe._dict | None:
     """Depósito con la referencia+moneda del cobro pero en OTRO banco: anomalía.
 
@@ -408,6 +458,65 @@ def find_deposit_other_bank(doc) -> frappe._dict | None:
         return None
     filters["bank_account"] = ["!=", bank_account]
     return _first_deposit(filters)
+
+
+def find_consumed_deposit(doc) -> frappe._dict | None:
+    """Depósito EMITIDO con la referencia+moneda del cobro pero YA conciliado con OTRO
+    cobro (sin saldo libre). Es la firma de un cobro DUPLICADO (dos Payment Entries con
+    la misma referencia; el depósito se fue con uno y este quedó huérfano) o de un
+    depósito mal atribuido.
+
+    Solo se llega aquí cuando NO hay depósito con saldo (ni en la cuenta del cobro ni en
+    otra): si existe un Bank Transaction emitido (docstatus=1, deposit>0) con esta
+    referencia+moneda cuyo saldo lo consumió OTRO Payment Entry, se devuelve el depósito
+    y los cobros gemelos. Devuelve None si no aplica.
+    """
+    ref = str(doc.reference_no or "").strip()
+    if not ref:
+        return None
+    filters: dict = {"reference_number": ref, "docstatus": 1, "deposit": [">", 0]}
+    paid_currency = (doc.paid_on_currency or "").strip()
+    if paid_currency:
+        filters["currency"] = paid_currency
+
+    for bt_name in frappe.get_all("Bank Transaction", filters=filters, pluck="name"):
+        others = frappe.get_all(
+            "Bank Transaction Payments",
+            filters={
+                "parent": bt_name,
+                "payment_document": "Payment Entry",
+                "payment_entry": ["!=", doc.name],
+            },
+            fields=["payment_entry", "allocated_amount"],
+        )
+        if others:
+            return frappe._dict(bank_transaction=bt_name, other_payments=others)
+    return None
+
+
+def find_unsubmitted_deposit(doc) -> frappe._dict | None:
+    """Bank Transaction con la referencia+moneda del cobro pero SIN emitir (borrador
+    docstatus=0) o cancelado (docstatus=2): el depósito existe pero no es usable para
+    conciliar hasta emitirlo/depurarlo. Prefiere el borrador (accionable) sobre el
+    cancelado. Devuelve None si no hay ninguno.
+    """
+    ref = str(doc.reference_no or "").strip()
+    if not ref:
+        return None
+    paid_currency = (doc.paid_on_currency or "").strip()
+    rows = frappe.db.sql(
+        """
+        SELECT name, docstatus, status, deposit, unallocated_amount, bank_account
+        FROM `tabBank Transaction`
+        WHERE TRIM(reference_number) = %(ref)s AND deposit > 0 AND docstatus <> 1
+          {currency}
+        ORDER BY docstatus ASC
+        LIMIT 1
+        """.format(currency="AND currency = %(cur)s" if paid_currency else ""),
+        {"ref": ref, "cur": paid_currency},
+        as_dict=True,
+    )
+    return rows[0] if rows else None
 
 
 def find_duplicate_deposits(doc) -> list:
@@ -538,28 +647,70 @@ def reconcile_and_approve(payment_entry: str) -> dict:
     if not deposit:
         anomaly = find_deposit_other_bank(doc)
         if anomaly:
-            # El depósito de la referencia existe pero cayó en OTRO banco: anomalía.
-            # No se aprueba; se marca para revisión interna (badge "Revisar Pago"
-            # en el dashboard). El cobro del portal sigue "en proceso".
-            doc.db_set("custom_reconciliation_status", RECON_REVIEW)
+            # El depósito de la referencia existe pero cayó en OTRA cuenta bancaria.
+            # Regla de negocio: MANDA LA CUENTA DEL EXTRACTO. Se adopta la cuenta del
+            # depósito en el cobro (montando el Modo de Pago cuya cuenta contable es la
+            # del banco del extracto) y se concilia contra ese depósito. Solo si no hay
+            # un Modo de Pago para esa cuenta (o es ambiguo) se deja para revisión.
+            if _adopt_deposit_bank_account(doc, anomaly):
+                deposit = anomaly
+            else:
+                doc.db_set("custom_reconciliation_status", RECON_REVIEW)
+                return {
+                    "reconciled": False,
+                    "review": True,
+                    "reason": REVIEW_OTHER_BANK,
+                    "bank_transaction": anomaly.name,
+                    "message": _(
+                        "El depósito de la referencia {0} cayó en otra cuenta bancaria "
+                        "({1}) y no hay un Modo de Pago asociado a esa cuenta. El cobro "
+                        "quedó marcado para revisión."
+                    ).format(doc.reference_no or "", anomaly.bank_account),
+                }
+        else:
+            # El depósito de la referencia existe EMITIDO pero su saldo ya lo consumió
+            # OTRO cobro → firma de cobro DUPLICADO / mala atribución. Se marca para
+            # revisión mostrando el/los cobro(s) gemelo(s).
+            consumed = find_consumed_deposit(doc)
+            if consumed:
+                doc.db_set("custom_reconciliation_status", RECON_REVIEW)
+                twins = [o.payment_entry for o in consumed.other_payments]
+                return {
+                    "reconciled": False,
+                    "review": True,
+                    "reason": REVIEW_ALREADY_RECONCILED,
+                    "bank_transaction": consumed.bank_transaction,
+                    "other_payments": twins,
+                    "message": _(
+                        "El depósito de la referencia {0} ya fue conciliado con otro cobro "
+                        "({1}). Revise si este cobro está duplicado."
+                    ).format(doc.reference_no or "", ", ".join(twins)),
+                }
+
+            # El depósito existe pero NO está emitido (borrador/cancelado): no es usable
+            # hasta emitirlo o depurarlo.
+            unsubmitted = find_unsubmitted_deposit(doc)
+            if unsubmitted:
+                doc.db_set("custom_reconciliation_status", RECON_REVIEW)
+                return {
+                    "reconciled": False,
+                    "review": True,
+                    "reason": REVIEW_DEPOSIT_NOT_SUBMITTED,
+                    "bank_transaction": unsubmitted.name,
+                    "message": _(
+                        "El depósito de la referencia {0} existe pero no está emitido "
+                        "(estado {1}). Emítalo o depúrelo y reintente."
+                    ).format(doc.reference_no or "", unsubmitted.status),
+                }
+
+            if doc.get("custom_reconciliation_status") != RECON_PENDING:
+                doc.db_set("custom_reconciliation_status", RECON_PENDING)
             return {
                 "reconciled": False,
-                "review": True,
-                "reason": REVIEW_OTHER_BANK,
-                "bank_transaction": anomaly.name,
-                "message": _(
-                    "El depósito de la referencia {0} cayó en otra cuenta bancaria "
-                    "({1}). El cobro quedó marcado para revisión."
-                ).format(doc.reference_no or "", anomaly.bank_account),
+                "message": _("Aún no se encontró un depósito con la referencia {0}.").format(
+                    doc.reference_no or ""
+                ),
             }
-        if doc.get("custom_reconciliation_status") != RECON_PENDING:
-            doc.db_set("custom_reconciliation_status", RECON_PENDING)
-        return {
-            "reconciled": False,
-            "message": _("Aún no se encontró un depósito con la referencia {0}.").format(
-                doc.reference_no or ""
-            ),
-        }
 
     _apply_deposit_amount(doc, deposit)
     doc.custom_reconciliation_status = RECON_DONE
@@ -854,6 +1005,132 @@ def reconcile_drafts_for_deposit(doc, method=None) -> None:
         )
 
 
+def _approve_drafts(names) -> int:
+    """Reintenta reconcile_and_approve sobre una colección de cobros en borrador.
+
+    Cada cobro es ATÓMICO: se confirma el exitoso (para que un fallo posterior no lo
+    arrastre) y un cobro problemático se revierte + se registra sin abortar el lote
+    (se corre en background). Devuelve cuántos quedaron conciliados.
+    """
+    reconciled = 0
+    for name in names:
+        try:
+            result = reconcile_and_approve(name)
+            frappe.db.commit()
+            if result.get("reconciled"):
+                reconciled += 1
+        except Exception:
+            frappe.db.rollback()
+            frappe.log_error(
+                title=_("Error conciliando cobro {0} (auto)").format(name),
+                message=frappe.get_traceback(),
+            )
+    return reconciled
+
+
+def cancel_exact_duplicate_deposits() -> int:
+    """Cancela depósitos EXACTAMENTE duplicados: el mismo movimiento importado dos (o
+    más) veces = misma referencia + cuenta bancaria + empresa + MONTO, deposit>0, no
+    cancelados. La referencia es el ID único del banco, así que dos con la misma
+    ref+monto en la misma cuenta son el mismo depósito (un re-import).
+
+    Se conserva el que tenga asignación (o el más antiguo si ninguno) y se CANCELA el
+    resto SIN asignar, dejando al menos uno. Se CANCELA (docstatus=2), no se borra: un
+    BT cancelado sale de la detección de colisiones (docstatus<2) Y no choca con
+    enlaces de auditoría (p. ej. DB Bancaribe Log, que bloquea el delete). NUNCA se
+    toca un depósito con asignación (rompería un pago conciliado) -> los grupos "ambos
+    asignados" se dejan intactos para revisión manual. Cada cancelación es atómica
+    (commit por éxito; rollback + Error Log por fallo, sin abortar el lote). Devuelve
+    cuántos canceló.
+
+    Es la contraparte RECURRENTE del saneo histórico (patch cleanup_duplicate_x100):
+    corre en el barrido nocturno ANTES de conciliar, para liberar las colisiones de
+    referencia y que el mismo barrido concilie los cobros que quedan libres.
+    """
+    groups = frappe.db.sql(
+        """
+        SELECT TRIM(reference_number) AS ref, bank_account, company,
+               ROUND(deposit, 2) AS amount, date
+        FROM `tabBank Transaction`
+        WHERE deposit > 0 AND docstatus < 2
+          AND reference_number IS NOT NULL AND TRIM(reference_number) != ''
+        GROUP BY TRIM(reference_number), bank_account, company, ROUND(deposit, 2), date
+        HAVING COUNT(*) > 1
+        """,
+        as_dict=True,
+    )
+    cancelled = 0
+    for group in groups:
+        members = frappe.db.sql(
+            """
+            SELECT name, allocated_amount, docstatus
+            FROM `tabBank Transaction`
+            WHERE TRIM(reference_number) = %(ref)s AND bank_account = %(ba)s
+              AND company = %(co)s AND ROUND(deposit, 2) = %(amt)s AND date = %(dt)s
+              AND docstatus < 2
+            ORDER BY allocated_amount DESC, creation ASC
+            """,
+            {"ref": group.ref, "ba": group.bank_account, "co": group.company,
+             "amt": group.amount, "dt": group.date},
+            as_dict=True,
+        )
+        # members[0] = el más conservable (asignado y/o más antiguo): se conserva.
+        # Del resto, solo se cancelan los que NO tienen asignación.
+        for m in members[1:]:
+            if flt(m.allocated_amount) >= 0.01:
+                continue  # asignado: conservar (cancelarlo rompería un pago)
+            try:
+                doc = frappe.get_doc("Bank Transaction", m.name)
+                if doc.docstatus == 1:
+                    doc.cancel()
+                else:
+                    frappe.delete_doc("Bank Transaction", m.name, ignore_permissions=True)
+                frappe.db.commit()
+                cancelled += 1
+            except Exception:
+                frappe.db.rollback()
+                frappe.log_error(
+                    title=_("Error cancelando depósito duplicado {0} (auto)").format(m.name),
+                    message=frappe.get_traceback(),
+                )
+    return cancelled
+
+
+def reconcile_pending_drafts_nightly() -> None:
+    """Barrido nocturno (cron 22:00 hora del site): sanea duplicados exactos y luego
+    reintenta conciliar TODOS los cobros en borrador con referencia pendientes.
+
+    Dos pasos en una sola corrida:
+      1) cancel_exact_duplicate_deposits(): cancela los depósitos exactamente
+         duplicados (re-imports) que bloquean colisiones de referencia.
+      2) reconcile_and_approve sobre cada borrador pendiente (idempotente): concilia
+         los que ya tienen depósito usable — incluidos los que acaba de liberar el
+         paso 1 — y deja pendientes/marca para revisión los demás.
+
+    Cierra el hueco de que la auto-conciliación solo se dispara desde el lado del
+    depósito (hook on_submit del Bank Transaction): un cobro creado DESPUÉS de que su
+    depósito ya se importó no se reintentaría nunca. Un cobro en borrador nunca está
+    'Conciliado' (eso implica emitido), así que docstatus=0 + referencia acota el
+    universo.
+    """
+    deduped = cancel_exact_duplicate_deposits()
+
+    names = frappe.get_all(
+        "Payment Entry",
+        filters={
+            "docstatus": 0,
+            "payment_type": "Receive",
+            "reference_no": ["!=", ""],
+        },
+        pluck="name",
+    )
+    reconciled = _approve_drafts(names)
+    frappe.logger("mint.reconciliation").info(
+        "Barrido nocturno: %s duplicados exactos cancelados; %s/%s cobros conciliados."
+        % (deduped, reconciled, len(names))
+    )
+
+
 def reconcile_drafts_job(reference: str) -> None:
     """Aprueba los cobros en borrador cuya referencia coincide con el depósito.
 
@@ -892,21 +1169,7 @@ def reconcile_drafts_job(reference: str) -> None:
             )
         )
 
-    for name in drafts:
-        try:
-            reconcile_and_approve(name)
-            # Cada cobro es atómico: se confirma el exitoso para que un fallo
-            # posterior no lo arrastre.
-            frappe.db.commit()
-        except Exception:
-            # Un cobro problemático NO debe abortar el lote (es background): se
-            # revierten sus escrituras parciales, se registra el traceback y se sigue.
-            frappe.db.rollback()
-            frappe.log_error(
-                title=_("Error conciliando cobro {0} (auto)").format(name),
-                message=frappe.get_traceback(),
-            )
-            continue
+    _approve_drafts(drafts)
 
 
 # ════════════════════════════════════════════════════════════════════════════
