@@ -25,6 +25,7 @@ const AMOUNT_FORMAT_LABEL_MAP = {
     "positive_negative_in_amount": _("Amount column has positive/negative values"),
     "cr_dr_in_transaction_type": _('Transaction type column has "CR"/"DR" values'),
     "deposit_withdrawal_in_transaction_type": _('Transaction type column has "Deposit"/"Withdrawal" values'),
+    "positive_negative_in_transaction_type": _('Transaction type column has "+/-" values'),
 }
 
 const parseDateFormat = (dateFormat: string) => {
