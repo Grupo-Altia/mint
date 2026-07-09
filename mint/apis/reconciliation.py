@@ -921,12 +921,22 @@ def on_cancel_receive_payment(doc, method=None) -> None:
 
 
 def on_trash_receive_payment(doc, method=None) -> None:
-    """Al eliminar un cobro, elimina también los ISP Payment Entry enlazados para
-    evitar el bloqueo por Link Validation de Frappe."""
+    """Al eliminar un cobro, elimina únicamente su línea de pago dentro del ISP Payment Entry
+    para evitar el bloqueo por Link Validation de Frappe, sin borrar el registro completo."""
     if frappe.db.exists("DocType", "ISP Payment Entry"):
-        linked = frappe.get_all("ISP Payment Entry", filters={"payment_entry": doc.name}, pluck="name")
-        for name in linked:
-            frappe.delete_doc("ISP Payment Entry", name, ignore_permissions=True)
+        linked_lines = frappe.get_all(
+            "ISP Payment Entry Lines",
+            filters={"payment_entry": doc.name},
+            fields=["parent"]
+        )
+        parent_names = {d.parent for d in linked_lines if d.parent}
+        for parent_name in parent_names:
+            isp_doc = frappe.get_doc("ISP Payment Entry", parent_name)
+            lines_to_remove = [line for line in isp_doc.payments if line.payment_entry == doc.name]
+            for line in lines_to_remove:
+                isp_doc.remove(line)
+            isp_doc.save(ignore_permissions=True)
+
 
 
 def on_change_payment_entry(doc, method=None) -> None:
