@@ -41,6 +41,7 @@ from mint.apis.reconciliation import (
     reconcile_pending_drafts_nightly,
     cancel_exact_duplicate_deposits,
     apply_format_rule,
+    check_rules_match,
     _adopt_deposit_bank_account,
     _approve_drafts,
     _find_deposit_by_source_bank_rule,
@@ -536,8 +537,10 @@ class TestApplyFormatRule(ReconBaseTestCase):
     evalúa con safe_eval (sin nombres de regla quemados)."""
 
     def _run(self, rule_expr, ref="858249469"):
-        self.mock_db.get_value.return_value = rule_expr  # Bank Reference Rule.rule
-        return apply_format_rule("regla-X", ref)
+        # get_cached_value se parchea directo: bajo el mock de BD la ruta real pasa
+        # por el document cache -> get_controller y revienta sin sitio.
+        with patch(f"{MODULE}.frappe.get_cached_value", return_value=rule_expr):
+            return apply_format_rule("regla-X", ref)
 
     def test_duplicar_referencia(self):
         self.assertEqual(self._run("f'{reference_number}{reference_number}'"), "858249469858249469")
@@ -556,8 +559,14 @@ class TestApplyFormatRule(ReconBaseTestCase):
         self.assertEqual(apply_format_rule(None, "  858249469  "), "858249469")
 
     def test_rule_sin_expresion_devuelve_original(self):
-        self.mock_db.get_value.return_value = None
-        self.assertEqual(apply_format_rule("regla-X", "858249469"), "858249469")
+        with patch(f"{MODULE}.frappe.get_cached_value", return_value=None):
+            self.assertEqual(apply_format_rule("regla-X", "858249469"), "858249469")
+
+    def test_resultado_inflado_devuelve_original(self):
+        # Cota anti-explosión: una regla que INFLA la referencia más allá de Data(140)
+        # no puede matchear y encadenada crece exponencialmente -> se descarta.
+        ref = "8" * 100
+        self.assertEqual(self._run("f'{reference_number}{reference_number}'", ref=ref), ref)
 
     def test_expresion_invalida_devuelve_original(self):
         # Una expresión rota no rompe la conciliación: se loguea y se devuelve la original.
@@ -569,29 +578,69 @@ class TestFindDepositBySourceBankRule(ReconBaseTestCase):
     """Forward-search: aplica la regla del banco origen a los depósitos candidatos y
     compara con la referencia del cobro (sin reversa)."""
 
+    _CANDIDATES = [
+        frappe._dict(name="ACC-BTN-1", reference_number="111", deposit=10,
+                     unallocated_amount=10, currency="VEF", bank_account="ACC-BANK"),
+        frappe._dict(name="ACC-BTN-2", reference_number="858249469", deposit=20,
+                     unallocated_amount=20, currency="VEF", bank_account="ACC-BANK"),
+    ]
+
     @patch(f"{MODULE}.apply_format_rule")
+    @patch(f"{MODULE}.get_bank_rules", return_value=["Duplicar referencia"])
+    @patch(f"{MODULE}.frappe.get_all")
     @patch(f"{MODULE}._cobro_bank_account", return_value="ACC-BANK")
-    def test_forward_search_encuentra_por_regla(self, _bank, mock_apply):
-        self.mock_db.get_value.return_value = "Duplicar referencia"  # Bank.bank_reference_rule
-        self.mock_db.get_all.return_value = [
-            frappe._dict(name="ACC-BTN-1", reference_number="111", deposit=10,
-                         unallocated_amount=10, currency="VEF", bank_account="ACC-BANK"),
-            frappe._dict(name="ACC-BTN-2", reference_number="858249469", deposit=20,
-                         unallocated_amount=20, currency="VEF", bank_account="ACC-BANK"),
-        ]
+    def test_forward_search_encuentra_por_regla(self, _bank, mock_get_all, mock_rules, mock_apply):
+        mock_get_all.return_value = self._CANDIDATES
         mock_apply.side_effect = lambda rule, ref: ref + ref  # "duplicar"
         doc = frappe._dict(source_bank="BancoX", reference_no="858249469858249469",
                            paid_on_currency="VEF", paid_to="GL-Acct", paid_from=None)
         result = _find_deposit_by_source_bank_rule(doc)
         self.assertIsNotNone(result)
         self.assertEqual(result.name, "ACC-BTN-2")
+        mock_rules.assert_called_once_with("BancoX")
 
+    @patch(f"{MODULE}.apply_format_rule")
+    @patch(f"{MODULE}.get_bank_rules", return_value=["Duplicar referencia"])
+    @patch(f"{MODULE}.frappe.get_all")
     @patch(f"{MODULE}._cobro_bank_account", return_value="ACC-BANK")
-    def test_sin_source_bank_no_busca(self, _bank):
-        doc = frappe._dict(source_bank=None, reference_no="X", paid_on_currency="VEF",
-                           paid_to="GL", paid_from=None)
-        self.assertIsNone(_find_deposit_by_source_bank_rule(doc))
-        self.mock_db.get_all.assert_not_called()
+    def test_sin_source_bank_prueba_todas_las_reglas(self, _bank, mock_get_all, mock_rules, mock_apply):
+        # Sin source_bank el fallback prueba TODAS las reglas del sistema (docstring):
+        # get_bank_rules() sin argumento.
+        mock_get_all.return_value = self._CANDIDATES
+        mock_apply.side_effect = lambda rule, ref: ref + ref
+        doc = frappe._dict(source_bank=None, reference_no="858249469858249469",
+                           paid_on_currency="VEF", paid_to="GL-Acct", paid_from=None)
+        result = _find_deposit_by_source_bank_rule(doc)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.name, "ACC-BTN-2")
+        mock_rules.assert_called_once_with()
+
+
+class TestCheckRulesMatchBounds(ReconBaseTestCase):
+    """check_rules_match: los pipelines de permutaciones quedan ACOTADOS
+    (MAX_PIPELINE_ATTEMPTS) — cota nacida del incidente 2026-07-09 (barrido nocturno
+    30+ min de CPU en un solo cobro, con las reglas de todo el sistema)."""
+
+    @patch(f"{MODULE}.apply_format_rule")
+    def test_pipeline_de_dos_reglas_sigue_matcheando(self, mock_apply):
+        # r1 agrega 'A', r2 agrega 'B'; el target sale de aplicar r1 y LUEGO r2.
+        mock_apply.side_effect = lambda rule, ref: ref + rule
+        ok, detail = check_rules_match(["A", "B"], "ref", "refAB")
+        self.assertTrue(ok)
+        self.assertEqual(detail, "A + B")
+
+    @patch(f"{MODULE}.apply_format_rule")
+    def test_intentos_de_pipeline_acotados(self, mock_apply):
+        # 10 reglas sin match: sin cota serían ~9,8M permutaciones; con la cota el
+        # total de aplicaciones queda en cientos (10 sueltas + <=100 pipelines).
+        mock_apply.side_effect = lambda rule, ref: ref + "x"
+        rules = [f"R{i}" for i in range(10)]
+        with patch(f"{MODULE}.frappe.logger") as mock_logger:
+            ok, detail = check_rules_match(rules, "raw", "imposible")
+        self.assertFalse(ok)
+        self.assertIsNone(detail)
+        self.assertLessEqual(mock_apply.call_count, 400)
+        mock_logger.assert_called()  # deja rastro de que truncó
 
 
 if __name__ == "__main__":
