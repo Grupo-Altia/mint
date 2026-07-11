@@ -124,6 +124,7 @@ def _delete_bt(name: str) -> None:
     """Cancela (si está enviado) y borra un Bank Transaction sin asignaciones."""
     doc = frappe.get_doc("Bank Transaction", name)
     if doc.docstatus == 1:
+        doc.flags.ignore_permissions = True
         doc.cancel()
     frappe.delete_doc("Bank Transaction", name, ignore_permissions=True)
 
@@ -136,6 +137,7 @@ def _neutralize_redundant(name: str) -> None:
     proteger)."""
     doc = frappe.get_doc("Bank Transaction", name)
     if doc.docstatus == 1:
+        doc.flags.ignore_permissions = True
         doc.cancel()
     else:
         frappe.delete_doc("Bank Transaction", name, ignore_permissions=True)
