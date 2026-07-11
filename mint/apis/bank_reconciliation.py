@@ -25,6 +25,20 @@ def reconcile_vouchers(bank_transaction_name: str | int, vouchers: str, is_new_v
     vouchers = json.loads(vouchers)
     transaction = frappe.get_doc("Bank Transaction", bank_transaction_name)
     
+    # Check if all vouchers are already linked (e.g. by auto-reconciliation hooks)
+    all_linked = True
+    for voucher in vouchers:
+        is_linked = any(
+            row.payment_document == voucher["payment_doctype"] and row.payment_entry == voucher["payment_name"]
+            for row in transaction.payment_entries
+        )
+        if not is_linked:
+            all_linked = False
+            break
+
+    if all_linked:
+        return transaction
+
     # Add the vouchers with zero allocation. Save() will perform the allocations and clearance
     # We are overriding the default behavior of the method to set the reconciliation type
     if 0.0 >= transaction.unallocated_amount:
