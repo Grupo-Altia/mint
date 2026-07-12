@@ -45,6 +45,27 @@ def reconcile_vouchers(bank_transaction_name: str | int, vouchers: str, is_new_v
         frappe.throw(_("Bank Transaction {0} is already fully reconciled").format(transaction.name))
     
     for voucher in vouchers:
+        # Solo se concilia contra un comprobante EMITIDO. Un borrador (docstatus=0)
+        # no tiene asiento contable: enlazarlo deja el deposito "conciliado" contra
+        # un cobro fantasma; un cancelado (=2) tampoco vale. Sin este chequeo el
+        # extracto queda cuadrado contra nada (incidente ref 61873142037: BT
+        # emitido con un PE en borrador y otro de un cliente distinto).
+        voucher_docstatus = frappe.db.get_value(
+            voucher["payment_doctype"], voucher["payment_name"], "docstatus"
+        )
+        if voucher_docstatus is None:
+            frappe.throw(
+                _("No existe {0} {1} para conciliar.").format(
+                    voucher["payment_doctype"], voucher["payment_name"]
+                )
+            )
+        if voucher_docstatus != 1:
+            frappe.throw(
+                _(
+                    "No se puede conciliar {0} {1}: no esta emitido (docstatus={2}). "
+                    "Emitelo o depuralo antes de conciliar."
+                ).format(voucher["payment_doctype"], voucher["payment_name"], voucher_docstatus)
+            )
         transaction.append(
             "payment_entries",
             {
@@ -81,7 +102,14 @@ def unreconcile_transaction(transaction_name: str | int):
                 "name": entry.payment_entry,
             })
             
-    transaction.remove_payment_entries()
+    # NO usar transaction.remove_payment_entries(): el core de ERPNext hace
+    # `for pe in self.payment_entries: self.remove_payment_entry(pe)`, que itera y
+    # muta la MISMA lista y salta una fila de cada dos -> deja el extracto a medio
+    # desconciliar (una sola llamada solo quita la mitad de las filas). Iterando
+    # sobre una COPIA se remueven TODAS de una vez.
+    for entry in list(transaction.payment_entries):
+        transaction.remove_payment_entry(entry)
+    transaction.save()
 
     for voucher in vouchers_to_cancel:
         frappe.get_doc(voucher["doctype"], voucher["name"]).cancel()
