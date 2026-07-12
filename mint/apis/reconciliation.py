@@ -627,7 +627,7 @@ def _apply_deposit_amount(doc, deposit: frappe._dict) -> None:
         doc.received_amount = base
 
     if deposit.get("date"):
-        doc.custom_bank_transaction_date = deposit.date
+        doc.reference_date = deposit.date
 
     # Forzar recálculo del IGTF sobre el nuevo monto: calculate_igtf_taxes solo lo
     # recompone si igtf_amount viene vacío.
