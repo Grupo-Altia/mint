@@ -76,7 +76,7 @@ DEPOSIT_COVERAGE_TOLERANCE = 1.0
 # por miles de bolívares, no por céntimos). Ver check_payment_entry_overallocation.
 OVERALLOCATION_TOLERANCE = 1.0
 
-DEPOSIT_FIELDS = ["name", "deposit", "unallocated_amount", "currency", "bank_account"]
+DEPOSIT_FIELDS = ["name", "deposit", "unallocated_amount", "currency", "bank_account", "date"]
 
 # Cotas anti-explosión del motor de reglas (incidente 2026-07-09: el barrido nocturno
 # quedó 30+ min de CPU en un solo cobro, atrapado con py-spy en apply_format_rule):
@@ -748,6 +748,9 @@ def _apply_deposit_amount(doc, deposit: frappe._dict) -> None:
         base = flt(deposit_amount * rate, 2)
         doc.paid_amount = base
         doc.received_amount = base
+
+    if deposit.get("date"):
+        doc.reference_date = deposit.date
 
     # Forzar recálculo del IGTF sobre el nuevo monto: calculate_igtf_taxes solo lo
     # recompone si igtf_amount viene vacío.
