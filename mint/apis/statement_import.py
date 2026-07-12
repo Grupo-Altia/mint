@@ -11,6 +11,7 @@ from frappe.utils import getdate
 from datetime import datetime
 
 from mint.apis.bank_account import set_closing_balance_as_per_statement
+from mint.apis.reconciliation import normalize_reference
 
 @frappe.whitelist(methods=["GET"])
 def get_statement_details(file_url: str, bank_account: str):
@@ -118,7 +119,23 @@ def process_statement_import_background(final_transactions, bank_account, curren
             # Para depósitos: referencia duplicada = duplicado real (no hay comisiones de depósito).
             # Para retiros: si la referencia existe pero el monto es distinto, es una comisión
             # bancaria legítima y se permite importar (ej: retiro 160.000 + comisión 120).
-            ref = transaction.get("reference")
+            # Fecha obligatoria: una transacción sin fecha se escapa de los filtros por
+            # fecha del barrido/saneo (el bug ×100 dejó BTs con date=None). Se omite.
+            tx_date = transaction.get("date")
+            if not tx_date:
+                errors += 1
+                frappe.log_error(
+                    message="Transacción del extracto sin fecha; se omite. Referencia: {0}".format(
+                        transaction.get("reference")
+                    ),
+                    title="Statement Import: transacción sin fecha",
+                )
+                continue
+
+            # Referencia normalizada (mismo criterio que el hook before_insert): sin saltos
+            # de línea / espacios internos / comilla / ".0", para que la detección de
+            # duplicados de abajo compare contra la forma canónica que se guardará.
+            ref = normalize_reference(transaction.get("reference"))
 
             # Verificar si existe como depósito (referencia es suficiente para detectar duplicado)
             if ref and float(transaction.get("deposit") or 0) > 0:
@@ -140,13 +157,13 @@ def process_statement_import_background(final_transactions, bank_account, curren
 
             bank_tx = frappe.get_doc({
                 "doctype": "Bank Transaction",
-                "date": transaction.get("date"),
+                "date": tx_date,
                 "status": "Unreconciled",
                 "bank_account": bank_account,
                 "withdrawal": transaction.get("withdrawal"),
                 "deposit": transaction.get("deposit"),
                 "description": transaction.get("description"),
-                "reference_number": transaction.get("reference"),
+                "reference_number": ref,
                 "transaction_type": transaction.get("transaction_type"),
                 "currency": currency,
                 "company": company,
@@ -248,14 +265,10 @@ def import_statement(file_url: str, bank_account: str):
 
     final_transactions = data.get("final_transactions", [])
 
-    # 1. Limpiar referencias
+    # 1. Limpiar referencias (forma canónica: sin comilla, ".0", saltos de línea ni
+    # espacios internos espurios) — mismo criterio que el hook before_insert del BT.
     for tx in final_transactions:
-        ref = str(tx.get("reference") or "").strip()
-        if ref.endswith(".0"):
-            ref = ref[:-2]
-        if ref.startswith("'"):
-            ref = ref[1:]
-        tx["cleaned_reference"] = ref
+        tx["cleaned_reference"] = normalize_reference(tx.get("reference"))
 
     # 2. Emparejar comisiones
     try:

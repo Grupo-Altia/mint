@@ -56,7 +56,9 @@ class TestReconcileVouchersDocstatusGuard(_DbBoundTestCase):
         txn.name = "ACC-BTN-1"
         txn.unallocated_amount = unallocated
         vouchers = json.dumps([{"payment_doctype": "Payment Entry", "payment_name": "ACC-PAY-1"}])
+        # La guarda de sobre-asignación se prueba aparte; aquí se aísla la de docstatus.
         with patch(f"{MODULE}.frappe.get_doc", return_value=txn), \
+             patch(f"{MODULE}.check_payment_entry_overallocation"), \
              patch(f"{MODULE}.frappe.throw", side_effect=frappe.exceptions.ValidationError):
             reconcile_vouchers("ACC-BTN-1", vouchers)
         return txn
@@ -156,6 +158,85 @@ class TestUnreconcileFullClear(unittest.TestCase):
             unreconcile_transaction("ACC-BTN-1")
         self.assertEqual(bt.payment_entries, [])
         voucher_doc.cancel.assert_called_once()
+
+
+class _FakeReconcileTxn:
+    """Bank Transaction mínimo para reconcile_vouchers: append() agrega la fila y
+    allocate_payment_entries() le fija el allocated_amount previsto (simula el core).
+    Empieza SIN filas para no gatillar el early-return `all_linked`."""
+
+    def __init__(self, alloc_by_pe=None, unallocated=100.0):
+        self.name = "ACC-BTN-1"
+        self.unallocated_amount = unallocated
+        self.payment_entries = []
+        self.saved = False
+        self._alloc = alloc_by_pe or {}
+
+    def append(self, _fieldname, d):
+        self.payment_entries.append(frappe._dict(
+            payment_document=d["payment_document"],
+            payment_entry=d["payment_entry"],
+            allocated_amount=d.get("allocated_amount", 0.0),
+        ))
+
+    def validate_duplicate_references(self):
+        pass
+
+    def allocate_payment_entries(self):
+        for row in self.payment_entries:
+            if row.payment_entry in self._alloc:
+                row.allocated_amount = self._alloc[row.payment_entry]
+
+    def update_allocated_amount(self):
+        pass
+
+    def set_status(self):
+        pass
+
+    def save(self):
+        self.saved = True
+
+
+class TestReconcileVouchersOverallocationGuard(_DbBoundTestCase):
+    """reconcile_vouchers rechaza asignar a un Payment Entry más de lo que cobra
+    (invariante Σ asignado ≤ base_paid_amount). Nacido del saneo de depósitos
+    duplicados: PEs respaldados por su gemelo ×100 phantom."""
+
+    def test_guard_called_with_this_bt_allocation(self):
+        """Se llama la guarda con la suma asignada por ESTE depósito y excluyéndolo del resto."""
+        self.mock_db.get_value.return_value = 1  # docstatus del voucher: emitido
+        txn = _FakeReconcileTxn(alloc_by_pe={"ACC-PAY-1": 60.0})
+        vouchers = json.dumps([{"payment_doctype": "Payment Entry", "payment_name": "ACC-PAY-1"}])
+        with patch(f"{MODULE}.frappe.get_doc", return_value=txn), \
+             patch(f"{MODULE}.check_payment_entry_overallocation") as mock_guard:
+            reconcile_vouchers("ACC-BTN-1", vouchers)
+        mock_guard.assert_called_once_with(
+            "ACC-PAY-1", 60.0, exclude_bank_transaction="ACC-BTN-1"
+        )
+        self.assertTrue(txn.saved)
+
+    def test_guard_violation_propagates_and_blocks_save(self):
+        """Si la guarda lanza, reconcile_vouchers no guarda el extracto."""
+        self.mock_db.get_value.return_value = 1
+        txn = _FakeReconcileTxn(alloc_by_pe={"ACC-PAY-1": 90.0})
+        vouchers = json.dumps([{"payment_doctype": "Payment Entry", "payment_name": "ACC-PAY-1"}])
+        with patch(f"{MODULE}.frappe.get_doc", return_value=txn), \
+             patch(f"{MODULE}.check_payment_entry_overallocation",
+                   side_effect=frappe.exceptions.ValidationError):
+            with self.assertRaises(frappe.exceptions.ValidationError):
+                reconcile_vouchers("ACC-BTN-1", vouchers)
+        self.assertFalse(txn.saved)
+
+    def test_journal_entry_voucher_skips_guard(self):
+        """La guarda es solo para Payment Entry; un Journal Entry no se verifica."""
+        self.mock_db.get_value.return_value = 1
+        txn = _FakeReconcileTxn(alloc_by_pe={"ACC-JE-1": 100.0})
+        vouchers = json.dumps([{"payment_doctype": "Journal Entry", "payment_name": "ACC-JE-1"}])
+        with patch(f"{MODULE}.frappe.get_doc", return_value=txn), \
+             patch(f"{MODULE}.check_payment_entry_overallocation") as mock_guard:
+            reconcile_vouchers("ACC-BTN-1", vouchers)
+        mock_guard.assert_not_called()
+        self.assertTrue(txn.saved)
 
 
 if __name__ == "__main__":
