@@ -1,10 +1,12 @@
 import frappe
 from frappe import _
+from frappe.utils import flt
 import json
 import datetime
 from erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool import create_payment_entry_bts, create_journal_entry_bts
 from erpnext.accounts.party import get_party_account
 from erpnext import get_default_cost_center
+from mint.apis.reconciliation import check_payment_entry_overallocation
 
 @frappe.whitelist()
 def clear_clearing_date(voucher_type: str, voucher_name: str):
@@ -78,6 +80,25 @@ def reconcile_vouchers(bank_transaction_name: str | int, vouchers: str, is_new_v
     transaction.validate_duplicate_references()
     transaction.allocate_payment_entries()
     transaction.update_allocated_amount()
+
+    # Invariante Σ asignado ≤ cobrado: tras calcular las asignaciones (allocate) y ANTES de
+    # guardar, se rechaza si un Payment Entry quedaría con más dinero asignado —sumando TODOS
+    # los depósitos— del que cobra. Impide el sobre-conteo del dossier (un cobro respaldado
+    # por su gemelo ×100 phantom, o el mismo PE asignado desde dos depósitos). El throw
+    # revierte el append en memoria (aún no se guardó). Solo aplica a Payment Entry.
+    for voucher in vouchers:
+        if voucher["payment_doctype"] != "Payment Entry":
+            continue
+        pe_name = voucher["payment_name"]
+        new_allocation = sum(
+            flt(row.allocated_amount)
+            for row in transaction.payment_entries
+            if row.payment_document == "Payment Entry" and row.payment_entry == pe_name
+        )
+        check_payment_entry_overallocation(
+            pe_name, new_allocation, exclude_bank_transaction=transaction.name
+        )
+
     transaction.set_status()
     transaction.save()
     
