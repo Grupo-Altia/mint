@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import frappe
 import json
+import re
 from frappe import _
 from frappe.utils import flt
 from frappe.utils.safe_exec import safe_eval
@@ -69,7 +70,13 @@ CASH_LIKE_TYPES = ("Cash", "Gateway", "Gangway")
 # nunca por debajo". Ajustable si aparecen falsos bloqueos por redondeo USD↔VEF.
 DEPOSIT_COVERAGE_TOLERANCE = 1.0
 
-DEPOSIT_FIELDS = ["name", "deposit", "unallocated_amount", "currency", "bank_account"]
+# Tolerancia (VEF) al verificar el invariante Σ asignado ≤ monto cobrado del Payment
+# Entry. Solo se bloquea cuando la suma SUPERA el cobro por más que esto: absorbe el
+# redondeo VEF↔USD sin dejar pasar la sobre-asignación real (los casos de prod excedían
+# por miles de bolívares, no por céntimos). Ver check_payment_entry_overallocation.
+OVERALLOCATION_TOLERANCE = 1.0
+
+DEPOSIT_FIELDS = ["name", "deposit", "unallocated_amount", "currency", "bank_account", "date"]
 
 # Cotas anti-explosión del motor de reglas (incidente 2026-07-09: el barrido nocturno
 # quedó 30+ min de CPU en un solo cobro, atrapado con py-spy en apply_format_rule):
@@ -279,6 +286,122 @@ def deposit_covers_payment(
     return deposited + flt(tolerance) >= pe_total
 
 
+# ════════════════════════════════════════════════════════════════════════════
+# Invariante de asignación: Σ asignado a un Payment Entry ≤ su monto cobrado
+# ════════════════════════════════════════════════════════════════════════════
+# Nacido del saneo de depósitos duplicados (dossier 2026-07-11): el motor permitió
+# asignar a un mismo cobro MÁS dinero del que cobra, repartido entre el depósito real y
+# su gemelo ×100 phantom (p. ej. ACC-PAY-2026-02486 cobra 12.656,32 y quedó con 14.612,40
+# asignados; ACC-PAY-2026-02573 cobra 218.244,40 y quedó con 285.791,40). Estas guardas
+# lo impiden en el punto donde se crea una asignación Bank Transaction → Payment Entry.
+
+def get_pe_allocated_in_other_transactions(
+    payment_entry_name: str, exclude_bank_transaction: str | None = None
+) -> float:
+    """Σ(allocated_amount) asignado a un Payment Entry desde depósitos EMITIDOS,
+    excluyendo opcionalmente uno (el que se está por asignar, para no contarlo dos veces).
+
+    En moneda de la empresa (VEF), igual que deposit_covers_payment: allocated_amount de
+    Bank Transaction Payments se compara contra base_paid_amount del cobro.
+    """
+    filters: dict = {
+        "payment_entry": payment_entry_name,
+        "payment_document": "Payment Entry",
+        "docstatus": 1,
+    }
+    if exclude_bank_transaction:
+        filters["parent"] = ["!=", exclude_bank_transaction]
+    return flt(
+        frappe.db.get_value("Bank Transaction Payments", filters, "sum(allocated_amount)") or 0,
+        2,
+    )
+
+
+def check_payment_entry_overallocation(
+    payment_entry_name: str,
+    new_allocation: float,
+    exclude_bank_transaction: str | None = None,
+    raise_on_violation: bool = True,
+) -> tuple[bool, str | None]:
+    """Verifica el invariante Σ(asignado en TODOS los depósitos) ≤ base_paid_amount del cobro.
+
+    `new_allocation` es lo que se está por asignar desde el depósito actual (excluido de
+    `existing` vía exclude_bank_transaction). Un cobro puede pagarse legítimamente con
+    VARIOS depósitos parciales que sumen su total; solo se bloquea cuando la suma lo SUPERA.
+
+    Devuelve (ok, mensaje). Si raise_on_violation y se viola, lanza frappe.throw (mensaje en
+    español). El cobro con total 0 (o sin base_paid_amount) no se verifica.
+
+    NO aplica a las transferencias internas (payment_type 'Internal Transfer'): por diseño
+    un mismo Payment Entry se concilia contra DOS depósitos (el retiro origen y el depósito
+    destino), así que Σ asignado = 2×monto y el invariante no las modela.
+    """
+    pe = frappe.db.get_value(
+        "Payment Entry", payment_entry_name, ["base_paid_amount", "payment_type"], as_dict=True
+    )
+    if not pe or (pe.payment_type or "") == "Internal Transfer":
+        return True, None
+    paid = flt(pe.base_paid_amount or 0, 2)
+    if paid <= 0:
+        return True, None
+
+    existing = get_pe_allocated_in_other_transactions(payment_entry_name, exclude_bank_transaction)
+    total = flt(existing + flt(new_allocation), 2)
+    if total <= paid + OVERALLOCATION_TOLERANCE:
+        return True, None
+
+    if existing >= paid - OVERALLOCATION_TOLERANCE:
+        # Segundo invariante del dossier: el cobro ya estaba TOTALMENTE asignado desde
+        # otro depósito y este intenta asignarle más (firma de depósito duplicado/×100).
+        message = _(
+            "El cobro {0} ya está totalmente asignado ({1}) desde otro depósito bancario. "
+            "No se le puede asignar {2} más: sería contar el mismo pago dos veces. Revise si "
+            "hay un depósito duplicado con la misma referencia."
+        ).format(
+            payment_entry_name, frappe.bold(existing), frappe.bold(flt(new_allocation, 2))
+        )
+    else:
+        message = _(
+            "La asignación total ({0}) al cobro {1} supera el monto cobrado ({2}). Un depósito "
+            "no puede aportar a un cobro más de lo que este cobra; revise si hay un depósito "
+            "duplicado o inflado con la misma referencia."
+        ).format(frappe.bold(total), payment_entry_name, frappe.bold(paid))
+
+    if raise_on_violation:
+        frappe.throw(message, title=_("Asignación excede el cobro"))
+    return False, message
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Normalización de referencias bancarias
+# ════════════════════════════════════════════════════════════════════════════
+
+_INTERNAL_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def normalize_reference(reference) -> str:
+    """Normaliza una referencia bancaria a su forma canónica para importar y conciliar.
+
+    - Quita saltos de línea / retornos de carro / tabuladores (artefactos del import:
+      el dossier documentó refs con `\\n` embebido, p. ej. "162536032237\\n").
+    - Colapsa espacios internos múltiples a uno solo y recorta los extremos (preserva las
+      referencias textuales tipo "BANPANAMA SR CRISTIAN" sin mutilarlas).
+    - Quita el sufijo ".0" que agregan algunos export .xls al castear a número.
+    - Quita la comilla simple inicial (export Bancamiga: "'123...").
+
+    Superconjunto de strip(): para una referencia ya limpia devuelve exactamente lo mismo.
+    Reemplaza y extiende la lógica de strip_leading_quote_from_reference.
+    """
+    ref = str(reference or "")
+    ref = ref.replace("\r", "").replace("\n", "").replace("\t", "")
+    ref = _INTERNAL_WHITESPACE_RE.sub(" ", ref).strip()
+    if ref.endswith(".0"):
+        ref = ref[:-2]
+    if ref.startswith("'"):
+        ref = ref[1:]
+    return ref.strip()
+
+
 def _cobro_bank_account(doc) -> str | None:
     """Bank Account (cuenta bancaria) del cobro, derivada de su cuenta GL."""
     bank_gl_acc = doc.paid_to or doc.paid_from
@@ -289,7 +412,7 @@ def _cobro_bank_account(doc) -> str | None:
 
 def _deposit_base_filters(doc) -> dict | None:
     """Filtros comunes: referencia exacta + moneda del cobro + saldo disponible."""
-    ref = str(doc.reference_no or "").strip()
+    ref = normalize_reference(doc.reference_no)
     if not ref:
         return None
     filters = {
@@ -364,7 +487,7 @@ def _find_deposit_by_source_bank_rule(doc) -> frappe._dict | None:
     Si el cobro tiene `source_bank`, se usa solo esa regla. Si no, se prueban
     todas las reglas configuradas en los bancos del sistema.
     """
-    target_ref = str(doc.reference_no or "").strip()
+    target_ref = normalize_reference(doc.reference_no)
     if not target_ref:
         return None
     bank_account = _cobro_bank_account(doc)
@@ -498,7 +621,7 @@ def find_consumed_deposit(doc) -> frappe._dict | None:
     referencia+moneda cuyo saldo lo consumió OTRO Payment Entry, se devuelve el depósito
     y los cobros gemelos. Devuelve None si no aplica.
     """
-    ref = str(doc.reference_no or "").strip()
+    ref = normalize_reference(doc.reference_no)
     if not ref:
         return None
     filters: dict = {"reference_number": ref, "docstatus": 1, "deposit": [">", 0]}
@@ -527,7 +650,7 @@ def find_unsubmitted_deposit(doc) -> frappe._dict | None:
     conciliar hasta emitirlo/depurarlo. Prefiere el borrador (accionable) sobre el
     cancelado. Devuelve None si no hay ninguno.
     """
-    ref = str(doc.reference_no or "").strip()
+    ref = normalize_reference(doc.reference_no)
     if not ref:
         return None
     paid_currency = (doc.paid_on_currency or "").strip()
@@ -564,7 +687,7 @@ def find_duplicate_deposits(doc) -> list:
     docstatus<2 excluye los cancelados (status 'Cancelled'): por eso CANCELAR el
     duplicado —no solo borrarlo— ya libera la conciliación.
     """
-    ref = str(doc.reference_no or "").strip()
+    ref = normalize_reference(doc.reference_no)
     bank_account = _cobro_bank_account(doc)
     if not ref or not bank_account:
         return []
@@ -625,6 +748,9 @@ def _apply_deposit_amount(doc, deposit: frappe._dict) -> None:
         base = flt(deposit_amount * rate, 2)
         doc.paid_amount = base
         doc.received_amount = base
+
+    if deposit.get("date"):
+        doc.reference_date = deposit.date
 
     # Forzar recálculo del IGTF sobre el nuevo monto: calculate_igtf_taxes solo lo
     # recompone si igtf_amount viene vacío.
@@ -778,6 +904,24 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
     )
     if already or flt(bt.unallocated_amount) <= 0:
         return
+
+    # Defensa en profundidad del invariante Σ asignado ≤ cobrado: si OTRO depósito ya
+    # cubrió por completo este cobro, no se enlaza (sería contar el pago dos veces, el
+    # patrón ×100 del dossier). No se lanza throw porque este camino corre en background
+    # (reconcile_and_approve); solo se registra y se sale sin enlazar.
+    paid = flt(frappe.db.get_value("Payment Entry", payment_entry_name, "base_paid_amount") or 0, 2)
+    if paid > 0:
+        existing = get_pe_allocated_in_other_transactions(
+            payment_entry_name, exclude_bank_transaction=bt.name
+        )
+        if existing >= paid - OVERALLOCATION_TOLERANCE:
+            frappe.logger("mint.reconciliation").warning(
+                "No se enlaza el depósito %s al cobro %s: ya está totalmente asignado "
+                "(%s de %s) desde otro depósito.",
+                bt.name, payment_entry_name, existing, paid,
+            )
+            return
+
     bt.add_payment_entries(
         [{"payment_doctype": "Payment Entry", "payment_name": payment_entry_name}]
     )
@@ -821,17 +965,15 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
 
 
 def strip_leading_quote_from_reference(doc, method):
-    """
-    Strips leading single quotes from reference numbers (common in bank exports like Bancamiga .xls)
-    to prevent string matching errors in rules and reconciliation.
+    """Normaliza reference_number al INSERTAR un Bank Transaction (hook before_insert).
+
+    Deja la referencia en su forma canónica (ver normalize_reference): sin comilla inicial
+    (export Bancamiga .xls), sin sufijo ".0", y sin saltos de línea / espacios internos
+    espurios (artefactos del import que rompían el match por referencia y las guardas de
+    duplicados). Toda la data nueva entra limpia.
     """
     if doc.reference_number is not None:
-        ref = str(doc.reference_number).strip()
-        if ref.endswith(".0"):
-            ref = ref[:-2]
-        if ref.startswith("'"):
-            ref = ref[1:]
-        doc.reference_number = ref
+        doc.reference_number = normalize_reference(doc.reference_number)
 
 
 def before_submit_receive_payment(doc, method=None) -> None:
@@ -1133,6 +1275,44 @@ def cancel_exact_duplicate_deposits() -> int:
     return cancelled
 
 
+def find_impossible_date_transactions() -> list:
+    """Bank Transactions con fecha IMPOSIBLE: futura (> hoy) o NULL, no canceladas.
+
+    Firma del bug de import ×100 (dossier 2026-07-11): al inflar montos también volteó
+    fechas dd/mm↔mm/dd, dejando depósitos con fecha futura (ACC-BTN-2026-04720 → 2026-09-03,
+    ACC-BTN-2026-02661 → 2026-10-03) e incluso alguno con date=None (ACC-BTN-2026-03213-1),
+    que se escapa de los filtros por fecha del barrido nocturno y del saneo. Se listan para
+    que el dashboard/health los muestre y se corrijan a mano.
+    """
+    today = frappe.utils.today()
+    return frappe.db.sql(
+        """
+        SELECT name, date, reference_number, deposit, withdrawal, bank_account, company,
+               docstatus, status
+        FROM `tabBank Transaction`
+        WHERE docstatus < 2 AND (date IS NULL OR date > %(today)s)
+        ORDER BY date DESC
+        """,
+        {"today": today},
+        as_dict=True,
+    )
+
+
+@frappe.whitelist()
+def get_reconciliation_health() -> dict:
+    """Resumen de anomalías estructurales de conciliación para el dashboard/health de mint.
+
+    Hoy expone las transacciones con fecha imposible (futura o NULL). Pensado para crecer
+    con otros chequeos (duplicados, sobre-asignaciones) sin cambiar la firma del endpoint.
+    """
+    frappe.has_permission("Bank Transaction", "read", throw=True)
+    impossible = find_impossible_date_transactions()
+    return {
+        "impossible_date_transactions": impossible,
+        "impossible_date_count": len(impossible),
+    }
+
+
 def reconcile_pending_drafts_nightly() -> None:
     """Barrido nocturno (cron 22:00 hora del site): sanea duplicados exactos y luego
     reintenta conciliar TODOS los cobros en borrador con referencia pendientes.
@@ -1162,9 +1342,21 @@ def reconcile_pending_drafts_nightly() -> None:
         pluck="name",
     )
     reconciled = _approve_drafts(names)
+
+    # Salud: dejar rastro de los depósitos con fecha imposible (futura o NULL) que se
+    # escapan de los filtros por fecha; no se tocan aquí (requieren decisión humana).
+    impossible = find_impossible_date_transactions()
+    if impossible:
+        frappe.logger("mint.reconciliation").warning(
+            "Barrido nocturno: %s Bank Transactions con fecha imposible (futura o NULL): %s",
+            len(impossible),
+            ", ".join(t.name for t in impossible[:20]),
+        )
+
     frappe.logger("mint.reconciliation").info(
-        "Barrido nocturno: %s duplicados exactos cancelados; %s/%s cobros conciliados."
-        % (deduped, reconciled, len(names))
+        "Barrido nocturno: %s duplicados exactos cancelados; %s/%s cobros conciliados; "
+        "%s con fecha imposible."
+        % (deduped, reconciled, len(names), len(impossible))
     )
 
 
