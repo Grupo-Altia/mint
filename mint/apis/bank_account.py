@@ -23,7 +23,7 @@ def get_list(company: str, show_disabled: bool = False):
     for bank_account in bank_accounts:
         bank_account.account_currency = frappe.get_cached_value("Account", bank_account.account, "account_currency")
         if bank_account.bank:
-            bank_account.bank_logo = frappe.get_cached_value("Bank", bank_account.bank, "image")
+            bank_account.bank_logo = frappe.get_cached_value("Bank", bank_account.bank, "bank_logo") or frappe.get_cached_value("Bank", bank_account.bank, "image")
 
     
     return bank_accounts

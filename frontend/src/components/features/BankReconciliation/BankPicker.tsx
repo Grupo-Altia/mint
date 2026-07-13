@@ -79,7 +79,7 @@ const BankPickerItem = ({ bank, size = 'base' }: { bank: SelectedBank, size?: 'b
         )}
     >
         {bank.logo && !imgError ? <img
-            src={`/assets/mint/mint/${bank.logo}`}
+            src={bank.logo.startsWith('/') || bank.logo.startsWith('http') ? bank.logo : `/assets/mint/mint/${bank.logo}`}
             alt={bank.bank || bank.name || ''}
             onError={() => setImgError(true)}
             className={cn("max-w-24 object-left h-10 object-contain mb-1", {
