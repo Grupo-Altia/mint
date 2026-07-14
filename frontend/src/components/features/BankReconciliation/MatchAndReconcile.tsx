@@ -111,10 +111,16 @@ const UnreconciledTransactions = ({ contentHeight }: { contentHeight: number }) 
 
     }, [search, typeFilter, amountFilter.value, unreconciledTransactions?.message])
 
-    const setSelectedTransaction = useSetAtom(bankRecSelectedTransactionAtom(bankAccount?.name || ''))
+    const [selectedTransactions, setSelectedTransaction] = useAtom(bankRecSelectedTransactionAtom(bankAccount?.name || ''))
+    const [displayLimit, setDisplayLimit] = useState(100)
+
+    const displayedResults = useMemo(() => {
+        return results.slice(0, displayLimit)
+    }, [results, displayLimit])
 
     const onFilterChange = () => {
         setSelectedTransaction([])
+        setDisplayLimit(100)
     }
 
     const onSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -140,7 +146,11 @@ const UnreconciledTransactions = ({ contentHeight }: { contentHeight: number }) 
     const hasFilters = search !== '' || typeFilter !== 'All' || amountFilter.value !== 0
 
     const handleSelectAll = () => {
-        setSelectedTransaction(results || [])
+        if (selectedTransactions.length === displayedResults.length && displayedResults.length > 0) {
+            setSelectedTransaction([])
+        } else {
+            setSelectedTransaction(displayedResults || [])
+        }
     }
 
     if (isLoading) {
@@ -210,7 +220,7 @@ const UnreconciledTransactions = ({ contentHeight }: { contentHeight: number }) 
                 </DropdownMenu>
             </div>
             <Button type='button' variant="outline" className="h-9" onClick={handleSelectAll} title={_("Select all filtered results")}>
-                {_("Select all")}
+                {selectedTransactions.length === displayedResults.length && displayedResults.length > 0 ? _("Deseleccionar todo") : _("Seleccionar todo")}
             </Button>
         </div>
 
@@ -224,12 +234,26 @@ const UnreconciledTransactions = ({ contentHeight }: { contentHeight: number }) 
             description={hasFilters ? _("Try adjusting your search or filter criteria.") : _("Import your bank statement to get started.")} />}
 
         <Virtuoso
-            data={results}
+            data={displayedResults}
             itemContent={(_index, transaction) => (
                 <UnreconciledTransactionItem transaction={transaction} />
             )}
             style={{ minHeight: Math.max(contentHeight - 80, 400) }}
-            totalCount={results?.length}
+            totalCount={displayedResults?.length}
+            components={{
+                Footer: () => {
+                    if (displayedResults.length < results.length) {
+                        return (
+                            <div className="py-4 flex justify-center">
+                                <Button variant="outline" onClick={() => setDisplayLimit(l => l + 100)}>
+                                    {_("Mostrar más")} ({results.length - displayedResults.length} {_("restantes")})
+                                </Button>
+                            </div>
+                        )
+                    }
+                    return null
+                }
+            }}
         />
 
     </div>

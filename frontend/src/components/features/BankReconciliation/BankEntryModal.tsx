@@ -93,27 +93,33 @@ const BulkBankEntryForm = ({ selectedTransactions }: { selectedTransactions: Unr
             account: data.account
         }).then(({ message }) => {
 
-            addToActionLog({
-                type: 'bank_entry',
-                timestamp: (new Date()).getTime(),
-                isBulk: true,
-                items: message.map((item) => ({
-                    bankTransaction: item.transaction,
-                    voucher: {
-                        reference_doctype: "Journal Entry",
-                        reference_name: item.journal_entry.name,
-                        doc: item.journal_entry,
-                        posting_date: item.journal_entry.posting_date,
+            if (message && message.length > 0) {
+                addToActionLog({
+                    type: 'bank_entry',
+                    timestamp: (new Date()).getTime(),
+                    isBulk: true,
+                    items: message.map((item) => ({
+                        bankTransaction: item.transaction,
+                        voucher: {
+                            reference_doctype: "Journal Entry",
+                            reference_name: item.journal_entry.name,
+                            doc: item.journal_entry,
+                            posting_date: item.journal_entry.posting_date,
+                        }
+                    })),
+                    bulkCommonData: {
+                        account: data.account,
                     }
-                })),
-                bulkCommonData: {
-                    account: data.account,
-                }
-            })
+                })
 
-            toast.success(_("Bank Entries Created"), {
-                duration: 4000,
-            })
+                toast.success(_("Bank Entries Created"), {
+                    duration: 4000,
+                })
+            } else {
+                toast.success(_("Creando registros de banco en segundo plano..."), {
+                    duration: 4000,
+                })
+            }
 
             // Set this to the last selected transaction
             onReconcile(selectedTransactions[selectedTransactions.length - 1])

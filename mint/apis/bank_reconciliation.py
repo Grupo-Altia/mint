@@ -266,71 +266,110 @@ def create_internal_transfer(bank_transaction_name: str|int,
         "payment_entry": pe,
     }
 
-@frappe.whitelist(methods=['POST'])
-def create_bulk_bank_entry_and_reconcile(bank_transactions: list[str|int], 
-                                         account: str):
+def _create_bulk_bank_entry_and_reconcile(bank_transactions: list, account: str, user: str = None):
     """
      Create bank entries for all transactions and reconcile them
     """
-
     output = []
+    success_count = 0
+    error_count = 0
 
     for bank_transaction in bank_transactions:
-        transactions_details = frappe.db.get_value("Bank Transaction", bank_transaction, ["name", "deposit", "withdrawal", "bank_account", "currency", "unallocated_amount", "date", "reference_number", "description"], as_dict=True)
+        try:
+            transactions_details = frappe.db.get_value("Bank Transaction", bank_transaction, ["name", "deposit", "withdrawal", "bank_account", "currency", "unallocated_amount", "date", "reference_number", "description"], as_dict=True)
 
-        is_credit_card = frappe.get_cached_value("Bank Account", transactions_details.bank_account, "is_credit_card")
+            is_credit_card = frappe.get_cached_value("Bank Account", transactions_details.bank_account, "is_credit_card")
 
-        # Check Number will be limited to 140 characters
-        cheque_no = (transactions_details.reference_number or transactions_details.description or '')[:140]
+            # Check Number will be limited to 140 characters
+            cheque_no = (transactions_details.reference_number or transactions_details.description or '')[:140]
 
-        is_withdrawal = transactions_details.withdrawal > 0.0
+            is_withdrawal = transactions_details.withdrawal > 0.0
 
-        entries = []
+            entries = []
 
-        gl_account = frappe.get_cached_value("Bank Account", transactions_details.bank_account, "account")
+            gl_account = frappe.get_cached_value("Bank Account", transactions_details.bank_account, "account")
 
-        if is_withdrawal:
-            entries.append({
-                "account": gl_account,
-                "bank_account": transactions_details.bank_account,
-                "credit_in_account_currency": transactions_details.unallocated_amount,
-                "credit": transactions_details.unallocated_amount,
-                "debit_in_account_currency": 0,
-                "debit": 0,
-            })
+            if is_withdrawal:
+                entries.append({
+                    "account": gl_account,
+                    "bank_account": transactions_details.bank_account,
+                    "credit_in_account_currency": transactions_details.unallocated_amount,
+                    "credit": transactions_details.unallocated_amount,
+                    "debit_in_account_currency": 0,
+                    "debit": 0,
+                })
 
-            entries.append({
-                "account": account,
-                "credit": 0,
-                "debit": transactions_details.unallocated_amount,
-            })
-        else:
-            entries.append({
-                "account": gl_account,
-                "bank_account": transactions_details.bank_account,
-                "debit_in_account_currency": transactions_details.unallocated_amount,
-                "debit": transactions_details.unallocated_amount,
-                "credit_in_account_currency": 0,
-                "credit": 0,
-            })
+                entries.append({
+                    "account": account,
+                    "credit": 0,
+                    "debit": transactions_details.unallocated_amount,
+                })
+            else:
+                entries.append({
+                    "account": gl_account,
+                    "bank_account": transactions_details.bank_account,
+                    "debit_in_account_currency": transactions_details.unallocated_amount,
+                    "debit": transactions_details.unallocated_amount,
+                    "credit_in_account_currency": 0,
+                    "credit": 0,
+                })
 
-            entries.append({
-                "account": account,
-                "debit": 0,
-                "credit": transactions_details.unallocated_amount,
-            })
+                entries.append({
+                    "account": account,
+                    "debit": 0,
+                    "credit": transactions_details.unallocated_amount,
+                })
 
-        final_transaction = create_bank_entry_and_reconcile(bank_transaction_name=bank_transaction,
-                                        cheque_date=transactions_details.date,
-                                        posting_date=transactions_details.date,
-                                        cheque_no=cheque_no,
-                                        user_remark=transactions_details.description,
-                                        entries=entries,
-                                        voucher_type=("Credit Card Entry" if is_credit_card else "Bank Entry"))
-        
-        output.append(final_transaction)
+            final_transaction = create_bank_entry_and_reconcile(bank_transaction_name=bank_transaction,
+                                            cheque_date=transactions_details.date,
+                                            posting_date=transactions_details.date,
+                                            cheque_no=cheque_no,
+                                            user_remark=transactions_details.description,
+                                            entries=entries,
+                                            voucher_type=("Credit Card Entry" if is_credit_card else "Bank Entry"))
+            
+            output.append(final_transaction)
+            success_count += 1
+        except Exception as e:
+            frappe.log_error(title="Error en conciliación masiva", message=frappe.get_traceback())
+            error_count += 1
+            continue
     
+    if user:
+        message = f"Conciliación masiva finalizada. Exitosas: {success_count}. Errores: {error_count}."
+        frappe.publish_realtime("msgprint", {
+            "message": message,
+            "title": "Conciliación Bancaria",
+            "indicator": "green" if error_count == 0 else "orange"
+        }, user=user)
+
+        doc = frappe.new_doc("Notification Log")
+        doc.subject = message
+        doc.for_user = user
+        doc.type = "Alert"
+        doc.insert(ignore_permissions=True)
+        frappe.db.commit()
+
     return output
+
+@frappe.whitelist(methods=['POST'])
+def create_bulk_bank_entry_and_reconcile(bank_transactions, account: str):
+    import json
+    if isinstance(bank_transactions, str):
+        bank_transactions = json.loads(bank_transactions)
+        
+    if len(bank_transactions) <= 2:
+        return _create_bulk_bank_entry_and_reconcile(bank_transactions, account)
+        
+    frappe.enqueue(
+        "mint.apis.bank_reconciliation._create_bulk_bank_entry_and_reconcile",
+        queue="default",
+        timeout=1500,
+        bank_transactions=bank_transactions,
+        account=account,
+        user=frappe.session.user
+    )
+    return []
 
 
 
@@ -416,79 +455,131 @@ def create_bank_entry_and_reconcile(bank_transaction_name: str | int,
         "journal_entry": bank_entry,
     }
 
-@frappe.whitelist(methods=['POST'])
-def create_bulk_payment_entry_and_reconcile(bank_transaction_names: list[str | int], 
+def _create_bulk_payment_entry_and_reconcile(bank_transaction_names: list, 
                                             party_type: str, 
-                                            party: str | int, 
+                                            party: str, 
                                             account: str,
                                             paid_on_currency: str = None,
-                                            mode_of_payment: str | None = None):
+                                            mode_of_payment: str = None,
+                                            user: str = None):
     """
         Create a payment entry and reconcile it with the bank transaction
     """
-
     output = []
+    success_count = 0
+    error_count = 0
 
     for bank_transaction_name in bank_transaction_names:
-        bank_transaction = frappe.db.get_value("Bank Transaction", bank_transaction_name, ["name", "deposit", "withdrawal", "bank_account", "currency", "company", "unallocated_amount", "date", "reference_number", "description"], as_dict=True)
+        try:
+            bank_transaction = frappe.db.get_value("Bank Transaction", bank_transaction_name, ["name", "deposit", "withdrawal", "bank_account", "currency", "company", "unallocated_amount", "date", "reference_number", "description"], as_dict=True)
 
-        transaction_account = frappe.get_cached_value("Bank Account", bank_transaction.bank_account, "account")
+            transaction_account = frappe.get_cached_value("Bank Account", bank_transaction.bank_account, "account")
 
-        is_withdrawal = bank_transaction.withdrawal > 0.0
+            is_withdrawal = bank_transaction.withdrawal > 0.0
 
-        if is_withdrawal:
-            paid_from = transaction_account
-            paid_to = account
-        else:
-            paid_from = account
-            paid_to = transaction_account
-        
-        payment_entry_doc = frappe.get_doc({
-            "doctype": "Payment Entry",
-            "payment_type": "Pay" if is_withdrawal else "Receive",
-            "bank_account": bank_transaction.bank_account,
-            "company": bank_transaction.company,
-            "mode_of_payment": mode_of_payment,
-            "party_type": party_type,
-            "party": party,
-            "paid_from": paid_from,
-            "paid_to": paid_to,
-            "paid_from_account_currency": paid_on_currency,
-            "paid_to_account_currency": paid_on_currency,
-            "paid_on_currency": paid_on_currency,
-            "paid_amount": bank_transaction.unallocated_amount,
-            "base_paid_amount": bank_transaction.unallocated_amount,
-            "received_amount": bank_transaction.unallocated_amount,
-            "base_received_amount": bank_transaction.unallocated_amount,
-            "target_exchange_rate": 1,
-            "source_exchange_rate": 1,
-            "reference_date": bank_transaction.date,
-            "posting_date": bank_transaction.date,
-            "reference_no": (bank_transaction.reference_number or bank_transaction.description or '')[:140],
-        })
-
-        payment_entry_doc.insert()
-        payment_entry_doc.submit()
-
-        final_transaction = frappe.get_doc("Bank Transaction", bank_transaction_name)
-        if final_transaction.unallocated_amount > 0:
-            final_transaction = reconcile_vouchers(bank_transaction_name, json.dumps([{
-                "payment_doctype": "Payment Entry",
-                "payment_name": payment_entry_doc.name,
-                "amount": payment_entry_doc.paid_amount,
-            }]), is_new_voucher=True)
+            if is_withdrawal:
+                paid_from = transaction_account
+                paid_to = account
+            else:
+                paid_from = account
+                paid_to = transaction_account
             
-        final_transaction = frappe.get_doc("Bank Transaction", bank_transaction_name)
-        if not final_transaction.party and payment_entry_doc.party:
-            final_transaction.db_set("party_type", payment_entry_doc.party_type)
-            final_transaction.db_set("party", payment_entry_doc.party)
+            payment_entry_doc = frappe.get_doc({
+                "doctype": "Payment Entry",
+                "payment_type": "Pay" if is_withdrawal else "Receive",
+                "bank_account": bank_transaction.bank_account,
+                "company": bank_transaction.company,
+                "mode_of_payment": mode_of_payment,
+                "party_type": party_type,
+                "party": party,
+                "paid_from": paid_from,
+                "paid_to": paid_to,
+                "paid_from_account_currency": paid_on_currency,
+                "paid_to_account_currency": paid_on_currency,
+                "paid_on_currency": paid_on_currency,
+                "paid_amount": bank_transaction.unallocated_amount,
+                "base_paid_amount": bank_transaction.unallocated_amount,
+                "received_amount": bank_transaction.unallocated_amount,
+                "base_received_amount": bank_transaction.unallocated_amount,
+                "target_exchange_rate": 1,
+                "source_exchange_rate": 1,
+                "reference_date": bank_transaction.date,
+                "posting_date": bank_transaction.date,
+                "reference_no": (bank_transaction.reference_number or bank_transaction.description or '')[:140],
+            })
 
-        output.append({
-            "transaction": final_transaction,
-            "payment_entry": payment_entry_doc,
-        })
+            payment_entry_doc.insert()
+            payment_entry_doc.submit()
+
+            final_transaction = frappe.get_doc("Bank Transaction", bank_transaction_name)
+            if final_transaction.unallocated_amount > 0:
+                final_transaction = reconcile_vouchers(bank_transaction_name, json.dumps([{
+                    "payment_doctype": "Payment Entry",
+                    "payment_name": payment_entry_doc.name,
+                    "amount": payment_entry_doc.paid_amount,
+                }]), is_new_voucher=True)
+                
+            final_transaction = frappe.get_doc("Bank Transaction", bank_transaction_name)
+            if not final_transaction.party and payment_entry_doc.party:
+                final_transaction.db_set("party_type", payment_entry_doc.party_type)
+                final_transaction.db_set("party", payment_entry_doc.party)
+
+            output.append({
+                "transaction": final_transaction,
+                "payment_entry": payment_entry_doc,
+            })
+            success_count += 1
+        except Exception as e:
+            frappe.log_error(title="Error en conciliación masiva", message=frappe.get_traceback())
+            error_count += 1
+            continue
+    
+    if user:
+        message = f"Conciliación masiva finalizada. Exitosas: {success_count}. Errores: {error_count}."
+        frappe.publish_realtime("msgprint", {
+            "message": message,
+            "title": "Conciliación Bancaria",
+            "indicator": "green" if error_count == 0 else "orange"
+        }, user=user)
+
+        doc = frappe.new_doc("Notification Log")
+        doc.subject = message
+        doc.for_user = user
+        doc.type = "Alert"
+        doc.insert(ignore_permissions=True)
+        frappe.db.commit()
 
     return output
+
+@frappe.whitelist(methods=['POST'])
+def create_bulk_payment_entry_and_reconcile(bank_transaction_names, 
+                                            party_type: str, 
+                                            party: str, 
+                                            account: str,
+                                            paid_on_currency: str = None,
+                                            mode_of_payment: str = None):
+    import json
+    if isinstance(bank_transaction_names, str):
+        bank_transaction_names = json.loads(bank_transaction_names)
+        
+    if len(bank_transaction_names) <= 2:
+        return _create_bulk_payment_entry_and_reconcile(
+            bank_transaction_names, party_type, party, account, paid_on_currency, mode_of_payment
+        )
+        
+    frappe.enqueue(
+        "mint.apis.bank_reconciliation._create_bulk_payment_entry_and_reconcile",
+        queue="default",
+        timeout=1500,
+        bank_transaction_names=bank_transaction_names,
+        party_type=party_type,
+        party=party,
+        account=account,
+        paid_on_currency=paid_on_currency,
+        mode_of_payment=mode_of_payment,
+        user=frappe.session.user
+    )
+    return []
 
     
 @frappe.whitelist(methods=['POST'])
