@@ -111,34 +111,41 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
             paid_on_currency: data.paid_on_currency
         }).then(({ message }) => {
 
-            addToActionLog({
-                type: 'payment',
-                timestamp: (new Date()).getTime(),
-                isBulk: true,
-                items: message.map((item) => ({
-                    bankTransaction: item.transaction,
-                    voucher: {
-                        reference_doctype: "Payment Entry",
-                        reference_name: item.payment_entry.name,
-                        reference_no: item.payment_entry.reference_no,
-                        reference_date: item.payment_entry.reference_date,
-                        posting_date: item.payment_entry.posting_date,
-                        party_type: item.payment_entry.party_type,
-                        party: item.payment_entry.party,
-                        doc: item.payment_entry,
+            if (message && message.length > 0) {
+                addToActionLog({
+                    type: 'payment',
+                    timestamp: (new Date()).getTime(),
+                    isBulk: true,
+                    items: message.map((item) => ({
+                        bankTransaction: item.transaction,
+                        voucher: {
+                            reference_doctype: "Payment Entry",
+                            reference_name: item.payment_entry.name,
+                            reference_no: item.payment_entry.reference_no,
+                            reference_date: item.payment_entry.reference_date,
+                            posting_date: item.payment_entry.posting_date,
+                            party_type: item.payment_entry.party_type,
+                            party: item.payment_entry.party,
+                            doc: item.payment_entry,
+                        }
+                    })),
+                    bulkCommonData: {
+                        party_type: data.party_type,
+                        party: data.party,
+                        account: data.account,
                     }
-                })),
-                bulkCommonData: {
-                    party_type: data.party_type,
-                    party: data.party,
-                    account: data.account,
-                }
-            })
+                })
 
-            toast.success(_("Payment Recorded"), {
-                duration: 4000,
-                closeButton: true,
-            })
+                toast.success(_("Payment Recorded"), {
+                    duration: 4000,
+                    closeButton: true,
+                })
+            } else {
+                toast.success(_("Creando pagos en segundo plano..."), {
+                    duration: 4000,
+                    closeButton: true,
+                })
+            }
             onReconcile(transactions[transactions.length - 1])
             setIsOpen(false)
         })
