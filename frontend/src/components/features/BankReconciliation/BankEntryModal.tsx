@@ -160,6 +160,7 @@ const BulkBankEntryForm = ({ selectedTransactions }: { selectedTransactions: Unr
                             return acc.account_type !== 'Payable' && acc.account_type !== 'Receivable'
                         }}
                         label={_('Account')}
+                        rules={{ required: _("Account is required") }}
                         isRequired
                     />
                 </div>
