@@ -173,22 +173,37 @@ const BankRecDateFilter = () => {
                     {formatDate(bankRecDate.fromDate)} - {formatDate(bankRecDate.toDate)}
                 </Button>
             </PopoverTrigger>
-            <PopoverContent className='w-auto overflow-hidden p-0' align='end'>
-                <Calendar
-                    mode='range'
-                    captionLayout='dropdown'
-                    selected={{
-                        from: dateObj.from,
-                        to: dateObj.to
-                    }}
-                    numberOfMonths={2}
-                    defaultMonth={dateObj.from}
-                    onSelect={(date) => {
-                        if (date) {
-                            setBankRecDate({ fromDate: formatDate(date.from, 'YYYY-MM-DD'), toDate: formatDate(date.to, 'YYYY-MM-DD') })
-                        }
-                    }}
-                />
+            <PopoverContent className='w-auto p-0' align='end'>
+                <div className='flex divide-x'>
+                    <div className='p-2'>
+                        <div className='text-center text-sm font-medium p-2 text-muted-foreground'>{_("Fecha Inicial")}</div>
+                        <Calendar
+                            mode='single'
+                            captionLayout='dropdown'
+                            selected={dateObj.from}
+                            defaultMonth={dateObj.from}
+                            onSelect={(date) => {
+                                if (date) {
+                                    setBankRecDate({ fromDate: formatDate(date, 'YYYY-MM-DD'), toDate: bankRecDate.toDate })
+                                }
+                            }}
+                        />
+                    </div>
+                    <div className='p-2'>
+                        <div className='text-center text-sm font-medium p-2 text-muted-foreground'>{_("Fecha Final")}</div>
+                        <Calendar
+                            mode='single'
+                            captionLayout='dropdown'
+                            selected={dateObj.to}
+                            defaultMonth={dateObj.to}
+                            onSelect={(date) => {
+                                if (date) {
+                                    setBankRecDate({ fromDate: bankRecDate.fromDate, toDate: formatDate(date, 'YYYY-MM-DD') })
+                                }
+                            }}
+                        />
+                    </div>
+                </div>
             </PopoverContent>
         </Popover>
     </div>
