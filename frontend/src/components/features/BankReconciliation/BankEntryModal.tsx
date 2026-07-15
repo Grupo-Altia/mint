@@ -71,6 +71,25 @@ const RecordBankEntryModalContent = () => {
 
 const BulkBankEntryForm = ({ selectedTransactions }: { selectedTransactions: UnreconciledTransaction[] }) => {
 
+    const depositCount = selectedTransactions.filter(t => t.deposit > 0).length;
+    
+    if (depositCount > 0) {
+        return (
+            <div className="p-8 flex flex-col items-center justify-center text-center space-y-4">
+                <div className="bg-red-50 text-red-600 p-4 rounded-md border border-red-200">
+                    <p className="font-semibold text-lg mb-2">{_("Acción no permitida")}</p>
+                    <p>{_(`Ha seleccionado ${depositCount} depósito(s) en este lote.`)}</p>
+                    <p>{_("No se pueden crear registros de banco para depósitos. Por favor, deseleccione los depósitos o utilice la opción de 'Registrar Pago' para ellos.")}</p>
+                </div>
+                <DialogFooter>
+                    <DialogClose asChild>
+                        <Button variant="outline">{_("Cerrar")}</Button>
+                    </DialogClose>
+                </DialogFooter>
+            </div>
+        )
+    }
+
     const form = useForm<{
         account: string
     }>({
