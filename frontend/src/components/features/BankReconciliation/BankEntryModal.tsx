@@ -79,7 +79,7 @@ const BulkBankEntryForm = ({ selectedTransactions }: { selectedTransactions: Unr
                 <div className="bg-red-50 text-red-600 p-4 rounded-md border border-red-200">
                     <p className="font-semibold text-lg mb-2">{_("Acción no permitida")}</p>
                     <p>{_(`Ha seleccionado ${depositCount} depósito(s) en este lote.`)}</p>
-                    <p>{_("No se pueden crear registros de banco para depósitos. Por favor, deseleccione los depósitos o utilice la opción de 'Registrar Pago' para ellos.")}</p>
+                    <p>{_("No se pueden crear registros de banco para depósitos. Por favor, deseleccione los depósitos y registre el pago de manera adecuada.")}</p>
                 </div>
                 <DialogFooter>
                     <DialogClose asChild>
