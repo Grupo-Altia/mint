@@ -7,9 +7,14 @@ def get_list(company: str, show_disabled: bool = False):
     if company:
         frappe.has_permission("Company", "read", doc=company, throw=True)
 
+    companies = [company]
+    parent_company = frappe.db.get_value("Company", company, "parent_company")
+    if parent_company:
+        companies.append(parent_company)
+
     filters = {
         "is_company_account": 1,
-        "company": company
+        "company": ["in", companies]
     }
 
     if not show_disabled:
@@ -83,10 +88,15 @@ def set_closing_balance_as_per_statement(bank_account: str, date: str | datetime
 def get_allowed_mode_of_payments(company: str):
     if company:
         frappe.has_permission("Company", "read", doc=company, throw=True)
+    companies = [company]
+    parent_company = frappe.db.get_value("Company", company, "parent_company")
+    if parent_company:
+        companies.append(parent_company)
+
     # Retrieve Bank Accounts the user is allowed to see in this company
     filters = {
         "is_company_account": 1,
-        "company": company,
+        "company": ["in", companies],
         "disabled": 0
     }
     allowed_banks = frappe.get_list("Bank Account", filters=filters, pluck="account")
