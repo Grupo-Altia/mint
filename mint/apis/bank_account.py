@@ -21,20 +21,20 @@ def get_list(company: str, show_disabled: bool = False):
         filters["disabled"] = 0
 
     ignore_perms = False
-    has_branch = frappe.get_meta("Bank Account").has_field("branch")
-    if has_branch:
-        allowed_branches = frappe.get_list("Branch", pluck="name")
+    has_branch_code = frappe.get_meta("Bank Account").has_field("branch_code")
+    if has_branch_code:
+        allowed_branches = frappe.get_list("VE Branch", pluck="name")
         extended_branches = set(allowed_branches)
         
-        has_parent_branch = frappe.get_meta("Branch").has_field("parent_branch")
+        has_parent_branch = frappe.get_meta("VE Branch").has_field("parent_ve_branch")
         if has_parent_branch:
             for b in allowed_branches:
-                parent = frappe.db.get_value("Branch", b, "parent_branch")
+                parent = frappe.db.get_value("VE Branch", b, "parent_ve_branch")
                 if parent:
                     extended_branches.add(parent)
                     
         if extended_branches:
-            filters["branch"] = ["in", list(extended_branches)]
+            filters["branch_code"] = ["in", list(extended_branches)]
             ignore_perms = True
 
     bank_accounts = frappe.get_list("Bank Account", 
@@ -119,20 +119,20 @@ def get_allowed_mode_of_payments(company: str):
     }
 
     ignore_perms = False
-    has_branch = frappe.get_meta("Bank Account").has_field("branch")
-    if has_branch:
-        allowed_branches = frappe.get_list("Branch", pluck="name")
+    has_branch_code = frappe.get_meta("Bank Account").has_field("branch_code")
+    if has_branch_code:
+        allowed_branches = frappe.get_list("VE Branch", pluck="name")
         extended_branches = set(allowed_branches)
         
-        has_parent_branch = frappe.get_meta("Branch").has_field("parent_branch")
+        has_parent_branch = frappe.get_meta("VE Branch").has_field("parent_ve_branch")
         if has_parent_branch:
             for b in allowed_branches:
-                parent = frappe.db.get_value("Branch", b, "parent_branch")
+                parent = frappe.db.get_value("VE Branch", b, "parent_ve_branch")
                 if parent:
                     extended_branches.add(parent)
                     
         if extended_branches:
-            filters["branch"] = ["in", list(extended_branches)]
+            filters["branch_code"] = ["in", list(extended_branches)]
             ignore_perms = True
 
     allowed_banks = frappe.get_list("Bank Account", filters=filters, pluck="account", ignore_permissions=ignore_perms)
