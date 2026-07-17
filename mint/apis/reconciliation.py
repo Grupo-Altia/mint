@@ -957,11 +957,30 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
 
     # Forzar actualización del estado visual, ya que bt.save actualiza clearance_date
     # silenciosamente por db.set_value sin disparar hooks del Payment Entry.
-    clearance_date, current_status = frappe.db.get_value(
-        "Payment Entry", payment_entry_name, ["clearance_date", "custom_reconciliation_status"]
+    pe_data = frappe.db.get_value(
+        "Payment Entry", payment_entry_name, 
+        ["clearance_date", "custom_reconciliation_status", "payment_type"], 
+        as_dict=True
     )
-    if clearance_date and current_status != RECON_DONE:
-        frappe.db.set_value("Payment Entry", payment_entry_name, "custom_reconciliation_status", RECON_DONE, update_modified=True)
+    if pe_data:
+        if pe_data.payment_type == "Internal Transfer":
+            # Un Internal Transfer se concilia cuando tiene al menos 2 extractos asociados
+            linked_bts = frappe.get_all(
+                "Bank Transaction Payments", 
+                filters={"payment_document": "Payment Entry", "payment_entry": payment_entry_name, "docstatus": 1},
+                pluck="parent"
+            )
+            if len(set(linked_bts)) >= 2:
+                updates = {}
+                if pe_data.custom_reconciliation_status != RECON_DONE:
+                    updates["custom_reconciliation_status"] = RECON_DONE
+                if not pe_data.clearance_date:
+                    updates["clearance_date"] = bt.date
+                if updates:
+                    frappe.db.set_value("Payment Entry", payment_entry_name, updates, update_modified=True)
+        else:
+            if pe_data.clearance_date and pe_data.custom_reconciliation_status != RECON_DONE:
+                frappe.db.set_value("Payment Entry", payment_entry_name, "custom_reconciliation_status", RECON_DONE, update_modified=True)
 
 
 def strip_leading_quote_from_reference(doc, method):
