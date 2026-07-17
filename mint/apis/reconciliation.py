@@ -909,18 +909,20 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
     # cubrió por completo este cobro, no se enlaza (sería contar el pago dos veces, el
     # patrón ×100 del dossier). No se lanza throw porque este camino corre en background
     # (reconcile_and_approve); solo se registra y se sale sin enlazar.
-    paid = flt(frappe.db.get_value("Payment Entry", payment_entry_name, "base_paid_amount") or 0, 2)
-    if paid > 0:
-        existing = get_pe_allocated_in_other_transactions(
-            payment_entry_name, exclude_bank_transaction=bt.name
-        )
-        if existing >= paid - OVERALLOCATION_TOLERANCE:
-            frappe.logger("mint.reconciliation").warning(
-                "No se enlaza el depósito %s al cobro %s: ya está totalmente asignado "
-                "(%s de %s) desde otro depósito.",
-                bt.name, payment_entry_name, existing, paid,
+    pe_data = frappe.db.get_value("Payment Entry", payment_entry_name, ["base_paid_amount", "payment_type"], as_dict=True)
+    if pe_data and pe_data.payment_type != "Internal Transfer":
+        paid = flt(pe_data.base_paid_amount or 0, 2)
+        if paid > 0:
+            existing = get_pe_allocated_in_other_transactions(
+                payment_entry_name, exclude_bank_transaction=bt.name
             )
-            return
+            if existing >= paid - OVERALLOCATION_TOLERANCE:
+                frappe.logger("mint.reconciliation").warning(
+                    "No se enlaza el depósito %s al cobro %s: ya está totalmente asignado "
+                    "(%s de %s) desde otro depósito.",
+                    bt.name, payment_entry_name, existing, paid,
+                )
+                return
 
     bt.add_payment_entries(
         [{"payment_doctype": "Payment Entry", "payment_name": payment_entry_name}]
