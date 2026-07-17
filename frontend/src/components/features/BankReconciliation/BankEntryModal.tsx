@@ -511,16 +511,25 @@ const Entries = ({ company, isWithdrawal, currency }: { company: string, isWithd
         if (value) {
             if (costCenterMapRef.current[value]) {
                 setValue(`entries.${index}.cost_center`, costCenterMapRef.current[value])
+                if (index === 1) {
+                    setValue(`entries.0.cost_center`, costCenterMapRef.current[value])
+                }
             } else {
                 call.get('mint.apis.bank_reconciliation.get_account_defaults', {
                     account: value
                 }).then((result: { message: string }) => {
                     costCenterMapRef.current[value] = result.message
                     setValue(`entries.${index}.cost_center`, result.message)
+                    if (index === 1) {
+                        setValue(`entries.0.cost_center`, result.message)
+                    }
                 })
             }
         } else {
             setValue(`entries.${index}.cost_center`, '')
+            if (index === 1) {
+                setValue(`entries.0.cost_center`, '')
+            }
         }
     }
 
@@ -690,8 +699,15 @@ const Entries = ({ company, isWithdrawal, currency }: { company: string, isWithd
                                 label={_("Cost Center")}
                                 filters={[["company", "=", company], ["is_group", "=", 0], ["disabled", "=", 0]]}
                                 buttonClassName="min-w-48"
-                                readOnly={index === 0}
                                 hideLabel
+                                rules={{
+                                    onChange: (event: any) => {
+                                        if (index === 1) {
+                                            const val = event?.target?.value ?? event;
+                                            setValue(`entries.0.cost_center`, val);
+                                        }
+                                    }
+                                }}
                             />
                         </TableCell>
                         <TableCell className="align-top">
