@@ -3,8 +3,9 @@ import { SelectedBank, selectedBankAccountAtom } from "./bankRecAtoms"
 import { useCallback, useState } from "react"
 import { useGetBankAccounts, useGetUnreconciledTransactions } from "./utils"
 import { cn } from "@/lib/utils"
-import { Landmark } from "lucide-react"
+import { Landmark, Search } from "lucide-react"
 import { H4 } from "@/components/ui/typography"
+import { Input } from "@/components/ui/input"
 import { getTimeago } from "@/lib/date"
 import ErrorBanner from "@/components/ui/error-banner"
 import _ from "@/lib/translate"
@@ -27,6 +28,8 @@ const BankPicker = ({ className, size = 'base' }: { className?: string, size?: '
 
     const { banks, isLoading, error } = useGetBankAccounts(onLoadingSuccess)
 
+    const [searchQuery, setSearchQuery] = useState("")
+
     if (isLoading) {
         return null
     }
@@ -34,21 +37,39 @@ const BankPicker = ({ className, size = 'base' }: { className?: string, size?: '
     if (error) {
         return <ErrorBanner error={error} />
     }
+
+    const filteredBanks = banks?.filter((bank: SelectedBank) => 
+        bank.bank?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        bank.account_name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        bank.account?.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+
     return (
-        <div
-            className={cn("flex gap-3 items-stretch w-full overflow-x-auto bank-picker-scrollbar pr-4",
-                banks?.length > 4 ? 'pb-2' : '', className,
-            )}
-            style={{
-                scrollbarWidth: 'thin',
-                scrollbarColor: 'rgb(209 213 219) rgb(243 244 246)',
-            }}
-        >
-            {
-                banks?.map((bank) => (
-                    <BankPickerItem key={bank.name} bank={bank} size={size} />
-                ))
-            }
+        <div className="flex flex-col gap-2 w-full">
+            <div className="relative max-w-[300px]">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input 
+                    placeholder={_("Buscar cuenta bancaria...")} 
+                    value={searchQuery} 
+                    onChange={(e) => setSearchQuery(e.target.value)} 
+                    className="pl-8"
+                />
+            </div>
+            <div
+                className={cn("flex gap-3 items-stretch w-full overflow-x-auto bank-picker-scrollbar pr-4",
+                    banks?.length > 4 ? 'pb-2' : '', className,
+                )}
+                style={{
+                    scrollbarWidth: 'thin',
+                    scrollbarColor: 'rgb(209 213 219) rgb(243 244 246)',
+                }}
+            >
+                {
+                    filteredBanks?.map((bank) => (
+                        <BankPickerItem key={bank.name} bank={bank} size={size} />
+                    ))
+                }
+            </div>
         </div>
     )
 }

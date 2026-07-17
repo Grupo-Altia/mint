@@ -71,6 +71,25 @@ const RecordBankEntryModalContent = () => {
 
 const BulkBankEntryForm = ({ selectedTransactions }: { selectedTransactions: UnreconciledTransaction[] }) => {
 
+    const depositCount = selectedTransactions.filter(t => t.deposit > 0).length;
+    
+    if (depositCount > 0) {
+        return (
+            <div className="p-8 flex flex-col items-center justify-center text-center space-y-4">
+                <div className="bg-red-50 text-red-600 p-4 rounded-md border border-red-200">
+                    <p className="font-semibold text-lg mb-2">{_("Acción no permitida")}</p>
+                    <p>{_(`Ha seleccionado ${depositCount} depósito(s) en este lote.`)}</p>
+                    <p>{_("No se pueden crear registros de banco para depósitos. Por favor, deseleccione los depósitos y registre el pago de manera adecuada.")}</p>
+                </div>
+                <DialogFooter>
+                    <DialogClose asChild>
+                        <Button variant="outline">{_("Cerrar")}</Button>
+                    </DialogClose>
+                </DialogFooter>
+            </div>
+        )
+    }
+
     const form = useForm<{
         account: string
     }>({
@@ -141,6 +160,7 @@ const BulkBankEntryForm = ({ selectedTransactions }: { selectedTransactions: Unr
                             return acc.account_type !== 'Payable' && acc.account_type !== 'Receivable'
                         }}
                         label={_('Account')}
+                        rules={{ required: _("Account is required") }}
                         isRequired
                     />
                 </div>
@@ -491,16 +511,25 @@ const Entries = ({ company, isWithdrawal, currency }: { company: string, isWithd
         if (value) {
             if (costCenterMapRef.current[value]) {
                 setValue(`entries.${index}.cost_center`, costCenterMapRef.current[value])
+                if (index === 1) {
+                    setValue(`entries.0.cost_center`, costCenterMapRef.current[value])
+                }
             } else {
                 call.get('mint.apis.bank_reconciliation.get_account_defaults', {
                     account: value
                 }).then((result: { message: string }) => {
                     costCenterMapRef.current[value] = result.message
                     setValue(`entries.${index}.cost_center`, result.message)
+                    if (index === 1) {
+                        setValue(`entries.0.cost_center`, result.message)
+                    }
                 })
             }
         } else {
             setValue(`entries.${index}.cost_center`, '')
+            if (index === 1) {
+                setValue(`entries.0.cost_center`, '')
+            }
         }
     }
 
@@ -670,8 +699,15 @@ const Entries = ({ company, isWithdrawal, currency }: { company: string, isWithd
                                 label={_("Cost Center")}
                                 filters={[["company", "=", company], ["is_group", "=", 0], ["disabled", "=", 0]]}
                                 buttonClassName="min-w-48"
-                                readOnly={index === 0}
                                 hideLabel
+                                rules={{
+                                    onChange: (event: any) => {
+                                        if (index === 1) {
+                                            const val = event?.target?.value ?? event;
+                                            setValue(`entries.0.cost_center`, val);
+                                        }
+                                    }
+                                }}
                             />
                         </TableCell>
                         <TableCell className="align-top">
