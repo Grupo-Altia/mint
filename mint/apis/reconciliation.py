@@ -1503,12 +1503,17 @@ def _find_extra_matches_by_rule(matches, transaction, original_ref, banks_with_r
     return matches
 
 def _filter_matches(matches, transaction, strict_matching):
-    if not frappe.utils.cint(strict_matching):
-        return matches
-
     filtered_matches = []
     for match in matches:
         m = frappe._dict(match) if isinstance(match, dict) else match
+        
+        match_amount = float(m.get("paid_amount") or m.get("amount") or m.get("allocated_amount") or 0.0)
+        if match_amount <= 0.0:
+            continue
+
+        if not frappe.utils.cint(strict_matching):
+            filtered_matches.append(match)
+            continue
 
         is_exact = False
         if m.get("matched_by_rule"):
@@ -1520,9 +1525,7 @@ def _filter_matches(matches, transaction, strict_matching):
             filtered_matches.append(match)
             continue
 
-        match_amount = float(m.get("paid_amount") or m.get("amount") or m.get("allocated_amount") or 0.0)
         txn_amount = float(transaction.unallocated_amount)
-
         match_date = m.get("posting_date") or m.get("date") or m.get("reference_date")
         txn_date = transaction.date
 
