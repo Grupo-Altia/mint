@@ -1,3 +1,4 @@
+from mint.apis.mint_log import log_mint_error, log_mint_warning, log_mint_info
 import frappe
 from frappe import _
 from frappe.utils import flt
@@ -331,7 +332,7 @@ def _create_bulk_bank_entry_and_reconcile(bank_transactions: list, account: str,
             output.append(final_transaction)
             success_count += 1
         except Exception as e:
-            frappe.log_error(title="Error en conciliación masiva", message=frappe.get_traceback())
+            log_mint_error(title="Error en conciliación masiva", description=frappe.get_traceback())
             error_count += 1
             continue
     
@@ -530,7 +531,7 @@ def _create_bulk_payment_entry_and_reconcile(bank_transaction_names: list,
             })
             success_count += 1
         except Exception as e:
-            frappe.log_error(title="Error en conciliación masiva", message=frappe.get_traceback())
+            log_mint_error(title="Error en conciliación masiva", description=frappe.get_traceback())
             error_count += 1
             continue
     

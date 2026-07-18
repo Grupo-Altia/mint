@@ -1,3 +1,4 @@
+from mint.apis.mint_log import log_mint_error, log_mint_warning, log_mint_info
 import frappe
 import json
 from frappe import _
@@ -112,7 +113,7 @@ def create_document_processor(processor_type_key: str = "BANK_STATEMENT"):
 			"state": processor.state,
 		}
 	except Exception as e:
-		frappe.log_error(f"Error creating document processor {str(e)}")
+		log_mint_error(f"Error creating document processor {str(e)}")
 		frappe.throw(_("Failed to create document processor"))
 
 

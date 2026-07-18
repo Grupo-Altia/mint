@@ -22,6 +22,7 @@ REGLAS DE FORMATO de referencia por banco (data-driven, sin nombres quemados):
   lossy como "últimos 8".
 """
 from __future__ import annotations
+from mint.apis.mint_log import log_mint_error, log_mint_warning, log_mint_info
 
 import frappe
 import json
@@ -137,7 +138,7 @@ def apply_format_rule(rule_name, reference_number):
             )
         )
     except Exception:
-        frappe.log_error(
+        log_mint_error(
             title="Bank Reference Rule inválida: {0}".format(rule_name),
             message=frappe.get_traceback(),
         )
@@ -464,7 +465,7 @@ def check_rules_match(rules, raw_ref, target_ref):
             for perm in itertools.permutations(rules, r_len):
                 attempts += 1
                 if attempts > MAX_PIPELINE_ATTEMPTS:
-                    frappe.logger("mint.reconciliation").warning(
+                    log_mint_warning("Warning", 
                         "check_rules_match: %s reglas; pipelines truncados en %s intentos (ref destino %s)",
                         len(rules), MAX_PIPELINE_ATTEMPTS, target_ref,
                     )
@@ -917,7 +918,7 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
                 payment_entry_name, exclude_bank_transaction=bt.name
             )
             if existing >= paid - OVERALLOCATION_TOLERANCE:
-                frappe.logger("mint.reconciliation").warning(
+                log_mint_warning("Warning", 
                     "No se enlaza el depósito %s al cobro %s: ya está totalmente asignado "
                     "(%s de %s) desde otro depósito.",
                     bt.name, payment_entry_name, existing, paid,
@@ -1221,7 +1222,7 @@ def _approve_drafts(names) -> int:
                 reconciled += 1
         except Exception:
             frappe.db.rollback()
-            frappe.log_error(
+            log_mint_error(
                 title=_("Error conciliando cobro {0} (auto)").format(name),
                 message=frappe.get_traceback(),
             )
@@ -1289,7 +1290,7 @@ def cancel_exact_duplicate_deposits() -> int:
                 cancelled += 1
             except Exception:
                 frappe.db.rollback()
-                frappe.log_error(
+                log_mint_error(
                     title=_("Error cancelando depósito duplicado {0} (auto)").format(m.name),
                     message=frappe.get_traceback(),
                 )
@@ -1368,13 +1369,13 @@ def reconcile_pending_drafts_nightly() -> None:
     # escapan de los filtros por fecha; no se tocan aquí (requieren decisión humana).
     impossible = find_impossible_date_transactions()
     if impossible:
-        frappe.logger("mint.reconciliation").warning(
+        log_mint_warning("Warning", 
             "Barrido nocturno: %s Bank Transactions con fecha imposible (futura o NULL): %s",
             len(impossible),
             ", ".join(t.name for t in impossible[:20]),
         )
 
-    frappe.logger("mint.reconciliation").info(
+    log_mint_info("Info", 
         "Barrido nocturno: %s duplicados exactos cancelados; %s/%s cobros conciliados; "
         "%s con fecha imposible."
         % (deduped, reconciled, len(names), len(impossible))
@@ -1727,7 +1728,7 @@ def reconcile_je_job(bank_transaction_name: str) -> None:
                 break
             except Exception:
                 frappe.db.rollback()
-                frappe.log_error(f"Error auto-reconciling JE {je_name}", frappe.get_traceback())
+                log_mint_error(f"Error auto-reconciling JE {je_name}", frappe.get_traceback())
 
 def update_expense_journal_entry(doc, method=None):
     """Inyectado al validar un Gasto (Expense). Copia el número de referencia
