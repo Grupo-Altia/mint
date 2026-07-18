@@ -402,6 +402,37 @@ def normalize_reference(reference) -> str:
     return ref.strip()
 
 
+def _canonical_reference(ref) -> str:
+    """Forma canónica para conciliar IGNORANDO los ceros a la izquierda.
+
+    Un depósito con referencia '0012345' y un cobro con '12345' son el MISMO
+    pago: el banco/extracto rellena con ceros de forma inconsistente (caso NOC
+    de decenas de cobros atascados). Se quitan los ceros iniciales SOLO en las
+    referencias puramente numéricas; las textuales ('BANPANAMA SR CRISTIAN') se
+    dejan intactas para no fusionar referencias distintas.
+
+    Debe quedar consistente con ``_CANONICAL_REF_SQL`` (la misma regla del lado
+    de la BD): numérica → sin ceros a la izquierda; el resto → tal cual. Si tras
+    quitar los ceros la referencia queda vacía ('0', '000', …) devuelve '' y el
+    llamador aborta (guard ``if not ref``), evitando un match espurio.
+    """
+    ref = normalize_reference(ref)
+    if ref.isdigit():
+        return ref.lstrip("0")
+    return ref
+
+
+# Espejo SQL de _canonical_reference: canonicaliza reference_number del lado de la
+# BD para que el match ignore ceros a la izquierda en refs numéricas. El TRIM
+# externo cubre las legacy con espacios/saltos pegados; el REGEXP acota el strip
+# de ceros a las puramente numéricas (las textuales quedan exactas, sin fusionar).
+_CANONICAL_REF_SQL = (
+    "CASE WHEN TRIM(reference_number) REGEXP '^[0-9]+$' "
+    "THEN TRIM(LEADING '0' FROM TRIM(reference_number)) "
+    "ELSE TRIM(reference_number) END"
+)
+
+
 def _cobro_bank_account(doc) -> str | None:
     """Bank Account (cuenta bancaria) del cobro, derivada de su cuenta GL."""
     bank_gl_acc = doc.paid_to or doc.paid_from
@@ -411,8 +442,11 @@ def _cobro_bank_account(doc) -> str | None:
 
 
 def _deposit_base_filters(doc) -> dict | None:
-    """Filtros comunes: referencia exacta + moneda del cobro + saldo disponible."""
-    ref = normalize_reference(doc.reference_no)
+    """Filtros comunes: referencia (canónica, sin ceros a la izquierda) + moneda
+    del cobro + saldo disponible. El match contra reference_number lo aplica
+    _first_deposit del lado de la BD vía _CANONICAL_REF_SQL (no es igualdad
+    directa: el valor guardado se canonicaliza en la consulta)."""
+    ref = _canonical_reference(doc.reference_no)
     if not ref:
         return None
     filters = {
@@ -433,13 +467,40 @@ def _first_deposit(filters: dict) -> frappe._dict | None:
     Si por la referencia coexisten varios Bank Transaction (p. ej. un gemelo x100
     por error de parseo del extracto bancario), se concilia contra el de menor
     'deposit' para no usar el inflado. Defensa en profundidad frente a duplicados.
+
+    El match de la referencia se hace vía _CANONICAL_REF_SQL (ignora ceros a la
+    izquierda en refs numéricas), por eso la consulta es SQL cruda y no un
+    filtro dict de igualdad directa: el valor guardado se canonicaliza en la BD.
+    Las demás condiciones vienen fijas de _deposit_base_filters (docstatus=1,
+    deposit>0, unallocated_amount>0.001) + moneda y cuenta bancaria opcionales.
     """
-    rows = frappe.get_all(
-        "Bank Transaction",
-        filters=filters,
-        fields=DEPOSIT_FIELDS,
-        order_by="deposit asc",
-        limit=1,
+    ref = filters.get("reference_number")
+    if not ref:
+        return None
+    conds = [
+        f"({_CANONICAL_REF_SQL}) = %(ref)s",
+        "docstatus = 1",
+        "deposit > 0",
+        "unallocated_amount > 0.001",
+    ]
+    params = {"ref": ref}
+    if filters.get("currency"):
+        conds.append("currency = %(currency)s")
+        params["currency"] = filters["currency"]
+    bank_account = filters.get("bank_account")
+    if isinstance(bank_account, (list, tuple)):
+        # forma ["!=", cuenta] usada por find_deposit_other_bank
+        conds.append("bank_account != %(bank_account)s")
+        params["bank_account"] = bank_account[1]
+    elif bank_account:
+        conds.append("bank_account = %(bank_account)s")
+        params["bank_account"] = bank_account
+    rows = frappe.db.sql(
+        "SELECT name, deposit, unallocated_amount, currency, bank_account, date "
+        "FROM `tabBank Transaction` WHERE " + " AND ".join(conds) +
+        " ORDER BY deposit ASC LIMIT 1",
+        params,
+        as_dict=True,
     )
     return rows[0] if rows else None
 
@@ -687,15 +748,15 @@ def find_duplicate_deposits(doc) -> list:
     docstatus<2 excluye los cancelados (status 'Cancelled'): por eso CANCELAR el
     duplicado —no solo borrarlo— ya libera la conciliación.
     """
-    ref = normalize_reference(doc.reference_no)
+    ref = _canonical_reference(doc.reference_no)
     bank_account = _cobro_bank_account(doc)
     if not ref or not bank_account:
         return []
     return frappe.db.sql(
-        """
+        f"""
         SELECT name, deposit, unallocated_amount, status, docstatus
         FROM `tabBank Transaction`
-        WHERE TRIM(reference_number) = %(ref)s
+        WHERE ({_CANONICAL_REF_SQL}) = %(ref)s
           AND bank_account = %(bank_account)s
           AND company = %(company)s
           AND deposit > 0
