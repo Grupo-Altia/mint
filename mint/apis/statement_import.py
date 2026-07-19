@@ -177,7 +177,7 @@ def process_statement_import_background(final_transactions, bank_account, curren
             success += 1
         except Exception as e:
             frappe.db.rollback()
-            log_mint_error(title="Error en importación de transacción bancaria")
+            log_mint_error(title="Error en importación de transacción bancaria", description=frappe.get_traceback())
             frappe.db.commit()
             errors += 1
         finally:

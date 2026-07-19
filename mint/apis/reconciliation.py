@@ -466,8 +466,9 @@ def check_rules_match(rules, raw_ref, target_ref):
                 attempts += 1
                 if attempts > MAX_PIPELINE_ATTEMPTS:
                     log_mint_warning("Warning", 
-                        "check_rules_match: %s reglas; pipelines truncados en %s intentos (ref destino %s)",
-                        len(rules), MAX_PIPELINE_ATTEMPTS, target_ref,
+                        "check_rules_match: %s reglas; pipelines truncados en %s intentos (ref destino %s)" % (
+                            len(rules), MAX_PIPELINE_ATTEMPTS, target_ref
+                        )
                     )
                     return False, None
                 p_ref = raw_ref
@@ -920,8 +921,9 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
             if existing >= paid - OVERALLOCATION_TOLERANCE:
                 log_mint_warning("Warning", 
                     "No se enlaza el depósito %s al cobro %s: ya está totalmente asignado "
-                    "(%s de %s) desde otro depósito.",
-                    bt.name, payment_entry_name, existing, paid,
+                    "(%s de %s) desde otro depósito." % (
+                        bt.name, payment_entry_name, existing, paid
+                    )
                 )
                 return
 

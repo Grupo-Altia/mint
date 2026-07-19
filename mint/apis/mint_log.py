@@ -21,32 +21,57 @@ def create_mint_log(title, description, log_type="Info", user=None):
             message=f"Original Description: {description}\n\nError: {e}\n{frappe.get_traceback()}"
         )
 
-def log_mint_error(title, description):
-    frappe.enqueue(
-        "mint.apis.mint_log.create_mint_log",
-        queue="short",
-        title=title,
-        description=f"{description}\n\n{frappe.get_traceback()}" if frappe.get_traceback() else description,
+def log_mint_error(title=None, description=None, message=None, *args):
+    desc = description if description is not None else (message or "")
+    if args:
+        try:
+            desc = desc % args
+        except Exception:
+            desc = "\n".join(map(str, (desc, *args)))
+            
+    tb = frappe.get_traceback()
+    if tb and tb not in desc:
+        desc = f"{desc}\n\n{tb}"
+        
+    title_str = str(title or "Error")[:140]
+    
+    create_mint_log(
+        title=title_str,
+        description=desc,
         log_type="Error",
         user=getattr(frappe, "session", None) and getattr(frappe.session, "user", None)
     )
 
-def log_mint_warning(title, description):
+def log_mint_warning(title=None, description=None, message=None, *args):
+    desc = description if description is not None else (message or "")
+    if args:
+        try:
+            desc = desc % args
+        except Exception:
+            desc = "\n".join(map(str, (desc, *args)))
+            
     frappe.enqueue(
         "mint.apis.mint_log.create_mint_log",
         queue="short",
-        title=title,
-        description=description,
+        title=str(title or "Warning")[:140],
+        description=desc,
         log_type="Warning",
         user=getattr(frappe, "session", None) and getattr(frappe.session, "user", None)
     )
 
-def log_mint_info(title, description):
+def log_mint_info(title=None, description=None, message=None, *args):
+    desc = description if description is not None else (message or "")
+    if args:
+        try:
+            desc = desc % args
+        except Exception:
+            desc = "\n".join(map(str, (desc, *args)))
+            
     frappe.enqueue(
         "mint.apis.mint_log.create_mint_log",
         queue="short",
-        title=title,
-        description=description,
+        title=str(title or "Info")[:140],
+        description=desc,
         log_type="Info",
         user=getattr(frappe, "session", None) and getattr(frappe.session, "user", None)
     )

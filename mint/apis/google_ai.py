@@ -113,7 +113,7 @@ def create_document_processor(processor_type_key: str = "BANK_STATEMENT"):
 			"state": processor.state,
 		}
 	except Exception as e:
-		log_mint_error(f"Error creating document processor {str(e)}")
+		log_mint_error(title="Error creating document processor", description=str(e))
 		frappe.throw(_("Failed to create document processor"))
 
 

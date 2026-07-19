@@ -46,8 +46,7 @@
   {
    "fieldname": "description",
    "fieldtype": "Code",
-   "label": "Description",
-   "options": "JSON"
+   "label": "Description"
   }
  ],
  "grid_page_length": 50,
