@@ -177,7 +177,6 @@ def run_bank_statement_processor(file_path: str):
 	# Extract & return polished transaction list
 	# ------------------------------------------------------------------
 	transactions = extract_transactions_from_document(document)
-	print(transactions)   # ← keep for debugging or remove in production
 	return transactions
 
 
