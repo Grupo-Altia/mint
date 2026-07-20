@@ -1383,10 +1383,10 @@ def reconcile_pending_drafts_nightly() -> None:
     # escapan de los filtros por fecha; no se tocan aquí (requieren decisión humana).
     impossible = find_impossible_date_transactions()
     if impossible:
-        log_mint_warning("Warning", 
-            "Barrido nocturno: %s Bank Transactions con fecha imposible (futura o NULL): %s",
-            len(impossible),
-            ", ".join(t.name for t in impossible[:20]),
+        log_mint_warning(
+            "Warning",
+            "Barrido nocturno: %s Bank Transactions con fecha imposible (futura o NULL): %s"
+            % (len(impossible), ", ".join(t.name for t in impossible[:20])),
         )
 
     log_mint_info("Info", 
