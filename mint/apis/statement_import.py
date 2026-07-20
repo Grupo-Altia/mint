@@ -147,12 +147,12 @@ def process_statement_import_background(final_transactions, bank_account, curren
             # Verificar si existe como retiro: solo es duplicado si el monto también coincide
             if ref and float(transaction.get("withdrawal") or 0) > 0:
                 new_amount = float(transaction.get("withdrawal") or 0)
-                existing = frappe.db.get_value(
+                existing_amounts = frappe.db.get_all(
                     "Bank Transaction",
-                    {"bank_account": bank_account, "reference_number": ref, "withdrawal": [">", 0]},
-                    "withdrawal"
+                    filters={"bank_account": bank_account, "reference_number": ref, "withdrawal": [">", 0]},
+                    pluck="withdrawal"
                 )
-                if existing is not None and float(existing) == new_amount:
+                if existing_amounts and any(abs(float(amt) - new_amount) < 0.005 for amt in existing_amounts):
                     errors += 1
                     continue
 

@@ -1687,20 +1687,24 @@ def reconcile_journal_entry(doc, method=None):
         "unallocated_amount": [">", 0.001],
         "bank_account": bank_account,
         "company": doc.company,
-        "reference_number": ref
     }
     
     candidates = frappe.get_all(
         "Bank Transaction",
         filters=cand_filters,
-        fields=["name", "withdrawal"],
+        fields=["name", "withdrawal", "reference_number"],
         order_by="withdrawal asc"
     )
     
+    rules_to_check = get_bank_rules(bank_account)
+    
     for cand in candidates:
         if abs(flt(cand.withdrawal) - je_amount) < 1.0:
-            _link_withdrawal_to_je(cand.name, doc.name)
-            break
+            raw_ref = str(cand.reference_number or "").strip()
+            match, _ = check_rules_match(rules_to_check, raw_ref, ref)
+            if match or (not rules_to_check and raw_ref == ref):
+                _link_withdrawal_to_je(cand.name, doc.name)
+                break
 
 def reconcile_je_job(bank_transaction_name: str) -> None:
     bt = frappe.db.get_values(
@@ -1722,27 +1726,34 @@ def reconcile_je_job(bank_transaction_name: str) -> None:
     
     jes = frappe.get_all(
         "Journal Entry",
-        filters={"docstatus": 1, "cheque_no": ref, "company": bt.company},
-        pluck="name"
+        filters={"docstatus": 1, "company": bt.company, "cheque_no": ["!=", ""]},
+        fields=["name", "cheque_no"]
     )
     
-    for je_name in jes:
-        je_doc = frappe.get_doc("Journal Entry", je_name)
+    rules_to_check = get_bank_rules(bt.bank_account)
+    
+    for je in jes:
+        je_ref = str(je.cheque_no or "").strip()
+        if not je_ref: continue
         
-        match = False
-        for acc in je_doc.accounts:
-            if acc.account == bank_gl_account and abs(flt(acc.credit) - flt(bt.withdrawal)) < 1.0:
-                match = True
-                break
-                
-        if match:
-            try:
-                _link_withdrawal_to_je(bt.name, je_name)
-                frappe.db.commit()
-                break
-            except Exception:
-                frappe.db.rollback()
-                log_mint_error(f"Error auto-reconciling JE {je_name}", frappe.get_traceback())
+        match, _ = check_rules_match(rules_to_check, ref, je_ref)
+        if match or (not rules_to_check and ref == je_ref):
+            je_doc = frappe.get_doc("Journal Entry", je.name)
+            
+            match_found = False
+            for acc in je_doc.accounts:
+                if acc.account == bank_gl_account and abs(flt(acc.credit) - flt(bt.withdrawal)) < 1.0:
+                    match_found = True
+                    break
+                    
+            if match_found:
+                try:
+                    _link_withdrawal_to_je(bt.name, je.name)
+                    frappe.db.commit()
+                    break
+                except Exception:
+                    frappe.db.rollback()
+                    log_mint_error(f"Error auto-reconciling JE {je.name}", frappe.get_traceback())
 
 def update_expense_journal_entry(doc, method=None):
     """Inyectado al validar un Gasto (Expense). Copia el número de referencia
@@ -1903,4 +1914,78 @@ def _link_mbt_to_bt(bt_name: str, mbt_name: str, side: str) -> None:
     })
     bt.save(ignore_permissions=True)
     frappe.db.commit()
+
+@frappe.whitelist()
+def get_duplicate_bank_transactions():
+    """Busca duplicados exactos (mismo retiro o mismo depósito, y misma referencia)."""
+    duplicates = []
+    from frappe.utils import flt
+    
+    for doctype_type in ["withdrawal", "deposit"]:
+        groups = frappe.db.sql(f"""
+            SELECT TRIM(reference_number) AS ref, bank_account, company, {doctype_type} as amount, COUNT(*) AS cnt
+            FROM `tabBank Transaction`
+            WHERE {doctype_type} > 0 AND docstatus < 2
+              AND reference_number IS NOT NULL AND TRIM(reference_number) != ''
+            GROUP BY TRIM(reference_number), bank_account, company, {doctype_type}
+            HAVING cnt > 1
+        """, as_dict=True)
+        
+        for group in groups:
+            members = frappe.db.sql(f"""
+                SELECT name, allocated_amount, unallocated_amount, status, docstatus, date
+                FROM `tabBank Transaction`
+                WHERE TRIM(reference_number) = %s AND bank_account = %s AND company = %s
+                  AND {doctype_type} = %s AND docstatus < 2
+                ORDER BY allocated_amount DESC, name ASC
+            """, (group.ref, group.bank_account, group.company, group.amount), as_dict=True)
+            
+            if len(members) > 1:
+                # El primero es el que tiene mayor asignación, ese se conserva
+                keep = members[0]
+                for dup in members[1:]:
+                    # Si ambos tienen asignaciones, no sugerimos limpieza automática para evitar romper cosas
+                    if flt(keep.allocated_amount) >= 0.01 and flt(dup.allocated_amount) >= 0.01:
+                        continue
+                    
+                    duplicates.append({
+                        "reference": group.ref,
+                        "date": keep.date,
+                        "amount": group.amount,
+                        "type": "Retiro" if doctype_type == "withdrawal" else "Depósito",
+                        "original_name": keep.name,
+                        "original_status": keep.status,
+                        "duplicate_name": dup.name,
+                        "duplicate_status": dup.status
+                    })
+    
+    return duplicates
+
+@frappe.whitelist()
+def remove_duplicate_bank_transactions(duplicates_json):
+    """Elimina o cancela los duplicados seleccionados."""
+    import json
+    duplicates = json.loads(duplicates_json)
+    processed = 0
+    errors = []
+    
+    for row in duplicates:
+        dup_name = row.get("duplicate_name")
+        if not dup_name: continue
+        
+        try:
+            doc = frappe.get_doc("Bank Transaction", dup_name)
+            if doc.docstatus == 1:
+                doc.flags.ignore_permissions = True
+                doc.cancel()
+            else:
+                frappe.delete_doc("Bank Transaction", dup_name, ignore_permissions=True)
+            processed += 1
+        except Exception as e:
+            errors.append(f"Error procesando {dup_name}: {str(e)}")
+            frappe.db.rollback()
+            
+    frappe.db.commit()
+    return {"processed": processed, "errors": errors}
+
 

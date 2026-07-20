@@ -48,8 +48,10 @@ doctype_js = {
     "Payment Entry" : "public/js/payment_entry.js",
     "Bank Transaction" : "public/js/bank_transaction.js"
 }
-doctype_list_js = {"Payment Entry" : "public/js/payment_entry_list.js"}
-# doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
+doctype_list_js = {
+    "Payment Entry": "public/js/payment_entry_list.js",
+    "Bank Transaction": "public/js/bank_transaction_list.js"
+}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
 # Svg Icons

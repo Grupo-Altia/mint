@@ -70,7 +70,11 @@ def update_conciliaciones_workspace():
     # 2. Update links
     new_links = []
     for l in doc.links:
-        if l.label in ["Registros Bancarios", "Transacciones Bancarias", "Cuentas Bancarias"]:
+        if l.label in [
+            "Registros Bancarios", "Transacciones Bancarias", "Cuentas Bancarias",
+            "Informes de Conciliación", "Estado de Conciliación Bancaria",
+            "Informe de Conciliación Avanzada", "Generador de Resumen (PDF)"
+        ]:
             new_links.append(l)
         elif l.type == "Card Break" and "Documentos" in l.label:
             l.label = "Documentos"
@@ -96,7 +100,7 @@ def update_conciliaciones_workspace():
                     new_blocks.append(b)
                 elif b.get("type") == "card":
                     cname = b["data"].get("card_name")
-                    if cname in ["Herramientas de Conciliación", "Informes de Conciliación"]:
+                    if cname in ["Herramientas de Conciliación"]:
                         continue # Skip these cards
                     new_blocks.append(b)
                 else:
@@ -134,6 +138,26 @@ def update_admin_workspace():
             admin_ws.flags.ignore_permissions = True
             admin_ws.save()
 
+def remove_internal_transfer_option():
+    # Removes "Internal Transfer" option from Payment Entry payment_type field
+    exists = frappe.db.get_value("Property Setter", {"doc_type": "Payment Entry", "field_name": "payment_type", "property": "options"})
+    if exists:
+        ps = frappe.get_doc("Property Setter", exists)
+        if "Internal Transfer" in str(ps.value):
+            ps.value = "Receive\nPay"
+            ps.save(ignore_permissions=True)
+    else:
+        ps = frappe.get_doc({
+            "doctype": "Property Setter",
+            "doc_type": "Payment Entry",
+            "doctype_or_field": "DocField",
+            "field_name": "payment_type",
+            "property": "options",
+            "property_type": "Text",
+            "value": "Receive\nPay"
+        })
+        ps.insert(ignore_permissions=True)
+
 def after_install():
     create_bank_reference_rules()
 
@@ -141,4 +165,5 @@ def after_migrate():
     create_bank_reference_rules()
     update_conciliaciones_workspace()
     update_admin_workspace()
+    remove_internal_transfer_option()
     frappe.db.commit()
