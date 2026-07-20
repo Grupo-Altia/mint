@@ -1683,7 +1683,9 @@ def reconcile_journal_entry(doc, method=None):
         
     cand_filters = {
         "docstatus": 1,
-        "withdrawal": [">", 0],
+        # Rango de monto en SQL (indexado) para no cargar TODOS los retiros sin
+        # conciliar de la cuenta en el path síncrono de submit del asiento/gasto.
+        "withdrawal": ["between", [je_amount - 1, je_amount + 1]],
         "unallocated_amount": [">", 0.001],
         "bank_account": bank_account,
         "company": doc.company,
@@ -1918,6 +1920,7 @@ def _link_mbt_to_bt(bt_name: str, mbt_name: str, side: str) -> None:
 @frappe.whitelist()
 def get_duplicate_bank_transactions():
     """Busca duplicados exactos (mismo retiro o mismo depósito, y misma referencia)."""
+    frappe.has_permission("Bank Transaction", "read", throw=True)
     duplicates = []
     from frappe.utils import flt
     
@@ -1963,29 +1966,51 @@ def get_duplicate_bank_transactions():
 
 @frappe.whitelist()
 def remove_duplicate_bank_transactions(duplicates_json):
-    """Elimina o cancela los duplicados seleccionados."""
+    """Elimina o cancela los duplicados seleccionados.
+
+    Endurecido: exige permiso de borrado sobre Bank Transaction; re-valida cada
+    nombre contra el cálculo del servidor (no confía en la lista del cliente);
+    reconfirma que el registro no tenga asignación antes de cancelarlo; y aísla
+    cada fila en su propio savepoint + commit, para que un fallo no revierta las
+    cancelaciones ya aplicadas ni infle el conteo.
+    """
+    frappe.has_permission("Bank Transaction", "delete", throw=True)
     import json
-    duplicates = json.loads(duplicates_json)
+    requested = json.loads(duplicates_json)
+
+    # No confiar en los nombres del cliente: solo actuar sobre los que el servidor
+    # confirma como duplicados reales en este momento.
+    valid_names = {d.get("duplicate_name") for d in get_duplicate_bank_transactions()}
+
     processed = 0
     errors = []
-    
-    for row in duplicates:
+
+    for row in requested:
         dup_name = row.get("duplicate_name")
-        if not dup_name: continue
-        
+        if not dup_name:
+            continue
+        if dup_name not in valid_names:
+            errors.append(f"{dup_name}: ya no es un duplicado válido; se omite")
+            continue
+
         try:
+            frappe.db.savepoint("dup_row")
             doc = frappe.get_doc("Bank Transaction", dup_name)
+            if flt(doc.allocated_amount) >= 0.01:
+                errors.append(f"{dup_name}: tiene asignación; se omite")
+                frappe.db.rollback(save_point="dup_row")
+                continue
             if doc.docstatus == 1:
                 doc.flags.ignore_permissions = True
                 doc.cancel()
             else:
                 frappe.delete_doc("Bank Transaction", dup_name, ignore_permissions=True)
+            frappe.db.commit()
             processed += 1
         except Exception as e:
+            frappe.db.rollback(save_point="dup_row")
             errors.append(f"Error procesando {dup_name}: {str(e)}")
-            frappe.db.rollback()
-            
-    frappe.db.commit()
+
     return {"processed": processed, "errors": errors}
 
 
