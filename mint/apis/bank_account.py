@@ -10,10 +10,12 @@ def _apply_branch_permissions(filters: dict) -> bool:
         
         has_parent_branch = frappe.get_meta("VE Branch").has_field("parent_ve_branch")
         if has_parent_branch:
-            for b in allowed_branches:
-                parent = frappe.db.get_value("VE Branch", b, "parent_ve_branch")
-                if parent:
-                    extended_branches.add(parent)
+            branches_to_check = list(allowed_branches)
+            while branches_to_check:
+                children = frappe.get_all("VE Branch", filters={"parent_ve_branch": ["in", branches_to_check]}, pluck="name")
+                new_children = [c for c in children if c not in extended_branches]
+                extended_branches.update(new_children)
+                branches_to_check = new_children
                     
         if extended_branches:
             filters["branch_code"] = ["in", list(extended_branches)]

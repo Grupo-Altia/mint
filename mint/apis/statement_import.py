@@ -1,3 +1,4 @@
+from mint.apis.mint_log import log_mint_error, log_mint_warning, log_mint_info
 import frappe
 import re
 from frappe.utils.csvutils import read_csv_content
@@ -124,8 +125,8 @@ def process_statement_import_background(final_transactions, bank_account, curren
             tx_date = transaction.get("date")
             if not tx_date:
                 errors += 1
-                frappe.log_error(
-                    message="Transacción del extracto sin fecha; se omite. Referencia: {0}".format(
+                log_mint_error(
+                    description="Transacción del extracto sin fecha; se omite. Referencia: {0}".format(
                         transaction.get("reference")
                     ),
                     title="Statement Import: transacción sin fecha",
@@ -146,12 +147,12 @@ def process_statement_import_background(final_transactions, bank_account, curren
             # Verificar si existe como retiro: solo es duplicado si el monto también coincide
             if ref and float(transaction.get("withdrawal") or 0) > 0:
                 new_amount = float(transaction.get("withdrawal") or 0)
-                existing = frappe.db.get_value(
+                existing_amounts = frappe.db.get_all(
                     "Bank Transaction",
-                    {"bank_account": bank_account, "reference_number": ref, "withdrawal": [">", 0]},
-                    "withdrawal"
+                    filters={"bank_account": bank_account, "reference_number": ref, "withdrawal": [">", 0]},
+                    pluck="withdrawal"
                 )
-                if existing is not None and float(existing) == new_amount:
+                if existing_amounts and any(abs(float(amt) - new_amount) < 0.005 for amt in existing_amounts):
                     errors += 1
                     continue
 
@@ -176,7 +177,7 @@ def process_statement_import_background(final_transactions, bank_account, curren
             success += 1
         except Exception as e:
             frappe.db.rollback()
-            frappe.log_error(title="Error en importación de transacción bancaria")
+            log_mint_error(title="Error en importación de transacción bancaria", description=frappe.get_traceback())
             frappe.db.commit()
             errors += 1
         finally:
@@ -198,7 +199,7 @@ def process_statement_import_background(final_transactions, bank_account, curren
     raw_balance = data.get("closing_balance")
     safe_closing_balance = raw_balance if (raw_balance is None or abs(raw_balance) <= _MAX_DECIMAL_21_9) else None
     if raw_balance is not None and safe_closing_balance is None:
-        frappe.log_error(
+        log_mint_error(
             f"closing_balance {raw_balance} fuera del rango DECIMAL(21,9) — se omite del log.",
             "Statement Import: closing_balance overflow"
         )

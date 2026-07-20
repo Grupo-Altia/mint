@@ -22,6 +22,7 @@ REGLAS DE FORMATO de referencia por banco (data-driven, sin nombres quemados):
   lossy como "últimos 8".
 """
 from __future__ import annotations
+from mint.apis.mint_log import log_mint_error, log_mint_warning, log_mint_info
 
 import frappe
 import json
@@ -137,7 +138,7 @@ def apply_format_rule(rule_name, reference_number):
             )
         )
     except Exception:
-        frappe.log_error(
+        log_mint_error(
             title="Bank Reference Rule inválida: {0}".format(rule_name),
             message=frappe.get_traceback(),
         )
@@ -525,9 +526,10 @@ def check_rules_match(rules, raw_ref, target_ref):
             for perm in itertools.permutations(rules, r_len):
                 attempts += 1
                 if attempts > MAX_PIPELINE_ATTEMPTS:
-                    frappe.logger("mint.reconciliation").warning(
-                        "check_rules_match: %s reglas; pipelines truncados en %s intentos (ref destino %s)",
-                        len(rules), MAX_PIPELINE_ATTEMPTS, target_ref,
+                    log_mint_warning("Warning", 
+                        "check_rules_match: %s reglas; pipelines truncados en %s intentos (ref destino %s)" % (
+                            len(rules), MAX_PIPELINE_ATTEMPTS, target_ref
+                        )
                     )
                     return False, None
                 p_ref = raw_ref
@@ -970,18 +972,21 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
     # cubrió por completo este cobro, no se enlaza (sería contar el pago dos veces, el
     # patrón ×100 del dossier). No se lanza throw porque este camino corre en background
     # (reconcile_and_approve); solo se registra y se sale sin enlazar.
-    paid = flt(frappe.db.get_value("Payment Entry", payment_entry_name, "base_paid_amount") or 0, 2)
-    if paid > 0:
-        existing = get_pe_allocated_in_other_transactions(
-            payment_entry_name, exclude_bank_transaction=bt.name
-        )
-        if existing >= paid - OVERALLOCATION_TOLERANCE:
-            frappe.logger("mint.reconciliation").warning(
-                "No se enlaza el depósito %s al cobro %s: ya está totalmente asignado "
-                "(%s de %s) desde otro depósito.",
-                bt.name, payment_entry_name, existing, paid,
+    pe_data = frappe.db.get_value("Payment Entry", payment_entry_name, ["base_paid_amount", "payment_type"], as_dict=True)
+    if pe_data and pe_data.payment_type != "Internal Transfer":
+        paid = flt(pe_data.base_paid_amount or 0, 2)
+        if paid > 0:
+            existing = get_pe_allocated_in_other_transactions(
+                payment_entry_name, exclude_bank_transaction=bt.name
             )
-            return
+            if existing >= paid - OVERALLOCATION_TOLERANCE:
+                log_mint_warning("Warning", 
+                    "No se enlaza el depósito %s al cobro %s: ya está totalmente asignado "
+                    "(%s de %s) desde otro depósito." % (
+                        bt.name, payment_entry_name, existing, paid
+                    )
+                )
+                return
 
     bt.add_payment_entries(
         [{"payment_doctype": "Payment Entry", "payment_name": payment_entry_name}]
@@ -1018,11 +1023,30 @@ def _link_deposit_to_payment(bank_transaction_name: str, payment_entry_name: str
 
     # Forzar actualización del estado visual, ya que bt.save actualiza clearance_date
     # silenciosamente por db.set_value sin disparar hooks del Payment Entry.
-    clearance_date, current_status = frappe.db.get_value(
-        "Payment Entry", payment_entry_name, ["clearance_date", "custom_reconciliation_status"]
+    pe_data = frappe.db.get_value(
+        "Payment Entry", payment_entry_name, 
+        ["clearance_date", "custom_reconciliation_status", "payment_type"], 
+        as_dict=True
     )
-    if clearance_date and current_status != RECON_DONE:
-        frappe.db.set_value("Payment Entry", payment_entry_name, "custom_reconciliation_status", RECON_DONE, update_modified=True)
+    if pe_data:
+        if pe_data.payment_type == "Internal Transfer":
+            # Un Internal Transfer se concilia cuando tiene al menos 2 extractos asociados
+            linked_bts = frappe.get_all(
+                "Bank Transaction Payments", 
+                filters={"payment_document": "Payment Entry", "payment_entry": payment_entry_name, "docstatus": 1},
+                pluck="parent"
+            )
+            if len(set(linked_bts)) >= 2:
+                updates = {}
+                if pe_data.custom_reconciliation_status != RECON_DONE:
+                    updates["custom_reconciliation_status"] = RECON_DONE
+                if not pe_data.clearance_date:
+                    updates["clearance_date"] = bt.date
+                if updates:
+                    frappe.db.set_value("Payment Entry", payment_entry_name, updates, update_modified=True)
+        else:
+            if pe_data.clearance_date and pe_data.custom_reconciliation_status != RECON_DONE:
+                frappe.db.set_value("Payment Entry", payment_entry_name, "custom_reconciliation_status", RECON_DONE, update_modified=True)
 
 
 def strip_leading_quote_from_reference(doc, method):
@@ -1236,9 +1260,21 @@ def reconcile_drafts_for_deposit(doc, method=None) -> None:
             reference=ref,
             enqueue_after_commit=True,
         )
+        frappe.enqueue(
+            "mint.apis.reconciliation.reconcile_mint_bank_transfer_from_bank_transaction",
+            queue="short",
+            bank_transaction_name=doc.name,
+            enqueue_after_commit=True,
+        )
     elif flt(doc.withdrawal) > 0:
         frappe.enqueue(
             "mint.apis.reconciliation.reconcile_je_job",
+            queue="short",
+            bank_transaction_name=doc.name,
+            enqueue_after_commit=True,
+        )
+        frappe.enqueue(
+            "mint.apis.reconciliation.reconcile_mint_bank_transfer_from_bank_transaction",
             queue="short",
             bank_transaction_name=doc.name,
             enqueue_after_commit=True,
@@ -1261,7 +1297,7 @@ def _approve_drafts(names) -> int:
                 reconciled += 1
         except Exception:
             frappe.db.rollback()
-            frappe.log_error(
+            log_mint_error(
                 title=_("Error conciliando cobro {0} (auto)").format(name),
                 message=frappe.get_traceback(),
             )
@@ -1329,7 +1365,7 @@ def cancel_exact_duplicate_deposits() -> int:
                 cancelled += 1
             except Exception:
                 frappe.db.rollback()
-                frappe.log_error(
+                log_mint_error(
                     title=_("Error cancelando depósito duplicado {0} (auto)").format(m.name),
                     message=frappe.get_traceback(),
                 )
@@ -1408,13 +1444,13 @@ def reconcile_pending_drafts_nightly() -> None:
     # escapan de los filtros por fecha; no se tocan aquí (requieren decisión humana).
     impossible = find_impossible_date_transactions()
     if impossible:
-        frappe.logger("mint.reconciliation").warning(
-            "Barrido nocturno: %s Bank Transactions con fecha imposible (futura o NULL): %s",
-            len(impossible),
-            ", ".join(t.name for t in impossible[:20]),
+        log_mint_warning(
+            "Warning",
+            "Barrido nocturno: %s Bank Transactions con fecha imposible (futura o NULL): %s"
+            % (len(impossible), ", ".join(t.name for t in impossible[:20])),
         )
 
-    frappe.logger("mint.reconciliation").info(
+    log_mint_info("Info", 
         "Barrido nocturno: %s duplicados exactos cancelados; %s/%s cobros conciliados; "
         "%s con fecha imposible."
         % (deduped, reconciled, len(names), len(impossible))
@@ -1543,12 +1579,17 @@ def _find_extra_matches_by_rule(matches, transaction, original_ref, banks_with_r
     return matches
 
 def _filter_matches(matches, transaction, strict_matching):
-    if not frappe.utils.cint(strict_matching):
-        return matches
-
     filtered_matches = []
     for match in matches:
         m = frappe._dict(match) if isinstance(match, dict) else match
+        
+        match_amount = float(m.get("paid_amount") or m.get("amount") or m.get("allocated_amount") or 0.0)
+        if match_amount <= 0.0:
+            continue
+
+        if not frappe.utils.cint(strict_matching):
+            filtered_matches.append(match)
+            continue
 
         is_exact = False
         if m.get("matched_by_rule"):
@@ -1560,9 +1601,7 @@ def _filter_matches(matches, transaction, strict_matching):
             filtered_matches.append(match)
             continue
 
-        match_amount = float(m.get("paid_amount") or m.get("amount") or m.get("allocated_amount") or 0.0)
         txn_amount = float(transaction.unallocated_amount)
-
         match_date = m.get("posting_date") or m.get("date") or m.get("reference_date")
         txn_date = transaction.date
 
@@ -1705,24 +1744,30 @@ def reconcile_journal_entry(doc, method=None):
         
     cand_filters = {
         "docstatus": 1,
-        "withdrawal": [">", 0],
+        # Rango de monto en SQL (indexado) para no cargar TODOS los retiros sin
+        # conciliar de la cuenta en el path síncrono de submit del asiento/gasto.
+        "withdrawal": ["between", [je_amount - 1, je_amount + 1]],
         "unallocated_amount": [">", 0.001],
         "bank_account": bank_account,
         "company": doc.company,
-        "reference_number": ref
     }
     
     candidates = frappe.get_all(
         "Bank Transaction",
         filters=cand_filters,
-        fields=["name", "withdrawal"],
+        fields=["name", "withdrawal", "reference_number"],
         order_by="withdrawal asc"
     )
     
+    rules_to_check = get_bank_rules(bank_account)
+    
     for cand in candidates:
         if abs(flt(cand.withdrawal) - je_amount) < 1.0:
-            _link_withdrawal_to_je(cand.name, doc.name)
-            break
+            raw_ref = str(cand.reference_number or "").strip()
+            match, _ = check_rules_match(rules_to_check, raw_ref, ref)
+            if match or (not rules_to_check and raw_ref == ref):
+                _link_withdrawal_to_je(cand.name, doc.name)
+                break
 
 def reconcile_je_job(bank_transaction_name: str) -> None:
     bt = frappe.db.get_values(
@@ -1744,27 +1789,34 @@ def reconcile_je_job(bank_transaction_name: str) -> None:
     
     jes = frappe.get_all(
         "Journal Entry",
-        filters={"docstatus": 1, "cheque_no": ref, "company": bt.company},
-        pluck="name"
+        filters={"docstatus": 1, "company": bt.company, "cheque_no": ["!=", ""]},
+        fields=["name", "cheque_no"]
     )
     
-    for je_name in jes:
-        je_doc = frappe.get_doc("Journal Entry", je_name)
+    rules_to_check = get_bank_rules(bt.bank_account)
+    
+    for je in jes:
+        je_ref = str(je.cheque_no or "").strip()
+        if not je_ref: continue
         
-        match = False
-        for acc in je_doc.accounts:
-            if acc.account == bank_gl_account and abs(flt(acc.credit) - flt(bt.withdrawal)) < 1.0:
-                match = True
-                break
-                
-        if match:
-            try:
-                _link_withdrawal_to_je(bt.name, je_name)
-                frappe.db.commit()
-                break
-            except Exception:
-                frappe.db.rollback()
-                frappe.log_error(f"Error auto-reconciling JE {je_name}", frappe.get_traceback())
+        match, _ = check_rules_match(rules_to_check, ref, je_ref)
+        if match or (not rules_to_check and ref == je_ref):
+            je_doc = frappe.get_doc("Journal Entry", je.name)
+            
+            match_found = False
+            for acc in je_doc.accounts:
+                if acc.account == bank_gl_account and abs(flt(acc.credit) - flt(bt.withdrawal)) < 1.0:
+                    match_found = True
+                    break
+                    
+            if match_found:
+                try:
+                    _link_withdrawal_to_je(bt.name, je.name)
+                    frappe.db.commit()
+                    break
+                except Exception:
+                    frappe.db.rollback()
+                    log_mint_error(f"Error auto-reconciling JE {je.name}", frappe.get_traceback())
 
 def update_expense_journal_entry(doc, method=None):
     """Inyectado al validar un Gasto (Expense). Copia el número de referencia
@@ -1779,4 +1831,247 @@ def update_expense_journal_entry(doc, method=None):
         # de Journal Entry pasó antes de que le inyectáramos la referencia.
         je_doc = frappe.get_doc("Journal Entry", doc.journal_entry)
         reconcile_journal_entry(je_doc)
+
+# ════════════════════════════════════════════════════════════════════════════
+# Auto-reconciliation of Mint Bank Transfer
+# ════════════════════════════════════════════════════════════════════════════
+
+def reconcile_bank_transfer_on_submit(doc, method=None):
+    """Cuando se envía una Transferencia Interna, intenta conciliarla."""
+    frappe.enqueue(
+        "mint.apis.reconciliation.reconcile_mint_bank_transfer",
+        queue="short",
+        mbt_name=doc.name,
+        enqueue_after_commit=True,
+    )
+
+def reconcile_mint_bank_transfer(mbt_name: str) -> None:
+    doc = frappe.get_doc("Mint Bank Transfer", mbt_name)
+    if doc.reconciliation_status == "Conciliado":
+        return
+
+    modified = False
+
+    if not doc.source_reconciled:
+        cand_filters = {
+            "docstatus": 1,
+            "withdrawal": [">", 0],
+            "unallocated_amount": [">", 0.001],
+            "bank_account": doc.from_bank_account,
+            "company": doc.company,
+        }
+        candidates = frappe.get_all("Bank Transaction", filters=cand_filters, fields=["name", "withdrawal", "reference_number"])
+        rules_to_check = get_bank_rules(doc.from_bank_account)
+        for cand in candidates:
+            if abs(float(cand.withdrawal) - float(doc.amount)) < 1.0:
+                raw_ref = str(cand.reference_number or "").strip()
+                target_ref = str(doc.reference_number).strip()
+                match, _ = check_rules_match(rules_to_check, raw_ref, target_ref)
+                if match or (not rules_to_check and raw_ref == target_ref):
+                    try:
+                        _link_mbt_to_bt(cand.name, doc.name, "source")
+                        doc.db_set("source_reconciled", 1)
+                        modified = True
+                        break
+                    except Exception as e:
+                        frappe.log_error("Error linking source BT to MBT", str(e))
+    
+    if not doc.destination_reconciled:
+        cand_filters = {
+            "docstatus": 1,
+            "deposit": [">", 0],
+            "unallocated_amount": [">", 0.001],
+            "bank_account": doc.to_bank_account,
+            "company": doc.company,
+        }
+        candidates = frappe.get_all("Bank Transaction", filters=cand_filters, fields=["name", "deposit", "reference_number"])
+        rules_to_check = get_bank_rules(doc.to_bank_account)
+        for cand in candidates:
+            if abs(float(cand.deposit) - float(doc.amount)) < 1.0:
+                raw_ref = str(cand.reference_number or "").strip()
+                target_ref = str(doc.reference_number).strip()
+                match, _ = check_rules_match(rules_to_check, raw_ref, target_ref)
+                if match or (not rules_to_check and raw_ref == target_ref):
+                    try:
+                        _link_mbt_to_bt(cand.name, doc.name, "destination")
+                        doc.db_set("destination_reconciled", 1)
+                        modified = True
+                        break
+                    except Exception as e:
+                        frappe.log_error("Error linking destination BT to MBT", str(e))
+
+    if modified:
+        doc.update_reconciliation_status()
+
+def reconcile_mint_bank_transfer_from_bank_transaction(bank_transaction_name: str) -> None:
+    bt = frappe.db.get_values(
+        "Bank Transaction", 
+        bank_transaction_name, 
+        ["name", "reference_number", "withdrawal", "deposit", "bank_account", "company", "unallocated_amount"], 
+        as_dict=True
+    )
+    if not bt: return
+    bt = bt[0]
+    
+    if float(bt.unallocated_amount) <= 0: return
+    
+    raw_ref = str(bt.reference_number or "").strip()
+    if not raw_ref: return
+
+    rules_to_check = get_bank_rules(bt.bank_account)
+
+    is_withdrawal = float(bt.withdrawal) > 0
+    is_deposit = float(bt.deposit) > 0
+
+    if is_withdrawal:
+        mbts = frappe.get_all(
+            "Mint Bank Transfer",
+            filters={"docstatus": 1, "source_reconciled": 0, "from_bank_account": bt.bank_account, "company": bt.company},
+            fields=["name", "reference_number", "amount"]
+        )
+        for mbt in mbts:
+            if abs(float(mbt.amount) - float(bt.withdrawal)) < 1.0:
+                target_ref = str(mbt.reference_number).strip()
+                match, _ = check_rules_match(rules_to_check, raw_ref, target_ref)
+                if match or (not rules_to_check and raw_ref == target_ref):
+                    try:
+                        _link_mbt_to_bt(bt.name, mbt.name, "source")
+                        frappe.db.set_value("Mint Bank Transfer", mbt.name, "source_reconciled", 1)
+                        frappe.get_doc("Mint Bank Transfer", mbt.name).update_reconciliation_status()
+                        break
+                    except Exception as e:
+                        frappe.log_error("Error linking source BT to MBT", str(e))
+
+    if is_deposit:
+        mbts = frappe.get_all(
+            "Mint Bank Transfer",
+            filters={"docstatus": 1, "destination_reconciled": 0, "to_bank_account": bt.bank_account, "company": bt.company},
+            fields=["name", "reference_number", "amount"]
+        )
+        for mbt in mbts:
+            if abs(float(mbt.amount) - float(bt.deposit)) < 1.0:
+                target_ref = str(mbt.reference_number).strip()
+                match, _ = check_rules_match(rules_to_check, raw_ref, target_ref)
+                if match or (not rules_to_check and raw_ref == target_ref):
+                    try:
+                        _link_mbt_to_bt(bt.name, mbt.name, "destination")
+                        frappe.db.set_value("Mint Bank Transfer", mbt.name, "destination_reconciled", 1)
+                        frappe.get_doc("Mint Bank Transfer", mbt.name).update_reconciliation_status()
+                        break
+                    except Exception as e:
+                        frappe.log_error("Error linking destination BT to MBT", str(e))
+
+def _link_mbt_to_bt(bt_name: str, mbt_name: str, side: str) -> None:
+    bt = frappe.get_doc("Bank Transaction", bt_name)
+    already = any(
+        row.payment_entry == mbt_name and row.payment_document == "Mint Bank Transfer"
+        for row in bt.payment_entries
+    )
+    if already or float(bt.unallocated_amount) <= 0:
+        return
+    
+    bt.append("payment_entries", {
+        "payment_document": "Mint Bank Transfer",
+        "payment_entry": mbt_name,
+        "allocated_amount": bt.unallocated_amount
+    })
+    bt.save(ignore_permissions=True)
+    frappe.db.commit()
+
+@frappe.whitelist()
+def get_duplicate_bank_transactions():
+    """Busca duplicados exactos (mismo retiro o mismo depósito, y misma referencia)."""
+    frappe.has_permission("Bank Transaction", "read", throw=True)
+    duplicates = []
+    from frappe.utils import flt
+    
+    for doctype_type in ["withdrawal", "deposit"]:
+        groups = frappe.db.sql(f"""
+            SELECT TRIM(reference_number) AS ref, bank_account, company, {doctype_type} as amount, COUNT(*) AS cnt
+            FROM `tabBank Transaction`
+            WHERE {doctype_type} > 0 AND docstatus < 2
+              AND reference_number IS NOT NULL AND TRIM(reference_number) != ''
+            GROUP BY TRIM(reference_number), bank_account, company, {doctype_type}
+            HAVING cnt > 1
+        """, as_dict=True)
+        
+        for group in groups:
+            members = frappe.db.sql(f"""
+                SELECT name, allocated_amount, unallocated_amount, status, docstatus, date
+                FROM `tabBank Transaction`
+                WHERE TRIM(reference_number) = %s AND bank_account = %s AND company = %s
+                  AND {doctype_type} = %s AND docstatus < 2
+                ORDER BY allocated_amount DESC, name ASC
+            """, (group.ref, group.bank_account, group.company, group.amount), as_dict=True)
+            
+            if len(members) > 1:
+                # El primero es el que tiene mayor asignación, ese se conserva
+                keep = members[0]
+                for dup in members[1:]:
+                    # Si ambos tienen asignaciones, no sugerimos limpieza automática para evitar romper cosas
+                    if flt(keep.allocated_amount) >= 0.01 and flt(dup.allocated_amount) >= 0.01:
+                        continue
+                    
+                    duplicates.append({
+                        "reference": group.ref,
+                        "date": keep.date,
+                        "amount": group.amount,
+                        "type": "Retiro" if doctype_type == "withdrawal" else "Depósito",
+                        "original_name": keep.name,
+                        "original_status": keep.status,
+                        "duplicate_name": dup.name,
+                        "duplicate_status": dup.status
+                    })
+    
+    return duplicates
+
+@frappe.whitelist()
+def remove_duplicate_bank_transactions(duplicates_json):
+    """Elimina o cancela los duplicados seleccionados.
+
+    Endurecido: exige permiso de borrado sobre Bank Transaction; re-valida cada
+    nombre contra el cálculo del servidor (no confía en la lista del cliente);
+    reconfirma que el registro no tenga asignación antes de cancelarlo; y aísla
+    cada fila en su propio savepoint + commit, para que un fallo no revierta las
+    cancelaciones ya aplicadas ni infle el conteo.
+    """
+    frappe.has_permission("Bank Transaction", "delete", throw=True)
+    import json
+    requested = json.loads(duplicates_json)
+
+    # No confiar en los nombres del cliente: solo actuar sobre los que el servidor
+    # confirma como duplicados reales en este momento.
+    valid_names = {d.get("duplicate_name") for d in get_duplicate_bank_transactions()}
+
+    processed = 0
+    errors = []
+
+    for row in requested:
+        dup_name = row.get("duplicate_name")
+        if not dup_name:
+            continue
+        if dup_name not in valid_names:
+            errors.append(f"{dup_name}: ya no es un duplicado válido; se omite")
+            continue
+
+        try:
+            frappe.db.savepoint("dup_row")
+            doc = frappe.get_doc("Bank Transaction", dup_name)
+            if flt(doc.allocated_amount) >= 0.01:
+                errors.append(f"{dup_name}: tiene asignación; se omite")
+                frappe.db.rollback(save_point="dup_row")
+                continue
+            if doc.docstatus == 1:
+                doc.flags.ignore_permissions = True
+                doc.cancel()
+            else:
+                frappe.delete_doc("Bank Transaction", dup_name, ignore_permissions=True)
+            frappe.db.commit()
+            processed += 1
+        except Exception as e:
+            frappe.db.rollback(save_point="dup_row")
+            errors.append(f"Error procesando {dup_name}: {str(e)}")
+
+    return {"processed": processed, "errors": errors}
+
 

@@ -28,6 +28,13 @@ def get_columns():
             'width': 250
         },
         {
+            'fieldname': 'bank_account',
+            'label': _('Cuenta Bancaria'),
+            'fieldtype': 'Link',
+            'options': 'Bank Account',
+            'width': 120
+        },
+        {
             'fieldname': 'reference',
             'label': _('Referencia'),
             'fieldtype': 'Data',
@@ -108,10 +115,19 @@ def get_columns():
 def get_data_and_summary(filters):
     """Obtiene los datos del reporte y calcula el resumen"""
     # Validar filtros
-    if not filters.get('company'):
-        frappe.throw(_('La Compañía es obligatoria'))
-    if not filters.get('account'):
-        frappe.throw(_('La Cuenta Bancaria es obligatoria'))
+    if not filters.get('account') and not filters.get('branch'):
+        frappe.throw(_('La Cuenta Bancaria o la Sucursal es obligatoria'))
+        
+    accounts = []
+    if filters.get('account'):
+        accounts.append(filters.get('account'))
+    else:
+        accounts = frappe.db.get_all('Bank Account', filters={'branch_code': filters.get('branch'), 'company': filters.get('company')}, pluck='name')
+        
+    if not accounts:
+        frappe.throw(_('No se encontraron cuentas bancarias asociadas a la sucursal seleccionada.'))
+        
+    filters['accounts'] = tuple(accounts)
     
     # 1. Obtener transacciones bancarias
     # Siempre obtenemos todas las transacciones del periodo para calcular bien el resumen
@@ -128,17 +144,21 @@ def get_data_and_summary(filters):
     bt_names = [bt.name for bt in bank_transactions]
     
     if bt_names:
-        bt_payments = frappe.db.sql("""
-            SELECT 
-                parent,
-                payment_document,
-                payment_entry,
-                allocated_amount,
-                clearance_date
-            FROM `tabBank Transaction Payments`
-            WHERE parent IN %s
-            ORDER BY parent, idx ASC
-        """, (tuple(bt_names),), as_dict=True)
+        bt_payments = []
+        chunk_size = 500
+        for i in range(0, len(bt_names), chunk_size):
+            chunk = bt_names[i:i + chunk_size]
+            bt_payments.extend(frappe.db.sql("""
+                SELECT 
+                    parent,
+                    payment_document,
+                    payment_entry,
+                    allocated_amount,
+                    clearance_date
+                FROM `tabBank Transaction Payments`
+                WHERE parent IN %s
+                ORDER BY parent, idx ASC
+            """, (tuple(chunk),), as_dict=True))
         
         doc_names_by_type = {}
         for p in bt_payments:
@@ -149,14 +169,16 @@ def get_data_and_summary(filters):
         for doctype, names in doc_names_by_type.items():
             if not names: continue
             meta = frappe.get_meta(doctype)
-            fields = ['name']
-            if meta.has_field('party'): fields.append('party')
-            if meta.has_field('clearance_date'): fields.append('clearance_date')
-            if meta.has_field('custom_reconciliation_status'): fields.append('custom_reconciliation_status')
-            
-            docs = frappe.db.get_all(doctype, filters={'name': ('in', names)}, fields=fields)
-            for d in docs:
-                doc_data_cache[f"{doctype}-{d.name}"] = d
+            for name in set(names):
+                doc_dict = frappe._dict({'name': name})
+                if meta.has_field('party'):
+                    doc_dict.party = frappe.get_cached_value(doctype, name, 'party')
+                if meta.has_field('clearance_date'):
+                    doc_dict.clearance_date = frappe.get_cached_value(doctype, name, 'clearance_date')
+                if meta.has_field('custom_reconciliation_status'):
+                    doc_dict.custom_reconciliation_status = frappe.get_cached_value(doctype, name, 'custom_reconciliation_status')
+                
+                doc_data_cache[f"{doctype}-{name}"] = doc_dict
 
     # 4. Procesar y clasificar cada transacción
     full_data = []
@@ -169,6 +191,7 @@ def get_data_and_summary(filters):
         row = {
             'date': voucher.get('posting_date'),
             'description': voucher.get('name'),
+            'bank_account': voucher.get('bank_account'),
             'reference': '',
             'transaction_type': voucher.get('doctype'),
             'deposit': voucher.get('paid_amount') if voucher.get('payment_type') == 'Receive' else 0,
@@ -203,7 +226,7 @@ def get_data_and_summary(filters):
 def get_bank_transactions(filters):
     """Obtiene Bank Transactions del período filtrado"""
     conditions = [
-        "bt.bank_account = %(account)s",
+        "bt.bank_account IN %(accounts)s",
         "bt.date BETWEEN %(from_date)s AND %(to_date)s"
     ]
     
@@ -240,8 +263,12 @@ def get_bank_transactions(filters):
 
 def get_vouchers_without_clearance(filters):
     """Obtiene vouchers (Payment Entry, Journal Entry) sin fecha de liquidación"""
+    branch_condition_pe = ""
+    if filters.get('branch'):
+        branch_condition_pe = " AND pe.branch = %(branch)s"
+
     # Payment Entries sin clearance_date
-    pe_query = """
+    pe_query = f"""
         SELECT 
             pe.name,
             pe.posting_date,
@@ -250,13 +277,15 @@ def get_vouchers_without_clearance(filters):
             IF(pe.payment_type='Receive', pe.paid_to_account_currency, pe.paid_from_account_currency) as currency,
             pe.party,
             pe.party_type,
+            pe.bank_account,
             'Payment Entry' as doctype
         FROM `tabPayment Entry` pe
-        WHERE pe.bank_account = %(account)s
+        WHERE pe.bank_account IN %(accounts)s
             AND pe.docstatus = 1
             AND (pe.clearance_date IS NULL OR pe.clearance_date = '')
             AND pe.posting_date BETWEEN %(from_date)s AND %(to_date)s
             AND pe.paid_amount > 0
+            {branch_condition_pe}
     """
     
     # Journal Entries sin clearance_date (con cuenta bancaria)
@@ -269,11 +298,12 @@ def get_vouchers_without_clearance(filters):
             je.total_amount_currency as currency,
             '' as party,
             '' as party_type,
+            jea.bank_account,
             'Journal Entry' as doctype
         FROM `tabJournal Entry` je
         INNER JOIN `tabJournal Entry Account` jea ON jea.parent = je.name
         WHERE je.docstatus = 1
-            AND jea.bank_account = %(account)s
+            AND jea.bank_account IN %(accounts)s
             AND (je.clearance_date IS NULL OR je.clearance_date = '')
             AND je.posting_date BETWEEN %(from_date)s AND %(to_date)s
             AND je.total_amount > 0
@@ -312,6 +342,7 @@ def process_bank_transaction(bt, filters, payments_dict=None, doc_data_cache=Non
     row = {
         'date': bt.date,
         'description': bt.description,
+        'bank_account': bt.bank_account,
         'reference': bt.reference,
         'transaction_type': tipo,
         'deposit': bt.deposit,
@@ -363,30 +394,34 @@ def process_bank_transaction(bt, filters, payments_dict=None, doc_data_cache=Non
             if bt.deposit > 0:
                 row['classification'] = 'Depósito en Tránsito'
             elif bt.withdrawal > 0:
-                row['classification'] = 'Cheque en Circulación'
+                row['classification'] = 'Pago por Conciliar'
         else:
             row['classification'] = 'Pendiente de Clasificar'
     
     return row
 
-def get_mint_bank_balance(bank_account, to_date):
-    """Obtiene el saldo ingresado en el estado de cuenta de Mint"""
-    query = """
-        SELECT balance 
-        FROM `tabMint Bank Statement Balance`
-        WHERE bank_account = %(bank_account)s
-          AND date <= %(to_date)s
-        ORDER BY date DESC
-        LIMIT 1
-    """
-    result = frappe.db.sql(query, {'bank_account': bank_account, 'to_date': to_date}, as_dict=True)
-    return result[0].balance if result else 0
+def get_mint_bank_balance(accounts, to_date):
+    """Obtiene el saldo ingresado en el estado de cuenta de Mint sumado de todas las cuentas"""
+    total = 0
+    for acc in accounts:
+        query = """
+            SELECT balance 
+            FROM `tabMint Bank Statement Balance`
+            WHERE bank_account = %(bank_account)s
+              AND date <= %(to_date)s
+            ORDER BY date DESC
+            LIMIT 1
+        """
+        result = frappe.db.sql(query, {'bank_account': acc, 'to_date': to_date}, as_dict=True)
+        if result:
+            total += result[0].balance
+    return total
 
 def get_report_summary(data, filters):
     """Calcula el resumen ejecutivo para mostrar en la parte superior"""
     # Inicializar acumuladores
     deposits_in_transit = 0
-    cheques_in_circulation = 0
+    pagos_por_conciliar = 0
     abonos_no_registrados = 0
     cargos_bancarios = 0
     
@@ -394,21 +429,21 @@ def get_report_summary(data, filters):
         classification = row.get('classification', '')
         if classification == 'Depósito en Tránsito':
             deposits_in_transit += row.get('deposit', 0)
-        elif classification == 'Cheque en Circulación':
-            cheques_in_circulation += row.get('withdrawal', 0)
+        elif classification == 'Pago por Conciliar':
+            pagos_por_conciliar += row.get('withdrawal', 0)
         elif classification == 'Abono no Registrado':
             abonos_no_registrados += row.get('deposit', 0)
         elif classification == 'Cargo Bancario':
             cargos_bancarios += row.get('withdrawal', 0)
     
     # Obtener saldo según el banco ingresado en Mint
-    bank_balance = get_mint_bank_balance(filters.get('account'), filters.get('to_date'))
+    bank_balance = get_mint_bank_balance(filters.get('accounts'), filters.get('to_date'))
     
     # Obtener saldo contable de la cuenta
     account_balance = get_account_balance(filters)
     
     # Calcular saldos ajustados
-    adjusted_bank_balance = bank_balance + deposits_in_transit - cheques_in_circulation
+    adjusted_bank_balance = bank_balance + deposits_in_transit - pagos_por_conciliar
     adjusted_books_balance = account_balance + abonos_no_registrados - cargos_bancarios
     difference = adjusted_bank_balance - adjusted_books_balance
     
@@ -424,8 +459,8 @@ def get_report_summary(data, filters):
             'datatype': 'Currency'
         },
         {
-            'label': _('Cheques en Circulación'),
-            'value': cheques_in_circulation,
+            'label': _('Pagos por Conciliar'),
+            'value': pagos_por_conciliar,
             'datatype': 'Currency'
         },
         {
@@ -466,20 +501,27 @@ def get_report_summary(data, filters):
     ]
 
 def get_account_balance(filters):
-    """Obtiene el saldo de la cuenta bancaria en el mayor contable"""
-    # Obtain GL Account linked to Bank Account
-    gl_account = frappe.db.get_value('Bank Account', filters.get('account'), 'account')
+    """Obtiene el saldo de las cuentas bancarias en el mayor contable"""
+    accounts = filters.get('accounts')
+    if not accounts:
+        if filters.get('account'):
+            accounts = (filters.get('account'),)
+        else:
+            return 0
+            
+    gl_accounts = frappe.db.sql("SELECT account FROM `tabBank Account` WHERE name IN %s", (accounts,), pluck='account')
+    gl_accounts = [a for a in gl_accounts if a]
     
-    if not gl_account:
+    if not gl_accounts:
         return 0
         
     filters_copy = filters.copy()
-    filters_copy['gl_account'] = gl_account
+    filters_copy['gl_accounts'] = tuple(gl_accounts)
     
     query = """
         SELECT SUM(debit) - SUM(credit) as balance
         FROM `tabGL Entry`
-        WHERE account = %(gl_account)s
+        WHERE account IN %(gl_accounts)s
             AND company = %(company)s
             AND posting_date <= %(to_date)s
             AND is_cancelled = 0

@@ -33,6 +33,18 @@ class MintBankTransfer(Document):
 
 	def before_submit(self):
 		self.status = "Submitted"
+		self.reconciliation_status = "No Conciliado"
+		self.source_reconciled = 0
+		self.destination_reconciled = 0
+
+	def update_reconciliation_status(self):
+		if self.source_reconciled and self.destination_reconciled:
+			self.reconciliation_status = "Conciliado"
+		elif self.source_reconciled or self.destination_reconciled:
+			self.reconciliation_status = "Parcialmente Conciliado"
+		else:
+			self.reconciliation_status = "No Conciliado"
+		self.db_update()
 
 	def on_submit(self):
 		self.make_gl_entries()

@@ -12,18 +12,34 @@ frappe.query_reports["Advanced Bank Reconciliation"] = {
             "default": frappe.defaults.get_user_default("Company")
         },
         {
+            "fieldname":"branch",
+            "label": __("Sucursal"),
+            "fieldtype": "Link",
+            "options": "VE Branch",
+            "reqd": 0,
+            "get_query": function() {
+                var company = frappe.query_report.get_filter_value('company');
+                return {
+                    "filters": {
+                        "company": company
+                    }
+                };
+            }
+        },
+        {
             "fieldname":"account",
             "label": __("Cuenta Bancaria"),
             "fieldtype": "Link",
             "options": "Bank Account",
-            "reqd": 1,
+            "reqd": 0,
             "get_query": function() {
                 var company = frappe.query_report.get_filter_value('company');
-                return {
-                    "filters": [
-                        ['Bank Account', 'company', '=', company]
-                    ]
-                };
+                var branch = frappe.query_report.get_filter_value('branch');
+                var filters = { 'company': company };
+                if (branch) {
+                    filters['branch_code'] = branch;
+                }
+                return { "filters": filters };
             }
         },
         {
@@ -54,7 +70,7 @@ frappe.query_reports["Advanced Bank Reconciliation"] = {
         
         // Resaltar clasificaciones específicas
         if (column.fieldname == "classification") {
-            if (value === "Depósito en Tránsito" || value === "Cheque en Circulación") {
+            if (value === "Depósito en Tránsito" || value === "Pago por Conciliar") {
                 value = `<span style="color: #ffa00a; font-weight: bold;">${value}</span>`;
             } else if (value === "Abono no Registrado" || value === "Cargo Bancario") {
                 value = `<span style="color: #d63031; font-weight: bold;">${value}</span>`;
