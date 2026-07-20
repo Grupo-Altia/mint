@@ -22,6 +22,7 @@ interface MintBankTransfer {
     reference_number: string
     amount: number
     status: string
+    reconciliation_status: string
     description: string
     docstatus: number
 }
@@ -44,7 +45,7 @@ const BankTransferList = () => {
         fields: [
             "name", "date", "company", "from_bank_account",
             "to_bank_account", "reference_number", "amount",
-            "status", "description", "docstatus"
+            "status", "reconciliation_status", "description", "docstatus"
         ],
         filters: companyID ? [["company", "=", companyID]] : [],
         orFilters: bankAccount ? [
@@ -71,7 +72,8 @@ const BankTransferList = () => {
             row.from_bank_account?.toLowerCase().includes(searchLower) ||
             row.to_bank_account?.toLowerCase().includes(searchLower) ||
             row.status?.toLowerCase().includes(searchLower) ||
-            (STATUS_LABELS[row.status] || row.status).toLowerCase().includes(searchLower)
+            (STATUS_LABELS[row.status] || row.status).toLowerCase().includes(searchLower) ||
+            row.reconciliation_status?.toLowerCase().includes(searchLower)
         );
     });
 
@@ -136,13 +138,23 @@ const BankTransferList = () => {
                                 <TableCell>{row.reference_number}</TableCell>
                                 <TableCell className="text-right">{formatCurrency(row.amount)}</TableCell>
                                 <TableCell>
-                                    <Badge variant={
-                                        row.status === "Submitted" ? "default" :
-                                        row.status === "Cancelled" ? "destructive" :
-                                        "outline"
-                                    }>
-                                        {STATUS_LABELS[row.status] || row.status}
-                                    </Badge>
+                                    {row.status === "Submitted" ? (
+                                        <Badge variant={
+                                            row.reconciliation_status === "Conciliado" ? "default" :
+                                            row.reconciliation_status === "Parcialmente Conciliado" ? "secondary" :
+                                            "outline"
+                                        } className={
+                                            row.reconciliation_status === "Conciliado" ? "bg-emerald-500 hover:bg-emerald-600" :
+                                            row.reconciliation_status === "Parcialmente Conciliado" ? "bg-yellow-500 hover:bg-yellow-600 text-white" :
+                                            ""
+                                        }>
+                                            {row.reconciliation_status || "No Conciliado"}
+                                        </Badge>
+                                    ) : (
+                                        <Badge variant={row.status === "Cancelled" ? "destructive" : "outline"}>
+                                            {STATUS_LABELS[row.status] || row.status}
+                                        </Badge>
+                                    )}
                                 </TableCell>
                                 <TableCell>
                                     <Button variant="ghost" size="icon" onClick={() => openTransfer(row.name)}>

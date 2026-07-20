@@ -1199,9 +1199,21 @@ def reconcile_drafts_for_deposit(doc, method=None) -> None:
             reference=ref,
             enqueue_after_commit=True,
         )
+        frappe.enqueue(
+            "mint.apis.reconciliation.reconcile_mint_bank_transfer_from_bank_transaction",
+            queue="short",
+            bank_transaction_name=doc.name,
+            enqueue_after_commit=True,
+        )
     elif flt(doc.withdrawal) > 0:
         frappe.enqueue(
             "mint.apis.reconciliation.reconcile_je_job",
+            queue="short",
+            bank_transaction_name=doc.name,
+            enqueue_after_commit=True,
+        )
+        frappe.enqueue(
+            "mint.apis.reconciliation.reconcile_mint_bank_transfer_from_bank_transaction",
             queue="short",
             bank_transaction_name=doc.name,
             enqueue_after_commit=True,
@@ -1745,4 +1757,150 @@ def update_expense_journal_entry(doc, method=None):
         # de Journal Entry pasó antes de que le inyectáramos la referencia.
         je_doc = frappe.get_doc("Journal Entry", doc.journal_entry)
         reconcile_journal_entry(je_doc)
+
+# ════════════════════════════════════════════════════════════════════════════
+# Auto-reconciliation of Mint Bank Transfer
+# ════════════════════════════════════════════════════════════════════════════
+
+def reconcile_bank_transfer_on_submit(doc, method=None):
+    """Cuando se envía una Transferencia Interna, intenta conciliarla."""
+    frappe.enqueue(
+        "mint.apis.reconciliation.reconcile_mint_bank_transfer",
+        queue="short",
+        mbt_name=doc.name,
+        enqueue_after_commit=True,
+    )
+
+def reconcile_mint_bank_transfer(mbt_name: str) -> None:
+    doc = frappe.get_doc("Mint Bank Transfer", mbt_name)
+    if doc.reconciliation_status == "Conciliado":
+        return
+
+    modified = False
+
+    if not doc.source_reconciled:
+        cand_filters = {
+            "docstatus": 1,
+            "withdrawal": [">", 0],
+            "unallocated_amount": [">", 0.001],
+            "bank_account": doc.from_bank_account,
+            "company": doc.company,
+        }
+        candidates = frappe.get_all("Bank Transaction", filters=cand_filters, fields=["name", "withdrawal", "reference_number"])
+        rules_to_check = get_bank_rules(doc.from_bank_account)
+        for cand in candidates:
+            if abs(float(cand.withdrawal) - float(doc.amount)) < 1.0:
+                raw_ref = str(cand.reference_number or "").strip()
+                target_ref = str(doc.reference_number).strip()
+                match, _ = check_rules_match(rules_to_check, raw_ref, target_ref)
+                if match or (not rules_to_check and raw_ref == target_ref):
+                    try:
+                        _link_mbt_to_bt(cand.name, doc.name, "source")
+                        doc.db_set("source_reconciled", 1)
+                        modified = True
+                        break
+                    except Exception as e:
+                        frappe.log_error("Error linking source BT to MBT", str(e))
+    
+    if not doc.destination_reconciled:
+        cand_filters = {
+            "docstatus": 1,
+            "deposit": [">", 0],
+            "unallocated_amount": [">", 0.001],
+            "bank_account": doc.to_bank_account,
+            "company": doc.company,
+        }
+        candidates = frappe.get_all("Bank Transaction", filters=cand_filters, fields=["name", "deposit", "reference_number"])
+        rules_to_check = get_bank_rules(doc.to_bank_account)
+        for cand in candidates:
+            if abs(float(cand.deposit) - float(doc.amount)) < 1.0:
+                raw_ref = str(cand.reference_number or "").strip()
+                target_ref = str(doc.reference_number).strip()
+                match, _ = check_rules_match(rules_to_check, raw_ref, target_ref)
+                if match or (not rules_to_check and raw_ref == target_ref):
+                    try:
+                        _link_mbt_to_bt(cand.name, doc.name, "destination")
+                        doc.db_set("destination_reconciled", 1)
+                        modified = True
+                        break
+                    except Exception as e:
+                        frappe.log_error("Error linking destination BT to MBT", str(e))
+
+    if modified:
+        doc.update_reconciliation_status()
+
+def reconcile_mint_bank_transfer_from_bank_transaction(bank_transaction_name: str) -> None:
+    bt = frappe.db.get_values(
+        "Bank Transaction", 
+        bank_transaction_name, 
+        ["name", "reference_number", "withdrawal", "deposit", "bank_account", "company", "unallocated_amount"], 
+        as_dict=True
+    )
+    if not bt: return
+    bt = bt[0]
+    
+    if float(bt.unallocated_amount) <= 0: return
+    
+    raw_ref = str(bt.reference_number or "").strip()
+    if not raw_ref: return
+
+    rules_to_check = get_bank_rules(bt.bank_account)
+
+    is_withdrawal = float(bt.withdrawal) > 0
+    is_deposit = float(bt.deposit) > 0
+
+    if is_withdrawal:
+        mbts = frappe.get_all(
+            "Mint Bank Transfer",
+            filters={"docstatus": 1, "source_reconciled": 0, "from_bank_account": bt.bank_account, "company": bt.company},
+            fields=["name", "reference_number", "amount"]
+        )
+        for mbt in mbts:
+            if abs(float(mbt.amount) - float(bt.withdrawal)) < 1.0:
+                target_ref = str(mbt.reference_number).strip()
+                match, _ = check_rules_match(rules_to_check, raw_ref, target_ref)
+                if match or (not rules_to_check and raw_ref == target_ref):
+                    try:
+                        _link_mbt_to_bt(bt.name, mbt.name, "source")
+                        frappe.db.set_value("Mint Bank Transfer", mbt.name, "source_reconciled", 1)
+                        frappe.get_doc("Mint Bank Transfer", mbt.name).update_reconciliation_status()
+                        break
+                    except Exception as e:
+                        frappe.log_error("Error linking source BT to MBT", str(e))
+
+    if is_deposit:
+        mbts = frappe.get_all(
+            "Mint Bank Transfer",
+            filters={"docstatus": 1, "destination_reconciled": 0, "to_bank_account": bt.bank_account, "company": bt.company},
+            fields=["name", "reference_number", "amount"]
+        )
+        for mbt in mbts:
+            if abs(float(mbt.amount) - float(bt.deposit)) < 1.0:
+                target_ref = str(mbt.reference_number).strip()
+                match, _ = check_rules_match(rules_to_check, raw_ref, target_ref)
+                if match or (not rules_to_check and raw_ref == target_ref):
+                    try:
+                        _link_mbt_to_bt(bt.name, mbt.name, "destination")
+                        frappe.db.set_value("Mint Bank Transfer", mbt.name, "destination_reconciled", 1)
+                        frappe.get_doc("Mint Bank Transfer", mbt.name).update_reconciliation_status()
+                        break
+                    except Exception as e:
+                        frappe.log_error("Error linking destination BT to MBT", str(e))
+
+def _link_mbt_to_bt(bt_name: str, mbt_name: str, side: str) -> None:
+    bt = frappe.get_doc("Bank Transaction", bt_name)
+    already = any(
+        row.payment_entry == mbt_name and row.payment_document == "Mint Bank Transfer"
+        for row in bt.payment_entries
+    )
+    if already or float(bt.unallocated_amount) <= 0:
+        return
+    
+    bt.append("payment_entries", {
+        "payment_document": "Mint Bank Transfer",
+        "payment_entry": mbt_name,
+        "allocated_amount": bt.unallocated_amount
+    })
+    bt.save(ignore_permissions=True)
+    frappe.db.commit()
 

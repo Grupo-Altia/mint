@@ -166,6 +166,9 @@ doc_events = {
     "Expense": {
         "on_submit": "mint.apis.reconciliation.update_expense_journal_entry"
     },
+    "Mint Bank Transfer": {
+        "on_submit": "mint.apis.reconciliation.reconcile_bank_transfer_on_submit"
+    },
     # NOTA: modify_venezuela_reference (before_insert) queda INACTIVO a propósito
     # (decisión pendiente de revisión — ver TODO de integración mint↔l10n_ve).
 }
