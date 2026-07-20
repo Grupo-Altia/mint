@@ -99,5 +99,59 @@ frappe.query_reports["Advanced Bank Reconciliation"] = {
         report.page.add_inner_button(__("Descargar Excel / CSV"), function() {
             report.export_report();
         }, __("Exportar"));
+        
+        // --- HoverCard estilo Mint Shadcn UI ---
+        let hoverCard = null;
+
+        $(document).on('mouseenter', '.mint-info-icon', function(e) {
+            let $el = $(this);
+            let title = $el.attr('data-title');
+            let text = $el.attr('data-text');
+
+            if ($('.mint-hover-card').length) {
+                $('.mint-hover-card').remove();
+            }
+
+            hoverCard = $(`
+                <div class="mint-hover-card" style="
+                    position: absolute;
+                    background: white;
+                    border: 1px solid #e2e8f0;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+                    border-radius: 8px;
+                    padding: 16px;
+                    width: 380px;
+                    z-index: 10000;
+                    text-align: left;
+                    color: #0f172a;
+                    font-family: inherit;
+                    opacity: 0;
+                    transition: opacity 0.15s ease;
+                ">
+                    <h4 style="margin: 0 0 8px 0; font-size: 15px; font-weight: 600; color: #0f172a;">${title}</h4>
+                    <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #334155;">${text}</p>
+                </div>
+            `).appendTo('body');
+
+            let offset = $el.offset();
+            // Posicionar justo a la derecha del icono
+            hoverCard.css({
+                top: offset.top - 10,
+                left: offset.left + 25
+            });
+
+            // Trigger reflow para iniciar transición
+            hoverCard[0].offsetHeight;
+            hoverCard.css('opacity', '1');
+        });
+
+        $(document).on('mouseleave', '.mint-info-icon', function(e) {
+            if (hoverCard) {
+                hoverCard.css('opacity', '0');
+                setTimeout(() => {
+                    $('.mint-hover-card').remove();
+                }, 150);
+            }
+        });
     }
 };
