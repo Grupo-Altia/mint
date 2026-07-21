@@ -54,7 +54,22 @@ def get_statement_details(file_url: str, bank_account: str):
         # No headers found. Synthesize a header row and auto-detect columns from the first data row (header_index + 1)
         header_index = 0
         header_row = ["Col 1", "Col 2", "Col 3", "Col 4", "Col 5", "Col 6", "Col 7", "Col 8", "Col 9", "Col 10"]
+        
+        # Find the first row with a date and a number
         first_data_row = data[1] if len(data) > 1 else data[0]
+        for idx, row in enumerate(data):
+            has_date = False
+            has_number = False
+            for cell in row:
+                if frappe.utils.guess_date_format(str(cell)):
+                    has_date = True
+                elif get_float_amount(cell) is not None:
+                    has_number = True
+            if has_date and has_number:
+                first_data_row = row
+                header_index = idx - 1 if idx > 0 else 0
+                break
+                
         columns, column_mapping = auto_detect_columns(first_data_row)
         header_row = [column["header_text"] for column in columns]
 
@@ -416,13 +431,19 @@ def _read_csv_content_robust(content) -> list[list]:
 
     # Auto-detect delimiter (comma or semicolon)
     delimiter = ','
+    sample = "\n".join(lines[:15])
     try:
         sniffer = csv.Sniffer()
-        dialect = sniffer.sniff(lines[0])
+        dialect = sniffer.sniff(sample)
         delimiter = dialect.delimiter
     except Exception:
-        if lines[0].count(';') > lines[0].count(','):
-            delimiter = ';'
+        pass
+    
+    # Fallback checking first 15 lines
+    semicolons = sum(line.count(';') for line in lines[:15])
+    commas = sum(line.count(',') for line in lines[:15])
+    if semicolons > commas:
+        delimiter = ';'
 
     rows = []
     for row in csv.reader(lines, delimiter=delimiter):
