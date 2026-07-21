@@ -171,6 +171,32 @@ def process_statement_import_background(final_transactions, bank_account, curren
                     errors += 1
                     continue
 
+            # Si no hay referencia, buscamos duplicados exactos (fecha, monto y descripción)
+            if not ref:
+                duplicate_filters = {
+                    "bank_account": bank_account,
+                    "date": tx_date,
+                }
+                desc = transaction.get("description")
+                if desc:
+                    duplicate_filters["description"] = desc.strip()
+                    
+                is_duplicate = False
+                if float(transaction.get("deposit") or 0) > 0:
+                    new_dep = float(transaction.get("deposit"))
+                    existing_deps = frappe.db.get_all("Bank Transaction", filters=duplicate_filters, pluck="deposit")
+                    if existing_deps and any(abs(float(amt) - new_dep) < 0.005 for amt in existing_deps):
+                        is_duplicate = True
+                elif float(transaction.get("withdrawal") or 0) > 0:
+                    new_wth = float(transaction.get("withdrawal"))
+                    existing_wths = frappe.db.get_all("Bank Transaction", filters=duplicate_filters, pluck="withdrawal")
+                    if existing_wths and any(abs(float(amt) - new_wth) < 0.005 for amt in existing_wths):
+                        is_duplicate = True
+
+                if is_duplicate:
+                    errors += 1
+                    continue
+
             bank_tx = frappe.get_doc({
                 "doctype": "Bank Transaction",
                 "date": tx_date,
