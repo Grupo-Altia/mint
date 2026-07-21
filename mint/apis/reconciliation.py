@@ -1121,6 +1121,14 @@ def on_submit_receive_payment(doc, method=None) -> None:
     """Tras aprobar el cobro, enlazar su depósito bancario: el guardado del Bank
     Transaction dispara la conciliación y la activación por sus hooks."""
     if not _is_bank_receive(doc):
+        # Es CASH o GATEWAY. Intentar enlazar si el depósito ya existe.
+        deposit = find_matching_deposit(doc)
+        if deposit:
+            _link_deposit_to_payment(deposit.name, doc.name)
+            doc.clearance_date = deposit.date
+            doc.custom_reconciliation_status = RECON_DONE
+            doc.db_set("clearance_date", deposit.date)
+            doc.db_set("custom_reconciliation_status", RECON_DONE)
         return
 
     bt_name = doc.flags.get("l10n_ve_matched_deposit")
@@ -1282,7 +1290,7 @@ def reconcile_drafts_for_deposit(doc, method=None) -> None:
 
 
 def _approve_drafts(names) -> int:
-    """Reintenta reconcile_and_approve sobre una colección de cobros en borrador.
+    """Reintenta reconcile_and_approve sobre una colección de cobros en borrador o enlazando cobros gateway validados.
 
     Cada cobro es ATÓMICO: se confirma el exitoso (para que un fallo posterior no lo
     arrastre) y un cobro problemático se revierte + se registra sin abortar el lote
@@ -1291,10 +1299,22 @@ def _approve_drafts(names) -> int:
     reconciled = 0
     for name in names:
         try:
-            result = reconcile_and_approve(name)
-            frappe.db.commit()
-            if result.get("reconciled"):
-                reconciled += 1
+            doc = frappe.get_doc("Payment Entry", name)
+            if doc.docstatus == 0:
+                result = reconcile_and_approve(name)
+                frappe.db.commit()
+                if result.get("reconciled"):
+                    reconciled += 1
+            elif doc.docstatus == 1 and not _is_bank_receive(doc) and doc.get("custom_reconciliation_status") != RECON_DONE:
+                deposit = find_matching_deposit(doc)
+                if deposit:
+                    _link_deposit_to_payment(deposit.name, doc.name)
+                    doc.clearance_date = deposit.date
+                    doc.custom_reconciliation_status = RECON_DONE
+                    doc.db_set("clearance_date", deposit.date)
+                    doc.db_set("custom_reconciliation_status", RECON_DONE)
+                    frappe.db.commit()
+                    reconciled += 1
         except Exception:
             frappe.db.rollback()
             log_mint_error(
@@ -1410,6 +1430,26 @@ def get_reconciliation_health() -> dict:
     }
 
 
+def _get_pending_receipts(reference: str = None, source_bank: str = None) -> list:
+    filters_draft = {"docstatus": 0, "payment_type": "Receive"}
+    filters_valid = {"docstatus": 1, "payment_type": "Receive", "custom_reconciliation_status": RECON_PENDING}
+
+    if reference:
+        filters_draft["reference_no"] = reference
+        filters_valid["reference_no"] = reference
+    else:
+        filters_draft["reference_no"] = ["!=", ""]
+        filters_valid["reference_no"] = ["!=", ""]
+
+    if source_bank:
+        filters_draft["source_bank"] = source_bank
+        filters_valid["source_bank"] = source_bank
+
+    names = frappe.get_all("Payment Entry", filters=filters_draft, pluck="name")
+    names.extend(frappe.get_all("Payment Entry", filters=filters_valid, pluck="name"))
+    return names
+
+
 def reconcile_pending_drafts_nightly() -> None:
     """Barrido nocturno (cron 22:00 hora del site): sanea duplicados exactos y luego
     reintenta conciliar TODOS los cobros en borrador con referencia pendientes.
@@ -1429,15 +1469,7 @@ def reconcile_pending_drafts_nightly() -> None:
     """
     deduped = cancel_exact_duplicate_deposits()
 
-    names = frappe.get_all(
-        "Payment Entry",
-        filters={
-            "docstatus": 0,
-            "payment_type": "Receive",
-            "reference_no": ["!=", ""],
-        },
-        pluck="name",
-    )
+    names = _get_pending_receipts()
     reconciled = _approve_drafts(names)
 
     # Salud: dejar rastro de los depósitos con fecha imposible (futura o NULL) que se
@@ -1464,13 +1496,7 @@ def reconcile_drafts_job(reference: str) -> None:
     transformada HACIA ADELANTE por la regla del banco origen (source_bank) — borradores
     cuyo reference_no == apply_format_rule(banco.regla, referencia-del-depósito).
     """
-    drafts = set(
-        frappe.get_all(
-            "Payment Entry",
-            filters={"docstatus": 0, "payment_type": "Receive", "reference_no": reference},
-            pluck="name",
-        )
-    )
+    drafts = set(_get_pending_receipts(reference=reference))
 
     # Borradores cuya referencia es la del extracto transformada por reglas
     # Buscar qué bancos tienen reglas
@@ -1482,18 +1508,7 @@ def reconcile_drafts_job(reference: str) -> None:
         modified_ref = apply_format_rule(b.bank_reference_rule, reference)
         if modified_ref == reference:
             continue
-        drafts.update(
-            frappe.get_all(
-                "Payment Entry",
-                filters={
-                    "docstatus": 0,
-                    "payment_type": "Receive",
-                    "reference_no": modified_ref,
-                    "source_bank": b.parent,
-                },
-                pluck="name",
-            )
-        )
+        drafts.update(_get_pending_receipts(reference=modified_ref, source_bank=b.parent))
 
     _approve_drafts(drafts)
 
