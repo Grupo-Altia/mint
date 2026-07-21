@@ -1145,6 +1145,7 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
     filters = {
         "name": ["!=", doc.name or ""],
         "reference_number": ref,
+        "date": doc.date,
         "bank_account": doc.bank_account,
         "company": doc.company,
         "docstatus": ["<", 2],
@@ -1159,25 +1160,26 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
     if duplicate:
         duplicate_link = frappe.utils.get_link_to_form("Bank Transaction", duplicate)
         if is_dep:
-            frappe.throw(
-                _(
-                    "Ya existe un depósito con la referencia {0} en esta cuenta bancaria "
-                    "({1}). No se permiten depósitos duplicados con la misma referencia; "
-                    "revise el extracto importado."
-                ).format(frappe.bold(ref), duplicate_link)
-            )
-        else:
-            # Para retiros: si los montos son distintos, uno es la transacción real
-            # y el otro es la comisión bancaria. Se permite la coexistencia.
-            existing_amount = frappe.db.get_value("Bank Transaction", duplicate, "withdrawal")
-            new_amount = flt(doc.withdrawal)
-            if flt(existing_amount) == new_amount:
+            existing_amount = frappe.db.get_value("Bank Transaction", duplicate, "deposit")
+            new_amount = flt(doc.deposit)
+            if abs(flt(existing_amount) - new_amount) < 0.005:
                 frappe.throw(
                     _(
-                        "Ya existe un retiro con la referencia {0} y el mismo monto en esta "
-                        "cuenta bancaria ({1}). No se permiten retiros duplicados con la misma "
-                        "referencia y monto; revise el extracto importado."
-                    ).format(frappe.bold(ref), duplicate_link)
+                        "Ya existe un depósito con la fecha {0}, referencia {1} y el mismo monto en esta "
+                        "cuenta bancaria ({2}). No se permiten depósitos duplicados idénticos; "
+                        "revise el extracto importado."
+                    ).format(frappe.bold(doc.date), frappe.bold(ref), duplicate_link)
+                )
+        else:
+            existing_amount = frappe.db.get_value("Bank Transaction", duplicate, "withdrawal")
+            new_amount = flt(doc.withdrawal)
+            if abs(flt(existing_amount) - new_amount) < 0.005:
+                frappe.throw(
+                    _(
+                        "Ya existe un retiro con la fecha {0}, referencia {1} y el mismo monto en esta "
+                        "cuenta bancaria ({2}). No se permiten retiros duplicados idénticos; "
+                        "revise el extracto importado."
+                    ).format(frappe.bold(doc.date), frappe.bold(ref), duplicate_link)
                 )
 
 
