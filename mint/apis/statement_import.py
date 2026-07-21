@@ -153,24 +153,34 @@ def process_statement_import_background(final_transactions, bank_account, curren
             # duplicados de abajo compare contra la forma canónica que se guardará.
             ref = normalize_reference(transaction.get("reference"))
 
-            # Verificar si existe como depósito: solo es duplicado si el monto también coincide
+            # Verificar si existe como depósito: duplicado si coincide fecha, referencia y monto
             if ref and float(transaction.get("deposit") or 0) > 0:
                 new_amount = float(transaction.get("deposit") or 0)
                 existing_amounts = frappe.db.get_all(
                     "Bank Transaction",
-                    filters={"bank_account": bank_account, "reference_number": ref, "deposit": [">", 0]},
+                    filters={
+                        "bank_account": bank_account, 
+                        "date": tx_date,
+                        "reference_number": ref, 
+                        "deposit": [">", 0]
+                    },
                     pluck="deposit"
                 )
                 if existing_amounts and any(abs(float(amt) - new_amount) < 0.005 for amt in existing_amounts):
                     errors += 1
                     continue
 
-            # Verificar si existe como retiro: solo es duplicado si el monto también coincide
+            # Verificar si existe como retiro: duplicado si coincide fecha, referencia y monto
             if ref and float(transaction.get("withdrawal") or 0) > 0:
                 new_amount = float(transaction.get("withdrawal") or 0)
                 existing_amounts = frappe.db.get_all(
                     "Bank Transaction",
-                    filters={"bank_account": bank_account, "reference_number": ref, "withdrawal": [">", 0]},
+                    filters={
+                        "bank_account": bank_account, 
+                        "date": tx_date,
+                        "reference_number": ref, 
+                        "withdrawal": [">", 0]
+                    },
                     pluck="withdrawal"
                 )
                 if existing_amounts and any(abs(float(amt) - new_amount) < 0.005 for amt in existing_amounts):
