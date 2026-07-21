@@ -1991,3 +1991,38 @@ def remove_duplicate_bank_transactions(duplicates_json):
     return {"processed": processed, "errors": errors}
 
 
+def restore_clearance_date_on_cancel(doc, method=None):
+    """
+    Cuando se cancela un Bank Transaction (ej. al Corregir), el estándar de ERPNext 
+    limpia incondicionalmente el clearance_date del Payment Entry vinculado,
+    incluso si hay OTRAS versiones (ej. la versión "-1") validadas vinculadas.
+    Este hook restaura el clearance_date y el estado a RECON_DONE si existe otro
+    Bank Transaction Validado.
+    """
+    for entry in doc.payment_entries:
+        doc_type = entry.payment_document
+        doc_name = entry.payment_entry
+        if doc_type not in ("Payment Entry", "Journal Entry"):
+            continue
+            
+        # Buscar si existe otro Bank Transaction validado que enlace a este pago
+        valid_bt = frappe.db.sql("""
+            SELECT `tabBank Transaction`.name, `tabBank Transaction`.date
+            FROM `tabBank Transaction Payments`
+            INNER JOIN `tabBank Transaction` ON `tabBank Transaction`.name = `tabBank Transaction Payments`.parent
+            WHERE `tabBank Transaction Payments`.payment_entry = %s
+            AND `tabBank Transaction Payments`.payment_document = %s
+            AND `tabBank Transaction`.docstatus = 1
+            LIMIT 1
+        """, (doc_name, doc_type), as_dict=True)
+        
+        if valid_bt:
+            bt_date = valid_bt[0].date
+            if doc_type == "Payment Entry":
+                pe = frappe.get_doc("Payment Entry", doc_name)
+                pe.db_set("clearance_date", bt_date, update_modified=True)
+                if pe.get("custom_reconciliation_status") != "Conciliado":
+                    pe.db_set("custom_reconciliation_status", "Conciliado", update_modified=True)
+            elif doc_type == "Journal Entry":
+                je = frappe.get_doc("Journal Entry", doc_name)
+                je.db_set("clearance_date", bt_date, update_modified=True)
