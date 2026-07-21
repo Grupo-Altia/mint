@@ -153,6 +153,10 @@ def process_statement_import_background(final_transactions, bank_account, curren
             # duplicados de abajo compare contra la forma canónica que se guardará.
             ref = normalize_reference(transaction.get("reference"))
 
+            # Descripción canónica (stripeada): el filtro de duplicados sin referencia
+            # compara contra la misma forma que se guarda abajo en el Bank Transaction.
+            desc_clean = (transaction.get("description") or "").strip()
+
             # Verificar si existe como depósito: duplicado si coincide fecha, referencia y monto
             if ref and float(transaction.get("deposit") or 0) > 0:
                 new_amount = float(transaction.get("deposit") or 0)
@@ -193,10 +197,9 @@ def process_statement_import_background(final_transactions, bank_account, curren
                     "bank_account": bank_account,
                     "date": tx_date,
                 }
-                desc = transaction.get("description")
-                if desc:
-                    duplicate_filters["description"] = desc.strip()
-                    
+                if desc_clean:
+                    duplicate_filters["description"] = desc_clean
+
                 is_duplicate = False
                 if float(transaction.get("deposit") or 0) > 0:
                     new_dep = float(transaction.get("deposit"))
@@ -220,7 +223,7 @@ def process_statement_import_background(final_transactions, bank_account, curren
                 "bank_account": bank_account,
                 "withdrawal": transaction.get("withdrawal"),
                 "deposit": transaction.get("deposit"),
-                "description": transaction.get("description"),
+                "description": desc_clean,
                 "reference_number": ref,
                 "transaction_type": transaction.get("transaction_type"),
                 "currency": currency,
@@ -474,18 +477,22 @@ def _read_csv_content_robust(content) -> list[list]:
     # Auto-detect delimiter (comma or semicolon)
     delimiter = ','
     sample = "\n".join(lines[:15])
+    sniffed = False
     try:
         sniffer = csv.Sniffer()
         dialect = sniffer.sniff(sample)
         delimiter = dialect.delimiter
+        sniffed = True
     except Exception:
         pass
-    
-    # Fallback checking first 15 lines
-    semicolons = sum(line.count(';') for line in lines[:15])
-    commas = sum(line.count(',') for line in lines[:15])
-    if semicolons > commas:
-        delimiter = ';'
+
+    # Fallback: solo si el sniffer no pudo determinarlo, decidir por conteo en las
+    # primeras 15 líneas. No sobrescribimos una detección válida del sniffer.
+    if not sniffed:
+        semicolons = sum(line.count(';') for line in lines[:15])
+        commas = sum(line.count(',') for line in lines[:15])
+        if semicolons > commas:
+            delimiter = ';'
 
     rows = []
     for row in csv.reader(lines, delimiter=delimiter):

@@ -103,7 +103,11 @@ frappe.query_reports["Advanced Bank Reconciliation"] = {
         // --- HoverCard estilo Mint Shadcn UI ---
         let hoverCard = null;
 
-        $(document).on('mouseenter', '.mint-info-icon', function(e) {
+        // Namespacing + off previo: onload puede correr de nuevo al reinstanciar el
+        // reporte; evitamos apilar handlers delegados sobre document.
+        $(document).off('mouseenter.mintHover mouseleave.mintHover', '.mint-info-icon');
+
+        $(document).on('mouseenter.mintHover', '.mint-info-icon', function(e) {
             let $el = $(this);
             let title = $el.attr('data-title');
             let text = $el.attr('data-text');
@@ -145,7 +149,7 @@ frappe.query_reports["Advanced Bank Reconciliation"] = {
             hoverCard.css('opacity', '1');
         });
 
-        $(document).on('mouseleave', '.mint-info-icon', function(e) {
+        $(document).on('mouseleave.mintHover', '.mint-info-icon', function(e) {
             if (hoverCard) {
                 hoverCard.css('opacity', '0');
                 setTimeout(() => {

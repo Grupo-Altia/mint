@@ -2021,8 +2021,8 @@ def restore_clearance_date_on_cancel(doc, method=None):
             if doc_type == "Payment Entry":
                 pe = frappe.get_doc("Payment Entry", doc_name)
                 pe.db_set("clearance_date", bt_date, update_modified=True)
-                if pe.get("custom_reconciliation_status") != "Conciliado":
-                    pe.db_set("custom_reconciliation_status", "Conciliado", update_modified=True)
+                if pe.get("custom_reconciliation_status") != RECON_DONE:
+                    pe.db_set("custom_reconciliation_status", RECON_DONE, update_modified=True)
             elif doc_type == "Journal Entry":
                 je = frappe.get_doc("Journal Entry", doc_name)
                 je.db_set("clearance_date", bt_date, update_modified=True)
