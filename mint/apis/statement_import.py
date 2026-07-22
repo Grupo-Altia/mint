@@ -51,25 +51,17 @@ def get_statement_details(file_url: str, bank_account: str):
                             col["maps_to"] = crucial
                             break
     else:
-        # No headers found. Synthesize a header row and auto-detect columns from the first data row (header_index + 1)
+        # No headers found. Find the first row that looks like a transaction row
         header_index = 0
-        header_row = ["Col 1", "Col 2", "Col 3", "Col 4", "Col 5", "Col 6", "Col 7", "Col 8", "Col 9", "Col 10"]
-        
-        # Find the first row with a date and a number
         first_data_row = data[1] if len(data) > 1 else data[0]
         for idx, row in enumerate(data):
-            has_date = False
-            has_number = False
-            for cell in row:
-                if frappe.utils.guess_date_format(str(cell)):
-                    has_date = True
-                elif get_float_amount(cell) is not None:
-                    has_number = True
-            if has_date and has_number:
+            non_empty_cells = [cell for cell in row if str(cell).strip()]
+            if len(non_empty_cells) >= 3:
                 first_data_row = row
                 header_index = idx - 1 if idx > 0 else 0
                 break
                 
+        header_row = [f"Columna {i+1}" for i in range(len(first_data_row))]
         columns, column_mapping = auto_detect_columns(first_data_row)
         header_row = [column["header_text"] for column in columns]
 
@@ -120,13 +112,79 @@ def get_statement_details(file_url: str, bank_account: str):
         "currency": account_currency,
     }
 
+def is_part_of_reimport_sequence(transaction, current_index, final_transactions, bank_account):
+    ref = normalize_reference(transaction.get("reference"))
+    candidates = frappe.get_all("Bank Transaction", filters={
+        "bank_account": bank_account,
+        "date": transaction.get("date"),
+        "reference_number": ref,
+        "deposit": transaction.get("deposit") or 0.0,
+        "withdrawal": transaction.get("withdrawal") or 0.0
+    }, order_by="creation DESC", fields=["name", "creation"])
+    
+    if not candidates:
+        return False
+        
+    for candidate in candidates:
+        if current_index > 0:
+            prev_tx = final_transactions[current_index - 1]
+            prev_ref = normalize_reference(prev_tx.get("reference"))
+            prev_db = frappe.get_all("Bank Transaction", filters={
+                "bank_account": bank_account,
+                "creation": ["<", candidate.creation]
+            }, order_by="creation DESC", limit=1, fields=["date", "reference_number", "deposit", "withdrawal"])
+            
+            if prev_db:
+                pdb = prev_db[0]
+                pdb_ref = str(pdb.reference_number or "")
+                pdb_dep = float(pdb.deposit or 0.0)
+                pdb_wth = float(pdb.withdrawal or 0.0)
+                tx_dep = float(prev_tx.get("deposit") or 0.0)
+                tx_wth = float(prev_tx.get("withdrawal") or 0.0)
+                
+                b1 = (str(pdb.date) == str(prev_tx.get("date")))
+                b2 = (pdb_ref.lstrip("0") == str(prev_ref).lstrip("0"))
+                b3 = (abs(pdb_dep - tx_dep) < 0.005)
+                b4 = (abs(pdb_wth - tx_wth) < 0.005)
+                
+                if b1 and b2 and b3 and b4:
+                    return True
+                    
+        elif current_index < len(final_transactions) - 1:
+            next_tx = final_transactions[current_index + 1]
+            next_ref = normalize_reference(next_tx.get("reference"))
+            next_db = frappe.get_all("Bank Transaction", filters={
+                "bank_account": bank_account,
+                "creation": [">", candidate.creation]
+            }, order_by="creation ASC", limit=1, fields=["date", "reference_number", "deposit", "withdrawal"])
+            
+            if next_db:
+                ndb = next_db[0]
+                ndb_ref = str(ndb.reference_number or "")
+                ndb_dep = float(ndb.deposit or 0.0)
+                ndb_wth = float(ndb.withdrawal or 0.0)
+                tx_dep = float(next_tx.get("deposit") or 0.0)
+                tx_wth = float(next_tx.get("withdrawal") or 0.0)
+                
+                b1 = (str(ndb.date) == str(next_tx.get("date")))
+                b2 = (ndb_ref.lstrip("0") == str(next_ref).lstrip("0"))
+                b3 = (abs(ndb_dep - tx_dep) < 0.005)
+                b4 = (abs(ndb_wth - tx_wth) < 0.005)
+                
+                if b1 and b2 and b3 and b4:
+                    return True
+                    
+    return False
+
 def process_statement_import_background(final_transactions, bank_account, currency, company, file_url, data, user):
     frappe.set_user(user)
     progress = 0
     success = 0
     errors = 0
 
-    for transaction in final_transactions:
+    allowed_descriptions = frappe.get_all("Mint Bank Description Rule", pluck="description_text")
+
+    for current_index, transaction in enumerate(final_transactions):
         try:
             # Todas las filas del extracto se importan como transacciones bancarias separadas.
             # Las comisiones emparejadas enriquecen el campo 'commission' de la tx principal,
@@ -157,8 +215,14 @@ def process_statement_import_background(final_transactions, bank_account, curren
             # compara contra la misma forma que se guarda abajo en el Bank Transaction.
             desc_clean = (transaction.get("description") or "").strip()
 
+            bypass_duplicate_check = False
+            desc = transaction.get("description")
+            if desc and desc in allowed_descriptions:
+                if not is_part_of_reimport_sequence(transaction, current_index, final_transactions, bank_account):
+                    bypass_duplicate_check = True
+
             # Verificar si existe como depósito: duplicado si coincide fecha, referencia y monto
-            if ref and float(transaction.get("deposit") or 0) > 0:
+            if not bypass_duplicate_check and ref and float(transaction.get("deposit") or 0) > 0:
                 new_amount = float(transaction.get("deposit") or 0)
                 existing_amounts = frappe.db.get_all(
                     "Bank Transaction",
@@ -175,7 +239,7 @@ def process_statement_import_background(final_transactions, bank_account, curren
                     continue
 
             # Verificar si existe como retiro: duplicado si coincide fecha, referencia y monto
-            if ref and float(transaction.get("withdrawal") or 0) > 0:
+            if not bypass_duplicate_check and ref and float(transaction.get("withdrawal") or 0) > 0:
                 new_amount = float(transaction.get("withdrawal") or 0)
                 existing_amounts = frappe.db.get_all(
                     "Bank Transaction",
@@ -474,25 +538,12 @@ def _read_csv_content_robust(content) -> list[list]:
     if not lines:
         return []
 
-    # Auto-detect delimiter (comma or semicolon)
+    sample_lines = [l for l in lines[:15] if l.strip()]
+    sample_text = "\\n".join(sample_lines)
+    
     delimiter = ','
-    sample = "\n".join(lines[:15])
-    sniffed = False
-    try:
-        sniffer = csv.Sniffer()
-        dialect = sniffer.sniff(sample)
-        delimiter = dialect.delimiter
-        sniffed = True
-    except Exception:
-        pass
-
-    # Fallback: solo si el sniffer no pudo determinarlo, decidir por conteo en las
-    # primeras 15 líneas. No sobrescribimos una detección válida del sniffer.
-    if not sniffed:
-        semicolons = sum(line.count(';') for line in lines[:15])
-        commas = sum(line.count(',') for line in lines[:15])
-        if semicolons > commas:
-            delimiter = ';'
+    if sample_text.count(';') > sample_text.count(','):
+        delimiter = ';'
 
     rows = []
     for row in csv.reader(lines, delimiter=delimiter):
@@ -1143,3 +1194,24 @@ def get_final_transactions(transactions: list, date_format: str, amount_format: 
         })
     
     return final_transactions
+
+@frappe.whitelist()
+def cleanup_old_imports():
+    """Limpiar historiales y archivos de Bank Statement Import de más de 1 mes de antigüedad."""
+    if frappe.session.user != "Administrator" and not frappe.has_permission("Bank Statement Import", "delete"):
+        frappe.throw(_("No tienes permiso para eliminar estos registros."))
+        
+    one_month_ago = frappe.utils.add_months(frappe.utils.today(), -1)
+    
+    old_imports = frappe.get_all("Bank Statement Import", filters={"creation": ["<", one_month_ago]}, pluck="name")
+    
+    deleted_count = 0
+    for name in old_imports:
+        files = frappe.get_all("File", filters={"attached_to_doctype": "Bank Statement Import", "attached_to_name": name}, pluck="name")
+        for f in files:
+            frappe.delete_doc("File", f, ignore_permissions=True)
+            
+        frappe.delete_doc("Bank Statement Import", name, ignore_permissions=True)
+        deleted_count += 1
+        
+    return deleted_count
