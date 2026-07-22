@@ -1226,6 +1226,11 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
 
     duplicate = frappe.db.exists("Bank Transaction", filters)
     if duplicate:
+        if doc.description:
+            allowed_descriptions = frappe.get_all("Mint Bank Description Rule", pluck="description_text")
+            if doc.description in allowed_descriptions:
+                return
+        
         duplicate_link = frappe.utils.get_link_to_form("Bank Transaction", duplicate)
         if is_dep:
             frappe.throw(
@@ -2012,7 +2017,7 @@ def get_duplicate_bank_transactions():
         
         for group in groups:
             members = frappe.db.sql(f"""
-                SELECT name, allocated_amount, unallocated_amount, status, docstatus, date
+                SELECT name, allocated_amount, unallocated_amount, status, docstatus, date, description
                 FROM `tabBank Transaction`
                 WHERE TRIM(reference_number) = %s AND bank_account = %s AND company = %s
                   AND {doctype_type} = %s AND docstatus < 2
@@ -2031,6 +2036,7 @@ def get_duplicate_bank_transactions():
                         "reference": group.ref,
                         "date": keep.date,
                         "amount": group.amount,
+                        "description": keep.description,
                         "type": "Retiro" if doctype_type == "withdrawal" else "Depósito",
                         "original_name": keep.name,
                         "original_status": keep.status,
