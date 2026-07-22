@@ -48,8 +48,10 @@ doctype_js = {
     "Payment Entry" : "public/js/payment_entry.js",
     "Bank Transaction" : "public/js/bank_transaction.js"
 }
-doctype_list_js = {"Payment Entry" : "public/js/payment_entry_list.js"}
-# doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
+doctype_list_js = {
+    "Payment Entry": "public/js/payment_entry_list.js",
+    "Bank Transaction": "public/js/bank_transaction_list.js"
+}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
 # Svg Icons
@@ -165,6 +167,9 @@ doc_events = {
     },
     "Expense": {
         "on_submit": "mint.apis.reconciliation.update_expense_journal_entry"
+    },
+    "Mint Bank Transfer": {
+        "on_submit": "mint.apis.reconciliation.reconcile_bank_transfer_on_submit"
     },
     # NOTA: modify_venezuela_reference (before_insert) queda INACTIVO a propósito
     # (decisión pendiente de revisión — ver TODO de integración mint↔l10n_ve).

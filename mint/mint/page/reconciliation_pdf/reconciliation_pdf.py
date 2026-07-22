@@ -48,7 +48,7 @@ def download_pdf(company, bank_account, month, year, bank_statement_closing_bala
 	for s in summary:
 		if s.get("label") == "Depósitos en Tránsito":
 			dep_transit = s.get("value")
-		elif s.get("label") == "Cheques en Circulación":
+		elif s.get("label") == "Pagos por Conciliar":
 			with_transit = s.get("value")
 		elif s.get("label") == "Abonos no Registrados":
 			abonos_no_reg = s.get("value")
@@ -83,7 +83,7 @@ def download_pdf(company, bank_account, month, year, bank_statement_closing_bala
 	for s in prev_summary:
 		if s.get("label") == "Depósitos en Tránsito":
 			prev_dep_transit = s.get("value")
-		elif s.get("label") == "Cheques en Circulación":
+		elif s.get("label") == "Pagos por Conciliar":
 			prev_with_transit = s.get("value")
 		elif s.get("label") == "Abonos no Registrados":
 			prev_abonos_no_reg = s.get("value")
