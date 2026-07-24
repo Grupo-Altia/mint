@@ -315,3 +315,7 @@ Select all filtered results,Seleccionar todos los resultados filtrados,
 Select all,Seleccionar todo,
 Clear Filters,Limpiar Filtros,
 Advanced Bank Reconciliation,Informe de Conciliación Bancaria,
+Mint Bank Description Rule,Regla de Descripción Bancaria
+Unreconciled,No Conciliado
+Reconciled,Conciliado
+Canceled,Cancelado
