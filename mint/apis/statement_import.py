@@ -14,6 +14,32 @@ from datetime import datetime
 from mint.apis.bank_account import set_closing_balance_as_per_statement
 from mint.apis.reconciliation import normalize_reference
 
+def is_similar_reference(ref1, ref2):
+    if not ref1 and not ref2:
+        return True
+    if not ref1 or not ref2:
+        return False
+    
+    r1 = str(ref1).strip().upper().replace(",", ".")
+    r2 = str(ref2).strip().upper().replace(",", ".")
+    if r1 == r2:
+        return True
+        
+    has_sci1 = "E+" in r1 or "E-" in r1
+    has_sci2 = "E+" in r2 or "E-" in r2
+    
+    if has_sci1 != has_sci2:
+        try:
+            f1 = float(r1)
+            f2 = float(r2)
+            if f1 != 0:
+                if abs(f1 - f2) / abs(f1) < 0.0001:
+                    return True
+        except Exception:
+            pass
+            
+    return False
+
 @frappe.whitelist(methods=["GET"])
 def get_statement_details(file_url: str, bank_account: str):
     """
@@ -126,6 +152,8 @@ def is_part_of_reimport_sequence(transaction, current_index, final_transactions,
         return False
         
     for candidate in candidates:
+        # Check backward (previous transaction in file vs previous transaction in DB)
+        has_prev_match = False
         if current_index > 0:
             prev_tx = final_transactions[current_index - 1]
             prev_ref = normalize_reference(prev_tx.get("reference"))
@@ -143,14 +171,16 @@ def is_part_of_reimport_sequence(transaction, current_index, final_transactions,
                 tx_wth = float(prev_tx.get("withdrawal") or 0.0)
                 
                 b1 = (str(pdb.date) == str(prev_tx.get("date")))
-                b2 = (pdb_ref.lstrip("0") == str(prev_ref).lstrip("0"))
+                b2 = is_similar_reference(pdb_ref, str(prev_ref))
                 b3 = (abs(pdb_dep - tx_dep) < 0.005)
                 b4 = (abs(pdb_wth - tx_wth) < 0.005)
                 
                 if b1 and b2 and b3 and b4:
-                    return True
-                    
-        elif current_index < len(final_transactions) - 1:
+                    has_prev_match = True
+
+        # Check forward (next transaction in file vs next transaction in DB)
+        has_next_match = False
+        if current_index < len(final_transactions) - 1:
             next_tx = final_transactions[current_index + 1]
             next_ref = normalize_reference(next_tx.get("reference"))
             next_db = frappe.get_all("Bank Transaction", filters={
@@ -167,13 +197,16 @@ def is_part_of_reimport_sequence(transaction, current_index, final_transactions,
                 tx_wth = float(next_tx.get("withdrawal") or 0.0)
                 
                 b1 = (str(ndb.date) == str(next_tx.get("date")))
-                b2 = (ndb_ref.lstrip("0") == str(next_ref).lstrip("0"))
+                b2 = is_similar_reference(ndb_ref, str(next_ref))
                 b3 = (abs(ndb_dep - tx_dep) < 0.005)
                 b4 = (abs(ndb_wth - tx_wth) < 0.005)
                 
                 if b1 and b2 and b3 and b4:
-                    return True
+                    has_next_match = True
                     
+        if has_prev_match or has_next_match:
+            return True
+            
     return False
 
 def process_statement_import_background(final_transactions, bank_account, currency, company, file_url, data, user):
@@ -224,34 +257,48 @@ def process_statement_import_background(final_transactions, bank_account, curren
             # Verificar si existe como depósito: duplicado si coincide fecha, referencia y monto
             if not bypass_duplicate_check and ref and float(transaction.get("deposit") or 0) > 0:
                 new_amount = float(transaction.get("deposit") or 0)
-                existing_amounts = frappe.db.get_all(
+                existing_txs = frappe.db.get_all(
                     "Bank Transaction",
                     filters={
                         "bank_account": bank_account, 
                         "date": tx_date,
-                        "reference_number": ref, 
                         "deposit": [">", 0]
                     },
-                    pluck="deposit"
+                    fields=["reference_number", "deposit"]
                 )
-                if existing_amounts and any(abs(float(amt) - new_amount) < 0.005 for amt in existing_amounts):
+                
+                is_duplicate = False
+                for extx in existing_txs:
+                    if abs(float(extx.deposit) - new_amount) < 0.005:
+                        if is_similar_reference(extx.reference_number, ref):
+                            is_duplicate = True
+                            break
+                            
+                if is_duplicate:
                     errors += 1
                     continue
 
             # Verificar si existe como retiro: duplicado si coincide fecha, referencia y monto
             if not bypass_duplicate_check and ref and float(transaction.get("withdrawal") or 0) > 0:
                 new_amount = float(transaction.get("withdrawal") or 0)
-                existing_amounts = frappe.db.get_all(
+                existing_txs = frappe.db.get_all(
                     "Bank Transaction",
                     filters={
                         "bank_account": bank_account, 
                         "date": tx_date,
-                        "reference_number": ref, 
                         "withdrawal": [">", 0]
                     },
-                    pluck="withdrawal"
+                    fields=["reference_number", "withdrawal"]
                 )
-                if existing_amounts and any(abs(float(amt) - new_amount) < 0.005 for amt in existing_amounts):
+                
+                is_duplicate = False
+                for extx in existing_txs:
+                    if abs(float(extx.withdrawal) - new_amount) < 0.005:
+                        if is_similar_reference(extx.reference_number, ref):
+                            is_duplicate = True
+                            break
+                            
+                if is_duplicate:
                     errors += 1
                     continue
 
