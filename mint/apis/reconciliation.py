@@ -1230,6 +1230,7 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
     filters = {
         "name": ["!=", doc.name or ""],
         "reference_number": ref,
+        "date": doc.date,
         "bank_account": doc.bank_account,
         "company": doc.company,
         "docstatus": ["<", 2],
@@ -1242,27 +1243,33 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
 
     duplicate = frappe.db.exists("Bank Transaction", filters)
     if duplicate:
+        if doc.description:
+            allowed_descriptions = frappe.get_all("Mint Bank Description Rule", pluck="description_text")
+            if doc.description in allowed_descriptions:
+                return
+        
         duplicate_link = frappe.utils.get_link_to_form("Bank Transaction", duplicate)
         if is_dep:
-            frappe.throw(
-                _(
-                    "Ya existe un depósito con la referencia {0} en esta cuenta bancaria "
-                    "({1}). No se permiten depósitos duplicados con la misma referencia; "
-                    "revise el extracto importado."
-                ).format(frappe.bold(ref), duplicate_link)
-            )
-        else:
-            # Para retiros: si los montos son distintos, uno es la transacción real
-            # y el otro es la comisión bancaria. Se permite la coexistencia.
-            existing_amount = frappe.db.get_value("Bank Transaction", duplicate, "withdrawal")
-            new_amount = flt(doc.withdrawal)
-            if flt(existing_amount) == new_amount:
+            existing_amount = frappe.db.get_value("Bank Transaction", duplicate, "deposit")
+            new_amount = flt(doc.deposit)
+            if abs(flt(existing_amount) - new_amount) < 0.005:
                 frappe.throw(
                     _(
-                        "Ya existe un retiro con la referencia {0} y el mismo monto en esta "
-                        "cuenta bancaria ({1}). No se permiten retiros duplicados con la misma "
-                        "referencia y monto; revise el extracto importado."
-                    ).format(frappe.bold(ref), duplicate_link)
+                        "Ya existe un depósito con la fecha {0}, referencia {1} y el mismo monto en esta "
+                        "cuenta bancaria ({2}). No se permiten depósitos duplicados idénticos; "
+                        "revise el extracto importado."
+                    ).format(frappe.bold(doc.date), frappe.bold(ref), duplicate_link)
+                )
+        else:
+            existing_amount = frappe.db.get_value("Bank Transaction", duplicate, "withdrawal")
+            new_amount = flt(doc.withdrawal)
+            if abs(flt(existing_amount) - new_amount) < 0.005:
+                frappe.throw(
+                    _(
+                        "Ya existe un retiro con la fecha {0}, referencia {1} y el mismo monto en esta "
+                        "cuenta bancaria ({2}). No se permiten retiros duplicados idénticos; "
+                        "revise el extracto importado."
+                    ).format(frappe.bold(doc.date), frappe.bold(ref), duplicate_link)
                 )
 
 
@@ -2028,7 +2035,7 @@ def get_duplicate_bank_transactions():
         
         for group in groups:
             members = frappe.db.sql(f"""
-                SELECT name, allocated_amount, unallocated_amount, status, docstatus, date
+                SELECT name, allocated_amount, unallocated_amount, status, docstatus, date, description
                 FROM `tabBank Transaction`
                 WHERE TRIM(reference_number) = %s AND bank_account = %s AND company = %s
                   AND {doctype_type} = %s AND docstatus < 2
@@ -2047,6 +2054,7 @@ def get_duplicate_bank_transactions():
                         "reference": group.ref,
                         "date": keep.date,
                         "amount": group.amount,
+                        "description": keep.description,
                         "type": "Retiro" if doctype_type == "withdrawal" else "Depósito",
                         "original_name": keep.name,
                         "original_status": keep.status,
@@ -2106,3 +2114,38 @@ def remove_duplicate_bank_transactions(duplicates_json):
     return {"processed": processed, "errors": errors}
 
 
+def restore_clearance_date_on_cancel(doc, method=None):
+    """
+    Cuando se cancela un Bank Transaction (ej. al Corregir), el estándar de ERPNext 
+    limpia incondicionalmente el clearance_date del Payment Entry vinculado,
+    incluso si hay OTRAS versiones (ej. la versión "-1") validadas vinculadas.
+    Este hook restaura el clearance_date y el estado a RECON_DONE si existe otro
+    Bank Transaction Validado.
+    """
+    for entry in doc.payment_entries:
+        doc_type = entry.payment_document
+        doc_name = entry.payment_entry
+        if doc_type not in ("Payment Entry", "Journal Entry"):
+            continue
+            
+        # Buscar si existe otro Bank Transaction validado que enlace a este pago
+        valid_bt = frappe.db.sql("""
+            SELECT `tabBank Transaction`.name, `tabBank Transaction`.date
+            FROM `tabBank Transaction Payments`
+            INNER JOIN `tabBank Transaction` ON `tabBank Transaction`.name = `tabBank Transaction Payments`.parent
+            WHERE `tabBank Transaction Payments`.payment_entry = %s
+            AND `tabBank Transaction Payments`.payment_document = %s
+            AND `tabBank Transaction`.docstatus = 1
+            LIMIT 1
+        """, (doc_name, doc_type), as_dict=True)
+        
+        if valid_bt:
+            bt_date = valid_bt[0].date
+            if doc_type == "Payment Entry":
+                pe = frappe.get_doc("Payment Entry", doc_name)
+                pe.db_set("clearance_date", bt_date, update_modified=True)
+                if pe.get("custom_reconciliation_status") != RECON_DONE:
+                    pe.db_set("custom_reconciliation_status", RECON_DONE, update_modified=True)
+            elif doc_type == "Journal Entry":
+                je = frappe.get_doc("Journal Entry", doc_name)
+                je.db_set("clearance_date", bt_date, update_modified=True)

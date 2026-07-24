@@ -158,6 +158,7 @@ doc_events = {
         "validate": "mint.apis.reconciliation.validate_bank_transaction_duplicate",
         "on_submit": "mint.apis.reconciliation.reconcile_drafts_for_deposit",
         "on_update_after_submit": "mint.apis.reconciliation.update_source_reference_on_reconcile",
+        "on_cancel": "mint.apis.reconciliation.restore_clearance_date_on_cancel",
     },
     "Journal Entry": {
         "on_submit": "mint.apis.reconciliation.reconcile_journal_entry"
@@ -181,6 +182,9 @@ doc_events = {
 scheduler_events = {
 	"hourly": [
 		"mint.apis.rules.scheduler_run_rule_evaluation"
+	],
+	"monthly": [
+		"mint.apis.statement_import.cleanup_old_imports"
 	],
 	"cron": {
 		# 22:00 (10 pm) hora del site: barrido de reintento de conciliación de los
