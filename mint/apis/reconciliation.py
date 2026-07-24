@@ -526,11 +526,27 @@ def check_rules_match(rules, raw_ref, target_ref):
             for perm in itertools.permutations(rules, r_len):
                 attempts += 1
                 if attempts > MAX_PIPELINE_ATTEMPTS:
-                    log_mint_warning("Warning", 
-                        "check_rules_match: %s reglas; pipelines truncados en %s intentos (ref destino %s)" % (
-                            len(rules), MAX_PIPELINE_ATTEMPTS, target_ref
-                        )
-                    )
+                    # La truncación es el resultado ESPERADO para refs que NO matchean con muchas
+                    # reglas (los pipelines crecen factorialmente; con 8 reglas casi toda comparación
+                    # sin match la alcanza). Loguear un Warning por comparación inundaba la cola
+                    # `short` — cada log_mint_warning encola un job — con ~1500 jobs/5min que clavaban
+                    # los workers al 99% de CPU en la conciliación nocturna de prod. Se rate-limita a
+                    # ~1 aviso cada 10 min (SETNX en Redis, mismo patrón que _try_acquire_lock en
+                    # domina_isp/tasks.py): la señal se preserva, la avalancha no. Truncar NO falsea
+                    # matches (solo omite pipelines exóticos), así que no se pierde precisión.
+                    try:
+                        _warn_key = frappe.cache().make_key("mint_pipeline_trunc_warned")
+                        if frappe.cache().set(_warn_key, "1", nx=True, ex=600):
+                            log_mint_warning(
+                                "Warning",
+                                "check_rules_match: %s reglas; pipelines truncados en %s intentos "
+                                "(ref destino %s). Aviso rate-limitado a 1/10min: la truncación es "
+                                "esperada y no falsea matches." % (
+                                    len(rules), MAX_PIPELINE_ATTEMPTS, target_ref
+                                )
+                            )
+                    except Exception:
+                        pass  # fail-open: el logging nunca debe romper la conciliación
                     return False, None
                 p_ref = raw_ref
                 for r in perm:
