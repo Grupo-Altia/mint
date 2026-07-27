@@ -143,6 +143,8 @@ after_install = "mint.setup.install.after_install"
 # ---------------
 # Hook on document methods and events
 
+bank_reconciliation_doctypes = ["Mint Bank Transfer"]
+
 doc_events = {
     "Payment Entry": {
         # Motor de conciliación (migrado de l10n_ve): compuerta de aprobación y enlace
