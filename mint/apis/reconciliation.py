@@ -2003,8 +2003,7 @@ def daily_remove_exact_duplicates():
         print("No se encontraron duplicados bancarios exactos.")
         return
 
-    import json
-    res = remove_duplicate_bank_transactions(json.dumps(duplicates))
+    res = remove_duplicate_bank_transactions(frappe.as_json(duplicates))
     print(f"Limpieza de duplicados: {res['processed']} procesados, {len(res['errors'])} errores.")
     for err in res["errors"]:
         print(f" - {err}")
