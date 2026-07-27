@@ -1996,6 +1996,18 @@ def remove_duplicate_bank_transactions(duplicates_json):
     frappe.db.commit()
     return {"processed": processed, "errors": errors}
 
+def daily_remove_exact_duplicates():
+    """Ejecutado por cron job para purgar automáticamente duplicados exactos."""
+    duplicates = get_duplicate_bank_transactions()
+    if not duplicates:
+        print("No se encontraron duplicados bancarios exactos.")
+        return
+
+    import json
+    res = remove_duplicate_bank_transactions(json.dumps(duplicates))
+    print(f"Limpieza de duplicados: {res['processed']} procesados, {len(res['errors'])} errores.")
+    for err in res["errors"]:
+        print(f" - {err}")
 
 def restore_clearance_date_on_cancel(doc, method=None):
     """

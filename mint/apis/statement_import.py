@@ -1001,6 +1001,18 @@ def get_transaction_rows(data: list[list[str]], header_index: int, column_mappin
         
         transaction_rows.append(transaction_row)
     
+    # Check for scientific notation in reference column after processing all valid rows
+    if "Reference" in column_map_keys:
+        excel_errors = []
+        for row_index, row in enumerate(valid_rows):
+            ref_val = str(row[column_mapping["Reference"]]).strip()
+            if "E+" in ref_val or "e+" in ref_val:
+                excel_errors.append(str(header_index + 1 + row_index + 1))
+        
+        if excel_errors:
+            lines = ", ".join(excel_errors)
+            frappe.throw(f"Su extracto bancario tiene referencias modificadas por excel en las lineas: {lines}")
+    
     base_index = header_index + 1
 
     if transaction_starting_index is not None:

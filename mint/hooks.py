@@ -195,6 +195,9 @@ scheduler_events = {
 			"mint.apis.reconciliation.reconcile_pending_drafts_nightly"
 		]
 	},
+	"daily": [
+		"mint.apis.reconciliation.daily_remove_exact_duplicates"
+	],
 }
 
 # Testing
