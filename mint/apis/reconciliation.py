@@ -1235,12 +1235,18 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
         "docstatus": ["<", 2],
     }
 
-    if ref.startswith("094") and len(ref) > 3:
+    allowed_descriptions = frappe.get_all("Mint Bank Description Rule", pluck="description_text") if doc.description else []
+    is_in_rules = doc.description in allowed_descriptions
+    is_prefix_case = False
+
+    if is_in_rules and ref.startswith("094") and len(ref) > 3:
         stripped_ref = ref[3:]
         filters["reference_number"] = ["in", [ref, stripped_ref]]
-    elif ref.startswith("94") and len(ref) > 2:
+        is_prefix_case = True
+    elif is_in_rules and ref.startswith("94") and len(ref) > 2:
         stripped_ref = ref[2:]
         filters["reference_number"] = ["in", [ref, stripped_ref]]
+        is_prefix_case = True
     else:
         filters["reference_number"] = ref
 
@@ -1251,10 +1257,8 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
 
     duplicate = frappe.db.exists("Bank Transaction", filters)
     if duplicate:
-        if doc.description:
-            allowed_descriptions = frappe.get_all("Mint Bank Description Rule", pluck="description_text")
-            if doc.description in allowed_descriptions:
-                return
+        if is_in_rules and not is_prefix_case:
+            return
         
         duplicate_link = frappe.utils.get_link_to_form("Bank Transaction", duplicate)
         if is_dep:
