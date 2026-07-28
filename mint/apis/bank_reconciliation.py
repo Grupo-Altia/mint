@@ -22,6 +22,26 @@ def clear_clearing_date(voucher_type: str, voucher_name: str):
 
 
 @frappe.whitelist()
+def search_accounts_unrestricted(company, root_type=None, report_type=None, account_type=None):
+    filters = {"company": company, "is_group": 0, "disabled": 0}
+    
+    if root_type:
+        filters["root_type"] = ["in", json.loads(root_type)]
+    if report_type:
+        filters["report_type"] = report_type
+    if account_type:
+        filters["account_type"] = ["in", json.loads(account_type)]
+        
+    return frappe.get_all("Account", 
+        fields=["name", "root_type", "report_type", "account_type", "account_currency", "parent_account"],
+        filters=filters,
+        order_by="root_type asc, account_number asc",
+        limit_page_length=1000,
+        ignore_user_permissions=1
+    )
+
+
+@frappe.whitelist()
 def reconcile_vouchers(bank_transaction_name: str | int, vouchers: str, is_new_voucher: bool = False):
 	 
     # updated clear date of all the vouchers based on the bank transaction

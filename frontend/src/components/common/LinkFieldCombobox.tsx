@@ -99,7 +99,9 @@ export interface LinkFieldComboboxProps {
     /** If true, the component will be wrapped in a FormControl component */
     useInForm?: boolean,
     /** Button Class name */
-    buttonClassName?: string
+    buttonClassName?: string,
+    /** Ignore user permissions (useful when fetching data without branch/role restrictions) */
+    ignoreUserPermissions?: boolean
 }
 const LinkFieldCombobox = ({
     doctype,
@@ -116,7 +118,8 @@ const LinkFieldCombobox = ({
     searchAPIPath = "frappe.desk.search.search_link",
     limit,
     useInForm,
-    buttonClassName
+    buttonClassName,
+    ignoreUserPermissions
 }: LinkFieldComboboxProps) => {
 
     const pageLimit = useMemo(() => limit || getSystemDefault('link_field_results_limit') || 20, [limit])
@@ -162,6 +165,7 @@ const LinkFieldCombobox = ({
         searchfield,
         filters: JSON.stringify(customQuery?.filters || filters || []),
         reference_doctype,
+        ignore_user_permissions: ignoreUserPermissions ? 1 : 0
     }, () => {
         if (!open) {
             return null
