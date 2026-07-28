@@ -1235,7 +1235,10 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
         "docstatus": ["<", 2],
     }
 
-    if ref.startswith("94") and len(ref) > 2:
+    if ref.startswith("094") and len(ref) > 3:
+        stripped_ref = ref[3:]
+        filters["reference_number"] = ["in", [ref, stripped_ref]]
+    elif ref.startswith("94") and len(ref) > 2:
         stripped_ref = ref[2:]
         filters["reference_number"] = ["in", [ref, stripped_ref]]
     else:
