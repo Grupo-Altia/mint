@@ -2023,6 +2023,8 @@ def get_duplicate_bank_transactions():
     duplicates = []
     from frappe.utils import flt
     
+    ignored_descriptions = [r.name for r in frappe.get_all("Mint Bank Description Rule")]
+    
     for doctype_type in ["withdrawal", "deposit"]:
         groups = frappe.db.sql(f"""
             SELECT TRIM(reference_number) AS ref, bank_account, company, {doctype_type} as amount, COUNT(*) AS cnt
@@ -2045,7 +2047,16 @@ def get_duplicate_bank_transactions():
             if len(members) > 1:
                 # El primero es el que tiene mayor asignación, ese se conserva
                 keep = members[0]
+                
+                # Si la descripción del que se conserva está ignorada, saltamos el grupo entero
+                if keep.description in ignored_descriptions:
+                    continue
+                    
                 for dup in members[1:]:
+                    # Si la descripción del duplicado está ignorada, lo saltamos
+                    if dup.description in ignored_descriptions:
+                        continue
+                        
                     # Si ambos tienen asignaciones, no sugerimos limpieza automática para evitar romper cosas
                     if flt(keep.allocated_amount) >= 0.01 and flt(dup.allocated_amount) >= 0.01:
                         continue
