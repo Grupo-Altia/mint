@@ -1422,9 +1422,9 @@ def cancel_exact_duplicate_deposits() -> int:
             try:
                 doc = frappe.get_doc("Bank Transaction", m.name)
                 if doc.docstatus == 1:
+                    doc.flags.ignore_permissions = True
                     doc.cancel()
-                else:
-                    frappe.delete_doc("Bank Transaction", m.name, ignore_permissions=True)
+                frappe.delete_doc("Bank Transaction", m.name, force=1, ignore_permissions=True)
                 frappe.db.commit()
                 cancelled += 1
             except Exception:
@@ -2140,8 +2140,7 @@ def remove_duplicate_bank_transactions(duplicates_json):
             if doc.docstatus == 1:
                 doc.flags.ignore_permissions = True
                 doc.cancel()
-            else:
-                frappe.delete_doc("Bank Transaction", dup_name, ignore_permissions=True)
+            frappe.delete_doc("Bank Transaction", dup_name, force=1, ignore_permissions=True)
             frappe.db.commit()
             processed += 1
         except Exception as e:
