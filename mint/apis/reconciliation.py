@@ -1390,17 +1390,23 @@ def cancel_exact_duplicate_deposits() -> int:
     """
     members = frappe.db.sql(
         """
-        SELECT name, TRIM(reference_number) as ref, bank_account, company, 
-               ROUND(deposit, 2) as amount, date, allocated_amount, docstatus
-        FROM (
-            SELECT name, reference_number, bank_account, company, deposit, date, allocated_amount, docstatus,
-                   COUNT(*) OVER (PARTITION BY TRIM(reference_number), bank_account, company, ROUND(deposit, 2), date) as cnt
+        SELECT t.name, TRIM(t.reference_number) as ref, t.bank_account, t.company, 
+               ROUND(t.deposit, 2) as amount, t.date, t.allocated_amount, t.docstatus
+        FROM `tabBank Transaction` t
+        INNER JOIN (
+            SELECT TRIM(reference_number) AS ref, bank_account, company, ROUND(deposit, 2) as amount, date
             FROM `tabBank Transaction`
             WHERE deposit > 0 AND docstatus < 2
               AND reference_number IS NOT NULL AND TRIM(reference_number) != ''
-        ) t
-        WHERE cnt > 1
-        ORDER BY ref, bank_account, company, amount, date, allocated_amount DESC, name ASC
+            GROUP BY TRIM(reference_number), bank_account, company, ROUND(deposit, 2), date
+            HAVING COUNT(*) > 1
+        ) dup ON TRIM(t.reference_number) = dup.ref 
+             AND t.bank_account = dup.bank_account 
+             AND t.company = dup.company 
+             AND ROUND(t.deposit, 2) = dup.amount
+             AND t.date = dup.date
+        WHERE t.deposit > 0 AND t.docstatus < 2
+        ORDER BY ref, t.bank_account, t.company, amount, t.date, t.allocated_amount DESC, t.name ASC
         """,
         as_dict=True,
     )
@@ -2048,18 +2054,22 @@ def get_duplicate_bank_transactions():
     
     for doctype_type in ["withdrawal", "deposit"]:
         members = frappe.db.sql(f"""
-            SELECT name, TRIM(reference_number) as ref, bank_account, company, {doctype_type} as amount, 
-                   allocated_amount, unallocated_amount, status, docstatus, date, description
-            FROM (
-                SELECT name, reference_number, bank_account, company, {doctype_type}, 
-                       allocated_amount, unallocated_amount, status, docstatus, date, description,
-                       COUNT(*) OVER (PARTITION BY TRIM(reference_number), bank_account, company, {doctype_type}) as cnt
+            SELECT t.name, TRIM(t.reference_number) as ref, t.bank_account, t.company, t.{doctype_type} as amount, 
+                   t.allocated_amount, t.unallocated_amount, t.status, t.docstatus, t.date, t.description
+            FROM `tabBank Transaction` t
+            INNER JOIN (
+                SELECT TRIM(reference_number) AS ref, bank_account, company, {doctype_type} as amount
                 FROM `tabBank Transaction`
                 WHERE {doctype_type} > 0 AND docstatus < 2
                   AND reference_number IS NOT NULL AND TRIM(reference_number) != ''
-            ) t
-            WHERE cnt > 1
-            ORDER BY ref, bank_account, company, amount, allocated_amount DESC, name ASC
+                GROUP BY TRIM(reference_number), bank_account, company, {doctype_type}
+                HAVING COUNT(*) > 1
+            ) dup ON TRIM(t.reference_number) = dup.ref 
+                 AND t.bank_account = dup.bank_account 
+                 AND t.company = dup.company 
+                 AND t.{doctype_type} = dup.amount
+            WHERE t.{doctype_type} > 0 AND t.docstatus < 2
+            ORDER BY dup.ref, t.bank_account, t.company, dup.amount, t.allocated_amount DESC, t.name ASC
         """, as_dict=True)
         
         grouped = {}
