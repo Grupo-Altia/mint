@@ -1229,12 +1229,17 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
 
     filters = {
         "name": ["!=", doc.name or ""],
-        "reference_number": ref,
         "date": doc.date,
         "bank_account": doc.bank_account,
         "company": doc.company,
         "docstatus": ["<", 2],
     }
+
+    if ref.startswith("94") and len(ref) > 2:
+        stripped_ref = ref[2:]
+        filters["reference_number"] = ["in", [ref, stripped_ref]]
+    else:
+        filters["reference_number"] = ref
 
     if is_dep:
         filters["deposit"] = [">", 0]
