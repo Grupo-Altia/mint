@@ -143,6 +143,8 @@ after_install = "mint.setup.install.after_install"
 # ---------------
 # Hook on document methods and events
 
+bank_reconciliation_doctypes = ["Mint Bank Transfer"]
+
 doc_events = {
     "Payment Entry": {
         # Motor de conciliación (migrado de l10n_ve): compuerta de aprobación y enlace
@@ -158,6 +160,7 @@ doc_events = {
         "validate": "mint.apis.reconciliation.validate_bank_transaction_duplicate",
         "on_submit": "mint.apis.reconciliation.reconcile_drafts_for_deposit",
         "on_update_after_submit": "mint.apis.reconciliation.update_source_reference_on_reconcile",
+        "on_cancel": "mint.apis.reconciliation.restore_clearance_date_on_cancel",
     },
     "Journal Entry": {
         "on_submit": "mint.apis.reconciliation.reconcile_journal_entry"
@@ -182,6 +185,9 @@ scheduler_events = {
 	"hourly": [
 		"mint.apis.rules.scheduler_run_rule_evaluation"
 	],
+	"monthly": [
+		"mint.apis.statement_import.cleanup_old_imports"
+	],
 	"cron": {
 		# 22:00 (10 pm) hora del site: barrido de reintento de conciliación de los
 		# cobros en borrador pendientes (cierra el hueco de los que se crean después
@@ -191,6 +197,9 @@ scheduler_events = {
 			"mint.apis.reconciliation.reconcile_pending_drafts_nightly"
 		]
 	},
+	"daily": [
+		"mint.apis.reconciliation.daily_remove_exact_duplicates"
+	],
 }
 
 # Testing

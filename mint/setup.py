@@ -166,4 +166,8 @@ def after_migrate():
     update_conciliaciones_workspace()
     update_admin_workspace()
     remove_internal_transfer_option()
+    
+    from mint.custom_fields import create_mint_custom_fields
+    create_mint_custom_fields()
+    
     frappe.db.commit()

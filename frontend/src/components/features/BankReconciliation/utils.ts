@@ -33,7 +33,7 @@ export const useGetAccountOpeningBalance = () => {
 
     }, [companyID, bankAccount?.name, dates.fromDate])
 
-    return useFrappeGetCall('erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool.get_account_balance', args, undefined, {
+    return useFrappeGetCall('mint.apis.bank_account.get_custom_account_balance', args, undefined, {
         revalidateOnFocus: false
     })
 }
@@ -55,7 +55,7 @@ export const useGetAccountClosingBalance = () => {
 
     }, [companyID, bankAccount?.name, dates.toDate])
 
-    return useFrappeGetCall('erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool.get_account_balance', args,
+    return useFrappeGetCall('mint.apis.bank_account.get_custom_account_balance', args,
         `bank-reconciliation-account-closing-balance-${bankAccount?.name}-${dates.toDate}`,
         {
             revalidateOnFocus: false

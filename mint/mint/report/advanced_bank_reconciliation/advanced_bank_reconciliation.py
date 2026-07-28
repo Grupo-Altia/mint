@@ -424,6 +424,7 @@ def get_report_summary(data, filters):
     pagos_por_conciliar = 0
     abonos_no_registrados = 0
     cargos_bancarios = 0
+    total_conciliado = 0
     
     for row in data:
         classification = row.get('classification', '')
@@ -435,6 +436,8 @@ def get_report_summary(data, filters):
             abonos_no_registrados += row.get('deposit', 0)
         elif classification == 'Cargo Bancario':
             cargos_bancarios += row.get('withdrawal', 0)
+        elif classification == 'Conciliado':
+            total_conciliado += row.get('deposit', 0) - row.get('withdrawal', 0)
     
     # Obtener saldo según el banco ingresado en Mint
     bank_balance = get_mint_bank_balance(filters.get('accounts'), filters.get('to_date'))
@@ -447,54 +450,63 @@ def get_report_summary(data, filters):
     adjusted_books_balance = account_balance + abonos_no_registrados - cargos_bancarios
     difference = adjusted_bank_balance - adjusted_books_balance
     
+    def _info(title, text):
+        text = text.replace('"', '&quot;')
+        return f' <i class="fa fa-info-circle text-muted mint-info-icon" data-title="{title}" data-text="{text}" style="cursor: help;"></i>'
+
     return [
         {
-            'label': _('Saldo según Banco'),
+            'label': _('Saldo según Banco') + _info('Saldo según Banco', 'Saldo registrado en el extracto bancario ingresado en el sistema para la fecha seleccionada. Proviene de los saldos cargados en los estados de cuenta.'),
             'value': bank_balance,
             'datatype': 'Currency'
         },
         {
-            'label': _('Depósitos en Tránsito'),
+            'label': _('Depósitos en Tránsito') + _info('Depósitos en Tránsito', 'Cobros (ingresos) registrados en el sistema contable, pero que aún no se reflejan en el banco. Proviene de los recibos de pago (ingresos) o asientos contables aún no conciliados.'),
             'value': deposits_in_transit,
             'datatype': 'Currency'
         },
         {
-            'label': _('Pagos por Conciliar'),
+            'label': _('Pagos por Conciliar') + _info('Pagos por Conciliar', 'Pagos (egresos) emitidos en el sistema, pero que el banco aún no ha descontado o procesado. Proviene de los recibos de pago (egresos) o asientos contables aún no conciliados.'),
             'value': pagos_por_conciliar,
             'datatype': 'Currency'
         },
         {
-            'label': _('Saldo Banco Ajustado'),
+            'label': _('Saldo Banco Ajustado') + _info('Saldo Banco Ajustado', 'Saldo del banco + Depósitos en tránsito - Pagos por conciliar. Representa el saldo real proyectado del banco.'),
             'value': adjusted_bank_balance,
             'datatype': 'Currency'
         },
         {
-            'label': _('Saldo según Libros'),
+            'label': _('Saldo según Libros') + _info('Saldo según Libros', 'Saldo actual contable de la cuenta bancaria en el sistema. Proviene del balance del libro mayor (asientos contables) para esta cuenta.'),
             'value': account_balance,
             'datatype': 'Currency'
         },
         {
-            'label': _('Abonos no Registrados'),
+            'label': _('Abonos no Registrados') + _info('Abonos no Registrados', 'Ingresos que aparecen en el extracto bancario pero que aún no tienen un documento contable en el sistema. Proviene de las transacciones bancarias importadas que no han sido emparejadas.'),
             'value': abonos_no_registrados,
             'datatype': 'Currency'
         },
         {
-            'label': _('Cargos Bancarios'),
+            'label': _('Cargos Bancarios') + _info('Cargos Bancarios', 'Egresos (ej. comisiones) que aparecen en el extracto bancario pero que aún no han sido registrados en el sistema. Proviene de las transacciones bancarias importadas sin emparejar.'),
             'value': cargos_bancarios,
             'datatype': 'Currency'
         },
         {
-            'label': _('Saldo Libros Ajustado'),
+            'label': _('Saldo Libros Ajustado') + _info('Saldo Libros Ajustado', 'Saldo según libros + Abonos no registrados - Cargos bancarios. Representa el saldo real proyectado en libros.'),
             'value': adjusted_books_balance,
             'datatype': 'Currency'
         },
         {
-            'label': _('Diferencia'),
+            'label': _('Diferencia') + _info('Diferencia', 'Diferencia entre el Saldo Banco Ajustado y el Saldo Libros Ajustado. Debe ser siempre cero (0).'),
             'value': difference,
             'datatype': 'Currency'
         },
         {
-            'label': _('¿Cuadre?'),
+            'label': _('Flujo Conciliado') + _info('Flujo Conciliado', 'Suma neta (ingresos menos egresos) de todas las transacciones marcadas como conciliadas en este período. Proviene de los emparejamientos confirmados entre el extracto bancario y los recibos de pago o asientos.'),
+            'value': total_conciliado,
+            'datatype': 'Currency'
+        },
+        {
+            'label': _('¿Cuadre?') + _info('¿Cuadre?', 'Indica si la conciliación está perfectamente balanceada.'),
             'value': '✅ CUADRA' if difference == 0 else '❌ REVISAR',
             'datatype': 'Data'
         }
