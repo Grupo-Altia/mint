@@ -137,3 +137,41 @@ def get_allowed_mode_of_payments(company: str):
     
     # Return unique modes of payment
     return list(set(mops))
+
+@frappe.whitelist()
+def get_custom_account_balance(bank_account, till_date, company):
+    from frappe.utils import flt, getdate, add_days
+    from erpnext.accounts.report.bank_reconciliation_statement.bank_reconciliation_statement import get_amounts_not_reflected_in_system, get_entries
+    from erpnext.accounts.utils import get_balance_on
+
+    frappe.has_permission("Bank Account", "read", bank_account, throw=True)
+    account = frappe.db.get_value("Bank Account", bank_account, "account")
+    filters = frappe._dict({
+        "account": account,
+        "report_date": till_date,
+        "include_pos_transactions": 1,
+        "company": company,
+    })
+    
+    data = get_entries(filters)
+    balance_as_per_system = get_balance_on(filters["account"], filters["report_date"])
+
+    cutoff_date = frappe.db.get_value("Bank Account", bank_account, "mint_opening_date")
+    
+    if cutoff_date:
+        if getdate(filters["report_date"]) < getdate(cutoff_date):
+            balance_as_per_system = 0.0
+            data = []
+        else:
+            balance_before_cutoff = get_balance_on(filters["account"], add_days(cutoff_date, -1))
+            balance_as_per_system -= flt(balance_before_cutoff)
+            data = [d for d in data if getdate(d.posting_date) >= getdate(cutoff_date)]
+
+    total_debit, total_credit = 0.0, 0.0
+    for d in data:
+        total_debit += flt(d.debit)
+        total_credit += flt(d.credit)
+
+    amounts_not_reflected_in_system = get_amounts_not_reflected_in_system(filters)
+
+    return flt(balance_as_per_system) - flt(total_debit) + flt(total_credit) + amounts_not_reflected_in_system
