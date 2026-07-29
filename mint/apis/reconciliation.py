@@ -1983,7 +1983,7 @@ def reconcile_mint_bank_transfer(mbt_name: str) -> None:
         for cand in candidates:
             if abs(float(cand.deposit) - float(doc.amount)) < 1.0:
                 raw_ref = str(cand.reference_number or "").strip()
-                target_ref = str(doc.reference_number).strip()
+                target_ref = str(doc.destination_reference_number or doc.reference_number).strip()
                 match, _ = check_rules_match(rules_to_check, raw_ref, target_ref)
                 if match or (not rules_to_check and raw_ref == target_ref):
                     try:
@@ -2040,11 +2040,11 @@ def reconcile_mint_bank_transfer_from_bank_transaction(bank_transaction_name: st
         mbts = frappe.get_all(
             "Mint Bank Transfer",
             filters={"docstatus": 1, "destination_reconciled": 0, "to_bank_account": bt.bank_account, "company": bt.company},
-            fields=["name", "reference_number", "amount"]
+            fields=["name", "reference_number", "destination_reference_number", "amount"]
         )
         for mbt in mbts:
             if abs(float(mbt.amount) - float(bt.deposit)) < 1.0:
-                target_ref = str(mbt.reference_number).strip()
+                target_ref = str(mbt.destination_reference_number or mbt.reference_number).strip()
                 match, _ = check_rules_match(rules_to_check, raw_ref, target_ref)
                 if match or (not rules_to_check and raw_ref == target_ref):
                     try:
