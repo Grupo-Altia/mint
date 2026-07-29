@@ -7,6 +7,12 @@ export interface GetStatementDetailsResponse {
     data: Array<Array<string>>,
     header_index: number,
     header_row: Array<string>,
+    columns: Array<{
+        index: number,
+        header_text: string,
+        variable: string,
+        maps_to: string
+    }>,
     column_mapping: Record<string, number>,
     transaction_starting_index: number,
     transaction_ending_index: number,
@@ -46,11 +52,12 @@ export interface GetStatementDetailsResponse {
     currency: string,
 }
 
-export const useGetStatementDetails = (fileURL: string, bankAccount: string) => {
+export const useGetStatementDetails = (fileURL: string, bankAccount: string, customMapping?: string) => {
     return useFrappeGetCall<{ message: GetStatementDetailsResponse }>("mint.apis.statement_import.get_statement_details", {
         file_url: fileURL,
         bank_account: bankAccount,
-    }, undefined, {
+        custom_mapping: customMapping
+    }, customMapping ? `get_statement_details_${customMapping}` : undefined, {
         revalidateOnFocus: false
     })
 

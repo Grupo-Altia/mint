@@ -40,8 +40,8 @@ def is_similar_reference(ref1, ref2):
             
     return False
 
-@frappe.whitelist(methods=["GET"])
-def get_statement_details(file_url: str, bank_account: str):
+@frappe.whitelist(methods=["GET", "POST"])
+def get_statement_details(file_url: str, bank_account: str, custom_mapping: str = None):
     """
     Given a file path, try to get bank statement details.
 
@@ -57,39 +57,100 @@ def get_statement_details(file_url: str, bank_account: str):
     file_name = file_url.split("/")[-1]
 
     header_index, max_valid_columns = get_header_row_index(data)
-
-    if max_valid_columns >= 2:
-        header_row = data[header_index]
-        columns, column_mapping = get_column_mapping(header_row)
-
-        # Fallback for empty header columns using auto_detect on the first data row
-        if len(data) > header_index + 1:
-            first_data_row = data[header_index + 1]
-            auto_columns, auto_mapping = auto_detect_columns(first_data_row)
+    
+    import json
+    manual_mapping = None
+    if custom_mapping:
+        try:
+            manual_mapping = json.loads(custom_mapping)
+        except Exception:
+            pass
             
-            # For any crucial column missing, see if auto_detect found it
-            for crucial in ["Date", "Description", "Reference", "Amount", "Balance", "Transaction Type"]:
-                if crucial not in column_mapping and crucial in auto_mapping:
-                    idx = auto_mapping[crucial]
-                    column_mapping[crucial] = idx
-                    for col in columns:
-                        if col["index"] == idx:
-                            col["maps_to"] = crucial
-                            break
+    if not manual_mapping:
+        # Check ERPNext Bank DocType
+        bank_name = frappe.get_value("Bank Account", bank_account, "bank")
+        if bank_name:
+            bank_doc = frappe.get_cached_doc("Bank", bank_name)
+            if hasattr(bank_doc, "bank_transaction_mapping") and bank_doc.bank_transaction_mapping:
+                manual_mapping = {}
+                for row in bank_doc.bank_transaction_mapping:
+                    if row.bank_transaction_field and row.file_field:
+                        val = row.file_field.strip()
+                        if val.isdigit():
+                            manual_mapping[row.bank_transaction_field] = int(val)
+                        else:
+                            if max_valid_columns >= 2:
+                                hr = [str(c).strip().lower() for c in data[header_index]]
+                                lower_val = val.lower()
+                                if lower_val in hr:
+                                    manual_mapping[row.bank_transaction_field] = hr.index(lower_val)
+                                else:
+                                    for i, c in enumerate(hr):
+                                        if lower_val in c:
+                                            manual_mapping[row.bank_transaction_field] = i
+                                            break
+
+    if manual_mapping:
+        column_mapping = manual_mapping
+        if max_valid_columns < 2:
+            header_index = 0
+            first_data_row = data[1] if len(data) > 1 else data[0]
+            for idx, row in enumerate(data):
+                non_empty_cells = [cell for cell in row if str(cell).strip()]
+                if len(non_empty_cells) >= 3:
+                    first_data_row = row
+                    header_index = idx - 1
+                    break
+            header_row = [f"Columna {i+1}" for i in range(len(first_data_row))]
+        else:
+            header_row = data[header_index]
+            
+        columns = []
+        for idx, cell in enumerate(header_row):
+            mapped_to = "Do not import"
+            for k, v in column_mapping.items():
+                if str(v) == str(idx):
+                    mapped_to = k
+                    break
+            columns.append({
+                "index": idx,
+                "header_text": str(cell) if str(cell).strip() else f"Columna {idx + 1}",
+                "variable": str(cell).strip().lower().replace(" ", "_").replace(".", "") if str(cell).strip() else f"columna_{idx + 1}",
+                "maps_to": mapped_to
+            })
     else:
-        # No headers found. Find the first row that looks like a transaction row
-        header_index = 0
-        first_data_row = data[1] if len(data) > 1 else data[0]
-        for idx, row in enumerate(data):
-            non_empty_cells = [cell for cell in row if str(cell).strip()]
-            if len(non_empty_cells) >= 3:
-                first_data_row = row
-                header_index = idx - 1 if idx > 0 else 0
-                break
+        if max_valid_columns >= 2:
+            header_row = data[header_index]
+            columns, column_mapping = get_column_mapping(header_row)
+
+            # Fallback for empty header columns using auto_detect on the first data row
+            if len(data) > header_index + 1:
+                first_data_row = data[header_index + 1]
+                auto_columns, auto_mapping = auto_detect_columns(first_data_row)
                 
-        header_row = [f"Columna {i+1}" for i in range(len(first_data_row))]
-        columns, column_mapping = auto_detect_columns(first_data_row)
-        header_row = [column["header_text"] for column in columns]
+                # For any crucial column missing, see if auto_detect found it
+                for crucial in ["Date", "Description", "Reference", "Amount", "Balance", "Transaction Type"]:
+                    if crucial not in column_mapping and crucial in auto_mapping:
+                        idx = auto_mapping[crucial]
+                        column_mapping[crucial] = idx
+                        for col in columns:
+                            if col["index"] == idx:
+                                col["maps_to"] = crucial
+                                break
+        else:
+            # No headers found. Find the first row that looks like a transaction row
+            header_index = 0
+            first_data_row = data[1] if len(data) > 1 else data[0]
+            for idx, row in enumerate(data):
+                non_empty_cells = [cell for cell in row if str(cell).strip()]
+                if len(non_empty_cells) >= 3:
+                    first_data_row = row
+                    header_index = idx - 1
+                    break
+                    
+            header_row = [f"Columna {i+1}" for i in range(len(first_data_row))]
+            columns, column_mapping = auto_detect_columns(first_data_row)
+            header_row = [column["header_text"] for column in columns]
 
     transaction_rows, transaction_starting_index, transaction_ending_index = get_transaction_rows(data, header_index, column_mapping)
 
@@ -113,6 +174,13 @@ def get_statement_details(file_url: str, bank_account: str):
     conflicting_transactions = check_for_conflicts(bank_account, statement_start_date, statement_end_date)
 
     final_transactions = get_final_transactions(transaction_rows, date_format, amount_format)
+
+    ignored_rules = frappe.get_all("Mint Bank Description Rule", filters={"ignore_transaction": 1}, pluck="description_text")
+    if ignored_rules:
+        final_transactions = [
+            tx for tx in final_transactions
+            if (tx.get("description") or "").strip() not in ignored_rules
+        ]
 
     account = frappe.get_cached_value("Bank Account", bank_account, "account")
     account_currency = frappe.get_cached_value("Account", account, "account_currency")
@@ -215,7 +283,8 @@ def process_statement_import_background(final_transactions, bank_account, curren
     success = 0
     errors = 0
 
-    allowed_descriptions = frappe.get_all("Mint Bank Description Rule", pluck="description_text")
+    allowed_descriptions = frappe.get_all("Mint Bank Description Rule", filters={"ignore_transaction": 0}, pluck="description_text")
+    ignored_rules = frappe.get_all("Mint Bank Description Rule", filters={"ignore_transaction": 1}, pluck="description_text")
 
     for current_index, transaction in enumerate(final_transactions):
         try:
@@ -229,6 +298,11 @@ def process_statement_import_background(final_transactions, bank_account, curren
             # Fecha obligatoria: una transacción sin fecha se escapa de los filtros por
             # fecha del barrido/saneo (el bug ×100 dejó BTs con date=None). Se omite.
             tx_date = transaction.get("date")
+            desc_clean = (transaction.get("description") or "").strip()
+
+            if desc_clean in ignored_rules or transaction.get("description") in ignored_rules:
+                continue
+
             if not tx_date:
                 errors += 1
                 log_mint_error(
@@ -407,7 +481,7 @@ def process_statement_import_background(final_transactions, bank_account, curren
 
 
 @frappe.whitelist(methods=["POST"])
-def import_statement(file_url: str, bank_account: str):
+def import_statement(file_url: str, bank_account: str, custom_mapping: str = None):
     """
     Given a file path and bank account, try to import the statement
     """
@@ -433,7 +507,7 @@ def import_statement(file_url: str, bank_account: str):
     currency = frappe.get_value("Account", account, "account_currency")
     # Create the bank transactions, submit them and then store the closing balance if any
 
-    data = get_statement_details(file_url, bank_account)
+    data = get_statement_details(file_url, bank_account, custom_mapping)
 
     final_transactions = data.get("final_transactions", [])
 

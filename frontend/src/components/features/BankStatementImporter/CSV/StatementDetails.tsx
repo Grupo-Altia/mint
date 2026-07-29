@@ -3,7 +3,7 @@ import { GetStatementDetailsResponse } from '../import_utils'
 import { flt, formatCurrency } from '@/lib/numbers'
 import { formatDate } from '@/lib/date'
 import { bankRecDateAtom, SelectedBank } from '../../BankReconciliation/bankRecAtoms'
-import { ChevronLeftIcon, ExternalLinkIcon, InfoIcon, Landmark, Loader2Icon } from 'lucide-react'
+import { ChevronLeftIcon, ExternalLinkIcon, InfoIcon, Landmark, Loader2Icon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
 import { H2, H3, H4, Paragraph } from '@/components/ui/typography'
 import { FileTypeIcon } from '@/components/ui/file-dropzone'
 import { getFileExtension } from '@/lib/file'
@@ -15,9 +15,10 @@ import { useFrappeEventListener, useFrappePostCall } from 'frappe-react-sdk'
 import { toast } from 'sonner'
 import ErrorBanner from '@/components/ui/error-banner'
 import { useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Progress } from '@/components/ui/progress'
 import { useSetAtom } from 'jotai'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
 const AMOUNT_FORMAT_LABEL_MAP = {
     "separate_columns_for_withdrawal_and_deposit": _("Separate columns for withdrawal and deposit"),
@@ -56,15 +57,18 @@ const parseDateFormat = (dateFormat: string) => {
 type Props = {
     data: GetStatementDetailsResponse,
     bank: SelectedBank | null,
-    onBack: () => void
+    onBack: () => void,
+    customMapping?: string,
+    setCustomMapping?: (val: string | undefined) => void
 }
 
-const StatementDetails = ({ data, bank, onBack }: Props) => {
+const StatementDetails = ({ data, bank, onBack, customMapping, setCustomMapping }: Props) => {
     const dateFormatMeta = parseDateFormat(data.date_format)
 
     const { call, loading, error } = useFrappePostCall<{ message: { success: boolean, start_date: string, end_date: string } }>('mint.apis.statement_import.import_statement')
 
     const navigate = useNavigate()
+    const [showMapping, setShowMapping] = useState(false)
 
     const setDates = useSetAtom(bankRecDateAtom)
 
@@ -73,6 +77,7 @@ const StatementDetails = ({ data, bank, onBack }: Props) => {
         call({
             file_url: data.file_path,
             bank_account: bank?.name,
+            custom_mapping: customMapping
         }).then((response) => {
             if (response.message.start_date && response.message.end_date) {
                 setDates({
@@ -90,6 +95,7 @@ const StatementDetails = ({ data, bank, onBack }: Props) => {
 
     const [progress, setProgress] = useState(0)
     const [imgError, setImgError] = useState(false)
+    const [localMapping, setLocalMapping] = useState<Record<string, number>>(data.column_mapping || {})
 
     useFrappeEventListener("mint-statement-import-progress", (event) => {
         setProgress(event.progress)
@@ -200,6 +206,77 @@ const StatementDetails = ({ data, bank, onBack }: Props) => {
                         </TableRow>
                     </TableBody>
                 </Table>
+            </div>
+
+            <Separator />
+            <div className='flex flex-col gap-4'>
+                <div 
+                    className='flex flex-col gap-1 cursor-pointer select-none group'
+                    onClick={() => setShowMapping(!showMapping)}
+                >
+                    <div className='flex items-center gap-2'>
+                        <H3 className='text-base border-0 p-0 m-0'>{_("Mapeo Manual de Columnas")}</H3>
+                        {showMapping ? (
+                            <ChevronUpIcon className='h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors' />
+                        ) : (
+                            <ChevronDownIcon className='h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors' />
+                        )}
+                    </div>
+                    <Paragraph className='text-sm'>{_("Ajusta manualmente qué columna corresponde a cada dato si la autodetección no fue correcta.")}</Paragraph>
+                </div>
+                
+                {showMapping && (
+                    <>
+                        <Table>
+                            <TableBody>
+                                {["Date", "Amount", "Deposit", "Withdrawal", "Description", "Reference", "Transaction Type", "Balance"].map(field => (
+                                    <TableRow key={field}>
+                                        <TableHead className='bg-muted/70 align-middle w-1/3'>{_(field)}</TableHead>
+                                        <TableCell>
+                                            <Select 
+                                                value={localMapping[field] !== undefined ? localMapping[field].toString() : "none"}
+                                                onValueChange={(val) => {
+                                                    setLocalMapping(prev => {
+                                                        const newMapping = { ...prev }
+                                                        if (val === "none") {
+                                                            delete newMapping[field]
+                                                        } else {
+                                                            newMapping[field] = parseInt(val)
+                                                        }
+                                                        return newMapping
+                                                    })
+                                                }}
+                                            >
+                                                <SelectTrigger className="w-full">
+                                                    <SelectValue placeholder={_("Seleccionar Columna")} />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="none">{_("No importar")}</SelectItem>
+                                                    {data.columns.map(c => (
+                                                        <SelectItem key={c.index} value={c.index.toString()}>
+                                                            {c.header_text} (Col {c.index + 1})
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                        
+                        <div className='flex justify-end'>
+                            <Button 
+                                size='sm' 
+                                variant='secondary' 
+                                onClick={() => setCustomMapping?.(JSON.stringify(localMapping))}
+                                disabled={JSON.stringify(localMapping) === customMapping || (!customMapping && JSON.stringify(localMapping) === JSON.stringify(data.column_mapping))}
+                            >
+                                {_("Aplicar y Refrescar Vista Previa")}
+                            </Button>
+                        </div>
+                    </>
+                )}
             </div>
 
             {data.conflicting_transactions.length > 0 && <Separator />}
