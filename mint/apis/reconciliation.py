@@ -1201,6 +1201,45 @@ def on_change_payment_entry(doc, method=None) -> None:
 
 
 
+def get_bank_description_rules() -> dict:
+    """Reglas de Mint Bank Description Rule indexadas por descripción, cacheadas por
+    request: esto se consulta una vez por fila y la importación de un extracto inserta
+    miles de Bank Transactions de una sola pasada.
+    """
+    cached = getattr(frappe.local, "_mint_bank_description_rules", None)
+    if cached is None:
+        cached = {
+            r.description_text: r
+            for r in frappe.get_all(
+                "Mint Bank Description Rule",
+                fields=["description_text", "apply_prefix_rule", "prefixes_to_strip"],
+            )
+        }
+        frappe.local._mint_bank_description_rules = cached
+    return cached
+
+
+def _prefix_ref_candidates(ref: str, prefixes_to_strip: str | None) -> list:
+    """Referencias equivalentes a `ref` según los prefijos configurados en la regla.
+
+    Las transacciones directas de pasarela llegan con la referencia base (12345678) y
+    por el extracto bancario con un prefijo (9412345678). Se buscan las dos
+    direcciones porque el orden de importación NO está garantizado: si solo se
+    quitara el prefijo, el caso "primero el extracto, después la pasarela" no
+    detectaría el duplicado.
+    """
+    prefixes = [p.strip() for p in (prefixes_to_strip or "").split(",") if p.strip()]
+    # De mayor a menor longitud para que "094" gane sobre "94" y no se solapen.
+    prefixes.sort(key=len, reverse=True)
+
+    for prefix in prefixes:
+        if ref.startswith(prefix) and len(ref) > len(prefix):
+            return [ref, ref[len(prefix):]]
+
+    # `ref` es la base: el gemelo con prefijo pudo importarse antes.
+    return [ref] + [prefix + ref for prefix in prefixes]
+
+
 def validate_bank_transaction_duplicate(doc, method=None) -> None:
     """No permite dos depósitos con la misma referencia en la misma cuenta
     bancaria y empresa.
@@ -1237,25 +1276,14 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
 
     allow_exact_duplicate = False
 
-    if doc.description:
-        matched_rules = frappe.get_all(
-            "Mint Bank Description Rule",
-            filters={"description_text": doc.description},
-            fields=["apply_prefix_rule", "prefixes_to_strip"]
-        )
-        if matched_rules:
-            rule = matched_rules[0]
-            if rule.apply_prefix_rule:
-                if rule.prefixes_to_strip:
-                    prefixes = [p.strip() for p in rule.prefixes_to_strip.split(",")]
-                    prefixes.sort(key=len, reverse=True)
-                    for prefix in prefixes:
-                        if ref.startswith(prefix) and len(ref) > len(prefix):
-                            stripped_ref = ref[len(prefix):]
-                            filters["reference_number"] = ["in", [ref, stripped_ref]]
-                            break
-            else:
-                allow_exact_duplicate = True
+    rule = get_bank_description_rules().get(doc.description) if doc.description else None
+    if rule:
+        if rule.apply_prefix_rule:
+            filters["reference_number"] = ["in", _prefix_ref_candidates(ref, rule.prefixes_to_strip)]
+        else:
+            # Lista blanca: el banco agrupa pagos distintos bajo la misma referencia
+            # genérica (p. ej. "PAGOS A PROVEEDORES" con referencia "0").
+            allow_exact_duplicate = True
 
     if "reference_number" not in filters:
         filters["reference_number"] = ref
@@ -1430,7 +1458,8 @@ def cancel_exact_duplicate_deposits() -> int:
                 if doc.docstatus == 1:
                     doc.flags.ignore_permissions = True
                     doc.cancel()
-                frappe.delete_doc("Bank Transaction", m.name, force=1, ignore_permissions=True)
+                else:
+                    frappe.delete_doc("Bank Transaction", m.name, ignore_permissions=True)
                 frappe.db.commit()
                 cancelled += 1
             except Exception:
@@ -2051,10 +2080,11 @@ def get_duplicate_bank_transactions():
     from frappe.utils import flt
     # Solo ignoramos los que actúan como "lista blanca" (apply_prefix_rule = 0).
     # Las reglas de prefijos sí deben ser evaluadas por el script de limpieza si hay clones exactos.
-    ignored_descriptions = [r.name for r in frappe.get_all(
-        "Mint Bank Description Rule",
-        filters={"apply_prefix_rule": 0}
-    )]
+    ignored_descriptions = {
+        description
+        for description, rule in get_bank_description_rules().items()
+        if not rule.apply_prefix_rule
+    }
     
     for doctype_type in ["withdrawal", "deposit"]:
         members = frappe.db.sql(f"""
@@ -2154,12 +2184,23 @@ def remove_duplicate_bank_transactions(duplicates_json):
             if doc.docstatus == 1:
                 doc.flags.ignore_permissions = True
                 doc.cancel()
-            frappe.delete_doc("Bank Transaction", dup_name, force=1, ignore_permissions=True)
             frappe.db.commit()
             processed += 1
         except Exception as e:
             frappe.db.rollback(save_point="dup_row")
             errors.append(f"Error procesando {dup_name}: {str(e)}")
+            continue
+
+        # Baja definitiva aparte y SIN force: si algo enlaza el documento (DB Bancaribe
+        # Log, amended_from) se conserva cancelado en vez de dejar referencias
+        # colgando. Cancelado ya sale de la detección de colisiones (docstatus < 2).
+        try:
+            frappe.db.savepoint("dup_delete")
+            frappe.delete_doc("Bank Transaction", dup_name, ignore_permissions=True)
+            frappe.db.commit()
+        except Exception:
+            frappe.db.rollback(save_point="dup_delete")
+            errors.append(f"{dup_name}: neutralizado, pero no se pudo borrar (tiene enlaces); se conserva")
 
     return {"processed": processed, "errors": errors}
 

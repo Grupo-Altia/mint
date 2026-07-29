@@ -4,7 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useCurrentCompany } from "@/hooks/useCurrentCompany"
 import _ from "@/lib/translate"
 import { cn } from "@/lib/utils"
-import { useFrappeGetDocList } from "frappe-react-sdk"
+import { useFrappeGetCall, useFrappeGetDocList } from "frappe-react-sdk"
 import Fuse from "fuse.js"
 import { ChevronsUpDownIcon } from "lucide-react"
 import { useLayoutEffect, useMemo, useRef, useState } from "react"
@@ -185,8 +185,6 @@ interface Account {
     parent_account: string
 }
 
-import { useFrappeGetDocList, useFrappeGetCall } from "frappe-react-sdk"
-
 const useGetAccounts = (root_type?: ('Asset' | 'Liability' | 'Equity' | 'Income' | 'Expense')[], report_type?: 'Balance Sheet' | 'Profit and Loss', account_type?: string[], company?: string,
     filterFunction?: (account: Account) => boolean, ignoreUserPermissions?: boolean) => {
 
@@ -230,7 +228,7 @@ const useGetAccounts = (root_type?: ('Asset' | 'Liability' | 'Equity' | 'Income'
             return true
         }) ?? []
 
-    }, [data, root_type, report_type, account_type, filterFunction])
+    }, [rawData, root_type, report_type, account_type, filterFunction])
 
     return { data: filteredData, isLoading, error, mutate }
 }
