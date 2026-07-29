@@ -7,7 +7,9 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "description_text"
+  "description_text",
+  "apply_prefix_rule",
+  "prefixes_to_strip"
  ],
  "fields": [
   {
@@ -17,12 +19,26 @@
    "label": "Description Text",
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "default": "0",
+   "description": "Si est\u00e1 activo, bloquea duplicados si la referencia base (sin el prefijo indicado) ya existe. Si est\u00e1 apagado, funciona como lista blanca y permite el duplicado exacto.",
+   "fieldname": "apply_prefix_rule",
+   "fieldtype": "Check",
+   "label": "Activar Validaci\u00f3n de Prefijos"
+  },
+  {
+   "depends_on": "eval:doc.apply_prefix_rule",
+   "description": "Separados por comas (ej. 94, 094). El sistema intentar\u00e1 quitar estos prefijos para buscar duplicados base.",
+   "fieldname": "prefixes_to_strip",
+   "fieldtype": "Data",
+   "label": "Prefijos a Eliminar"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-21 18:29:44.130042",
+ "modified": "2026-07-28 15:34:08.558107",
  "modified_by": "Administrator",
  "module": "Mint",
  "name": "Mint Bank Description Rule",

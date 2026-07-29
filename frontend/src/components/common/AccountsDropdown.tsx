@@ -4,7 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { useCurrentCompany } from "@/hooks/useCurrentCompany"
 import _ from "@/lib/translate"
 import { cn } from "@/lib/utils"
-import { useFrappeGetDocList } from "frappe-react-sdk"
+import { useFrappeGetCall, useFrappeGetDocList } from "frappe-react-sdk"
 import Fuse from "fuse.js"
 import { ChevronsUpDownIcon } from "lucide-react"
 import { useLayoutEffect, useMemo, useRef, useState } from "react"
@@ -21,9 +21,9 @@ export interface AccountsDropdownProps {
     disabled?: boolean,
     company?: string,
     filterFunction?: (account: Account) => boolean,
-    // If true, the component will be wrapped in a FormControl component
     useInForm?: boolean,
-    buttonClassName?: string
+    buttonClassName?: string,
+    ignoreUserPermissions?: boolean
 }
 /**
  * Component to select an account - supports fuzzy search
@@ -34,9 +34,9 @@ export interface AccountsDropdownProps {
  * @param onChange - The function to call when the value changes
  * @returns 
  */
-const AccountsDropdown = ({ root_type, report_type, account_type, value, onChange, readOnly, disabled, company, filterFunction, useInForm, buttonClassName }: AccountsDropdownProps) => {
+const AccountsDropdown = ({ root_type, report_type, account_type, value, onChange, readOnly, disabled, company, filterFunction, useInForm, buttonClassName, ignoreUserPermissions }: AccountsDropdownProps) => {
 
-    const { data } = useGetAccounts(root_type, report_type, account_type, company, filterFunction)
+    const { data } = useGetAccounts(root_type, report_type, account_type, company, filterFunction, ignoreUserPermissions)
 
     const groupedAccounts = useMemo(() => {
         if (!data) return []
@@ -186,10 +186,10 @@ interface Account {
 }
 
 const useGetAccounts = (root_type?: ('Asset' | 'Liability' | 'Equity' | 'Income' | 'Expense')[], report_type?: 'Balance Sheet' | 'Profit and Loss', account_type?: string[], company?: string,
-    filterFunction?: (account: Account) => boolean) => {
+    filterFunction?: (account: Account) => boolean, ignoreUserPermissions?: boolean) => {
 
     const currentCompany = useCurrentCompany()
-    const { data, isLoading, error, mutate } = useFrappeGetDocList<Account>("Account", {
+    const { data: docListData, isLoading: isLoadingDocList, error: errorDocList, mutate: mutateDocList } = useFrappeGetDocList<Account>("Account", {
         fields: ["name", "root_type", "report_type", "account_type", "account_currency", "parent_account"],
         filters: [["is_group", "=", 0], ["disabled", "=", 0], ["company", "=", company ?? currentCompany]],
         limit: 1000,
@@ -198,15 +198,28 @@ const useGetAccounts = (root_type?: ('Asset' | 'Liability' | 'Equity' | 'Income'
             // @ts-expect-error - we can pass in additional fields to orderBy
             "order": "asc, account_number asc"
         }
-    }, `accounts-${company ?? currentCompany}`, {
+    }, ignoreUserPermissions ? null : `accounts-${company ?? currentCompany}`, {
         revalidateIfStale: false,
         revalidateOnFocus: false,
         revalidateOnReconnect: false,
     })
 
+    const { data: callData, isLoading: isLoadingCall, error: errorCall, mutate: mutateCall } = useFrappeGetCall<{message: Account[]}>("mint.apis.bank_reconciliation.search_accounts_unrestricted", {
+        company: company ?? currentCompany,
+    }, ignoreUserPermissions ? `accounts-unrestricted-${company ?? currentCompany}` : null, {
+        revalidateIfStale: false,
+        revalidateOnFocus: false,
+        revalidateOnReconnect: false,
+    })
+
+    const rawData = ignoreUserPermissions ? callData?.message : docListData;
+    const isLoading = ignoreUserPermissions ? isLoadingCall : isLoadingDocList;
+    const error = ignoreUserPermissions ? errorCall : errorDocList;
+    const mutate = ignoreUserPermissions ? mutateCall : mutateDocList;
+
     const filteredData = useMemo(() => {
 
-        return data?.filter((account) => {
+        return rawData?.filter((account) => {
             if (root_type && !root_type.includes(account.root_type)) return false
             if (report_type && account.report_type !== report_type) return false
             if (account_type && !account_type.includes(account.account_type)) return false
@@ -215,7 +228,7 @@ const useGetAccounts = (root_type?: ('Asset' | 'Liability' | 'Equity' | 'Income'
             return true
         }) ?? []
 
-    }, [data, root_type, report_type, account_type, filterFunction])
+    }, [rawData, root_type, report_type, account_type, filterFunction])
 
     return { data: filteredData, isLoading, error, mutate }
 }
