@@ -2049,8 +2049,12 @@ def get_duplicate_bank_transactions():
     frappe.has_permission("Bank Transaction", "read", throw=True)
     duplicates = []
     from frappe.utils import flt
-    
-    ignored_descriptions = [r.name for r in frappe.get_all("Mint Bank Description Rule")]
+    # Solo ignoramos los que actúan como "lista blanca" (apply_prefix_rule = 0).
+    # Las reglas de prefijos sí deben ser evaluadas por el script de limpieza si hay clones exactos.
+    ignored_descriptions = [r.name for r in frappe.get_all(
+        "Mint Bank Description Rule",
+        filters={"apply_prefix_rule": 0}
+    )]
     
     for doctype_type in ["withdrawal", "deposit"]:
         members = frappe.db.sql(f"""
