@@ -1201,6 +1201,45 @@ def on_change_payment_entry(doc, method=None) -> None:
 
 
 
+def get_bank_description_rules() -> dict:
+    """Reglas de Mint Bank Description Rule indexadas por descripción, cacheadas por
+    request: esto se consulta una vez por fila y la importación de un extracto inserta
+    miles de Bank Transactions de una sola pasada.
+    """
+    cached = getattr(frappe.local, "_mint_bank_description_rules", None)
+    if cached is None:
+        cached = {
+            r.description_text: r
+            for r in frappe.get_all(
+                "Mint Bank Description Rule",
+                fields=["description_text", "apply_prefix_rule", "prefixes_to_strip"],
+            )
+        }
+        frappe.local._mint_bank_description_rules = cached
+    return cached
+
+
+def _prefix_ref_candidates(ref: str, prefixes_to_strip: str | None) -> list:
+    """Referencias equivalentes a `ref` según los prefijos configurados en la regla.
+
+    Las transacciones directas de pasarela llegan con la referencia base (12345678) y
+    por el extracto bancario con un prefijo (9412345678). Se buscan las dos
+    direcciones porque el orden de importación NO está garantizado: si solo se
+    quitara el prefijo, el caso "primero el extracto, después la pasarela" no
+    detectaría el duplicado.
+    """
+    prefixes = [p.strip() for p in (prefixes_to_strip or "").split(",") if p.strip()]
+    # De mayor a menor longitud para que "094" gane sobre "94" y no se solapen.
+    prefixes.sort(key=len, reverse=True)
+
+    for prefix in prefixes:
+        if ref.startswith(prefix) and len(ref) > len(prefix):
+            return [ref, ref[len(prefix):]]
+
+    # `ref` es la base: el gemelo con prefijo pudo importarse antes.
+    return [ref] + [prefix + ref for prefix in prefixes]
+
+
 def validate_bank_transaction_duplicate(doc, method=None) -> None:
     """No permite dos depósitos con la misma referencia en la misma cuenta
     bancaria y empresa.
@@ -1229,12 +1268,25 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
 
     filters = {
         "name": ["!=", doc.name or ""],
-        "reference_number": ref,
         "date": doc.date,
         "bank_account": doc.bank_account,
         "company": doc.company,
         "docstatus": ["<", 2],
     }
+
+    allow_exact_duplicate = False
+
+    rule = get_bank_description_rules().get(doc.description) if doc.description else None
+    if rule:
+        if rule.apply_prefix_rule:
+            filters["reference_number"] = ["in", _prefix_ref_candidates(ref, rule.prefixes_to_strip)]
+        else:
+            # Lista blanca: el banco agrupa pagos distintos bajo la misma referencia
+            # genérica (p. ej. "PAGOS A PROVEEDORES" con referencia "0").
+            allow_exact_duplicate = True
+
+    if "reference_number" not in filters:
+        filters["reference_number"] = ref
 
     if is_dep:
         filters["deposit"] = [">", 0]
@@ -1243,10 +1295,8 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
 
     duplicate = frappe.db.exists("Bank Transaction", filters)
     if duplicate:
-        if doc.description:
-            allowed_descriptions = frappe.get_all("Mint Bank Description Rule", pluck="description_text")
-            if doc.description in allowed_descriptions:
-                return
+        if allow_exact_duplicate:
+            return
         
         duplicate_link = frappe.utils.get_link_to_form("Bank Transaction", duplicate)
         if is_dep:
@@ -1366,41 +1416,47 @@ def cancel_exact_duplicate_deposits() -> int:
     corre en el barrido nocturno ANTES de conciliar, para liberar las colisiones de
     referencia y que el mismo barrido concilie los cobros que quedan libres.
     """
-    groups = frappe.db.sql(
+    members = frappe.db.sql(
         """
-        SELECT TRIM(reference_number) AS ref, bank_account, company,
-               ROUND(deposit, 2) AS amount, date
-        FROM `tabBank Transaction`
-        WHERE deposit > 0 AND docstatus < 2
-          AND reference_number IS NOT NULL AND TRIM(reference_number) != ''
-        GROUP BY TRIM(reference_number), bank_account, company, ROUND(deposit, 2), date
-        HAVING COUNT(*) > 1
+        SELECT t.name, TRIM(t.reference_number) as ref, t.bank_account, t.company, 
+               ROUND(t.deposit, 2) as amount, t.date, t.allocated_amount, t.docstatus
+        FROM `tabBank Transaction` t
+        INNER JOIN (
+            SELECT TRIM(reference_number) AS ref, bank_account, company, ROUND(deposit, 2) as amount, date
+            FROM `tabBank Transaction`
+            WHERE deposit > 0 AND docstatus < 2
+              AND reference_number IS NOT NULL AND TRIM(reference_number) != ''
+            GROUP BY TRIM(reference_number), bank_account, company, ROUND(deposit, 2), date
+            HAVING COUNT(*) > 1
+        ) dup ON TRIM(t.reference_number) = dup.ref 
+             AND t.bank_account = dup.bank_account 
+             AND t.company = dup.company 
+             AND ROUND(t.deposit, 2) = dup.amount
+             AND t.date = dup.date
+        WHERE t.deposit > 0 AND t.docstatus < 2
+        ORDER BY ref, t.bank_account, t.company, amount, t.date, t.allocated_amount DESC, t.name ASC
         """,
         as_dict=True,
     )
+    
     cancelled = 0
-    for group in groups:
-        members = frappe.db.sql(
-            """
-            SELECT name, allocated_amount, docstatus
-            FROM `tabBank Transaction`
-            WHERE TRIM(reference_number) = %(ref)s AND bank_account = %(ba)s
-              AND company = %(co)s AND ROUND(deposit, 2) = %(amt)s AND date = %(dt)s
-              AND docstatus < 2
-            ORDER BY allocated_amount DESC, creation ASC
-            """,
-            {"ref": group.ref, "ba": group.bank_account, "co": group.company,
-             "amt": group.amount, "dt": group.date},
-            as_dict=True,
-        )
-        # members[0] = el más conservable (asignado y/o más antiguo): se conserva.
+    grouped = {}
+    for m in members:
+        key = (m.ref, m.bank_account, m.company, m.amount, m.date)
+        if key not in grouped:
+            grouped[key] = []
+        grouped[key].append(m)
+        
+    for key, group_members in grouped.items():
+        # group_members[0] = el más conservable (asignado y/o más antiguo): se conserva.
         # Del resto, solo se cancelan los que NO tienen asignación.
-        for m in members[1:]:
+        for m in group_members[1:]:
             if flt(m.allocated_amount) >= 0.01:
                 continue  # asignado: conservar (cancelarlo rompería un pago)
             try:
                 doc = frappe.get_doc("Bank Transaction", m.name)
                 if doc.docstatus == 1:
+                    doc.flags.ignore_permissions = True
                     doc.cancel()
                 else:
                     frappe.delete_doc("Bank Transaction", m.name, ignore_permissions=True)
@@ -2022,38 +2078,63 @@ def get_duplicate_bank_transactions():
     frappe.has_permission("Bank Transaction", "read", throw=True)
     duplicates = []
     from frappe.utils import flt
+    # Solo ignoramos los que actúan como "lista blanca" (apply_prefix_rule = 0).
+    # Las reglas de prefijos sí deben ser evaluadas por el script de limpieza si hay clones exactos.
+    ignored_descriptions = {
+        description
+        for description, rule in get_bank_description_rules().items()
+        if not rule.apply_prefix_rule
+    }
     
     for doctype_type in ["withdrawal", "deposit"]:
-        groups = frappe.db.sql(f"""
-            SELECT TRIM(reference_number) AS ref, bank_account, company, {doctype_type} as amount, COUNT(*) AS cnt
-            FROM `tabBank Transaction`
-            WHERE {doctype_type} > 0 AND docstatus < 2
-              AND reference_number IS NOT NULL AND TRIM(reference_number) != ''
-            GROUP BY TRIM(reference_number), bank_account, company, {doctype_type}
-            HAVING cnt > 1
+        members = frappe.db.sql(f"""
+            SELECT t.name, TRIM(t.reference_number) as ref, t.bank_account, t.company, t.{doctype_type} as amount, 
+                   t.allocated_amount, t.unallocated_amount, t.status, t.docstatus, t.date, t.description
+            FROM `tabBank Transaction` t
+            INNER JOIN (
+                SELECT TRIM(reference_number) AS ref, bank_account, company, {doctype_type} as amount
+                FROM `tabBank Transaction`
+                WHERE {doctype_type} > 0 AND docstatus < 2
+                  AND reference_number IS NOT NULL AND TRIM(reference_number) != ''
+                GROUP BY TRIM(reference_number), bank_account, company, {doctype_type}
+                HAVING COUNT(*) > 1
+            ) dup ON TRIM(t.reference_number) = dup.ref 
+                 AND t.bank_account = dup.bank_account 
+                 AND t.company = dup.company 
+                 AND t.{doctype_type} = dup.amount
+            WHERE t.{doctype_type} > 0 AND t.docstatus < 2
+            ORDER BY dup.ref, t.bank_account, t.company, dup.amount, t.allocated_amount DESC, t.name ASC
         """, as_dict=True)
         
-        for group in groups:
-            members = frappe.db.sql(f"""
-                SELECT name, allocated_amount, unallocated_amount, status, docstatus, date, description
-                FROM `tabBank Transaction`
-                WHERE TRIM(reference_number) = %s AND bank_account = %s AND company = %s
-                  AND {doctype_type} = %s AND docstatus < 2
-                ORDER BY allocated_amount DESC, name ASC
-            """, (group.ref, group.bank_account, group.company, group.amount), as_dict=True)
+        grouped = {}
+        for m in members:
+            key = (m.ref, m.bank_account, m.company, m.amount)
+            if key not in grouped:
+                grouped[key] = []
+            grouped[key].append(m)
             
-            if len(members) > 1:
+        for key, group_members in grouped.items():
+            if len(group_members) > 1:
                 # El primero es el que tiene mayor asignación, ese se conserva
-                keep = members[0]
-                for dup in members[1:]:
+                keep = group_members[0]
+                
+                # Si la descripción del que se conserva está ignorada, saltamos el grupo entero
+                if keep.description in ignored_descriptions:
+                    continue
+                    
+                for dup in group_members[1:]:
+                    # Si la descripción del duplicado está ignorada, lo saltamos
+                    if dup.description in ignored_descriptions:
+                        continue
+                        
                     # Si ambos tienen asignaciones, no sugerimos limpieza automática para evitar romper cosas
                     if flt(keep.allocated_amount) >= 0.01 and flt(dup.allocated_amount) >= 0.01:
                         continue
                     
                     duplicates.append({
-                        "reference": group.ref,
+                        "reference": keep.ref,
                         "date": keep.date,
-                        "amount": group.amount,
+                        "amount": keep.amount,
                         "description": keep.description,
                         "type": "Retiro" if doctype_type == "withdrawal" else "Depósito",
                         "original_name": keep.name,
@@ -2103,13 +2184,23 @@ def remove_duplicate_bank_transactions(duplicates_json):
             if doc.docstatus == 1:
                 doc.flags.ignore_permissions = True
                 doc.cancel()
-            else:
-                frappe.delete_doc("Bank Transaction", dup_name, ignore_permissions=True)
             frappe.db.commit()
             processed += 1
         except Exception as e:
             frappe.db.rollback(save_point="dup_row")
             errors.append(f"Error procesando {dup_name}: {str(e)}")
+            continue
+
+        # Baja definitiva aparte y SIN force: si algo enlaza el documento (DB Bancaribe
+        # Log, amended_from) se conserva cancelado en vez de dejar referencias
+        # colgando. Cancelado ya sale de la detección de colisiones (docstatus < 2).
+        try:
+            frappe.db.savepoint("dup_delete")
+            frappe.delete_doc("Bank Transaction", dup_name, ignore_permissions=True)
+            frappe.db.commit()
+        except Exception:
+            frappe.db.rollback(save_point="dup_delete")
+            errors.append(f"{dup_name}: neutralizado, pero no se pudo borrar (tiene enlaces); se conserva")
 
     return {"processed": processed, "errors": errors}
 

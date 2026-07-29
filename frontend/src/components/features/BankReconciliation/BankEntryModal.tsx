@@ -162,6 +162,7 @@ const BulkBankEntryForm = ({ selectedTransactions }: { selectedTransactions: Unr
                         label={_('Account')}
                         rules={{ required: _("Account is required") }}
                         isRequired
+                        ignoreUserPermissions={true}
                     />
                 </div>
 
@@ -690,6 +691,7 @@ const Entries = ({ company, isWithdrawal, currency }: { company: string, isWithd
                                 readOnly={index === 0}
                                 isRequired
                                 hideLabel
+                                ignoreUserPermissions={true}
                             />
                         </TableCell>
                         <TableCell className="align-top">
@@ -700,6 +702,7 @@ const Entries = ({ company, isWithdrawal, currency }: { company: string, isWithd
                                 filters={[["company", "=", company], ["is_group", "=", 0], ["disabled", "=", 0]]}
                                 buttonClassName="min-w-48"
                                 hideLabel
+                                ignoreUserPermissions={true}
                                 rules={{
                                     onChange: (event: any) => {
                                         if (index === 1) {
@@ -810,7 +813,7 @@ const PartyField = ({ index, onChange, readOnly }: { index: number, onChange: (v
         readOnly={readOnly}
         buttonClassName="rounded-l-none border-l-0 min-w-64"
         doctype={party_type}
-
+        ignoreUserPermissions={true}
     />
 }
 
