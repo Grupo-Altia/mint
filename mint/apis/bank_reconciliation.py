@@ -21,23 +21,49 @@ def clear_clearing_date(voucher_type: str, voucher_name: str):
         payment_entry.db_set("clearance_date", None)
 
 
+def _as_list(value):
+    """Acepta el parámetro tanto como lista (llamada interna) como string JSON (HTTP)."""
+    if isinstance(value, str):
+        value = json.loads(value)
+    return value if isinstance(value, list) else [value]
+
+
 @frappe.whitelist()
 def search_accounts_unrestricted(company, root_type=None, report_type=None, account_type=None):
+    """Cuentas de la compañía saltando SOLO los User Permissions (la restricción por
+    sucursal), NO los permisos de rol: el modal de Registro de Banco necesita poder
+    asentar contra cualquier cuenta de la compañía, no solo las de la sucursal del
+    usuario.
+
+    Se exige rol con lectura sobre Account y acceso a la compañía pedida: sin esas dos
+    guardas, cualquier usuario autenticado podría volcar el plan de cuentas completo de
+    cualquier compañía del site.
+    """
+    frappe.has_permission("Account", "read", throw=True)
+    if not company or not frappe.db.exists("Company", company):
+        frappe.throw(_("Compañía inválida: {0}").format(company))
+    if not frappe.has_permission("Company", "read", doc=company):
+        frappe.throw(
+            _("No tiene acceso a la compañía {0}").format(company), frappe.PermissionError
+        )
+
     filters = {"company": company, "is_group": 0, "disabled": 0}
-    
+
     if root_type:
-        filters["root_type"] = ["in", json.loads(root_type)]
+        filters["root_type"] = ["in", _as_list(root_type)]
     if report_type:
         filters["report_type"] = report_type
     if account_type:
-        filters["account_type"] = ["in", json.loads(account_type)]
-        
-    return frappe.get_all("Account", 
+        filters["account_type"] = ["in", _as_list(account_type)]
+
+    # get_all ya ignora permisos (rol + user permissions); la guarda de arriba es la
+    # que decide quién puede llegar hasta aquí.
+    return frappe.get_all(
+        "Account",
         fields=["name", "root_type", "report_type", "account_type", "account_currency", "parent_account"],
         filters=filters,
         order_by="root_type asc, account_number asc",
         limit_page_length=1000,
-        ignore_user_permissions=1
     )
 
 

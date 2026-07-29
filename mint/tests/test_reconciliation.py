@@ -40,6 +40,7 @@ from mint.apis.reconciliation import (
     reconcile_and_approve,
     reconcile_pending_drafts_nightly,
     cancel_exact_duplicate_deposits,
+    _prefix_ref_candidates,
     apply_format_rule,
     check_rules_match,
     _adopt_deposit_bank_account,
@@ -487,6 +488,21 @@ class TestNightlySweep(ReconBaseTestCase):
         mock_approve.assert_called_once_with(["A", "B", "C"])
 
 
+def _dup_member(name, allocated_amount, ref="R1", amount=100.0, date="2026-07-01"):
+    """Fila del JOIN de duplicados: una sola query devuelve TODOS los miembros de
+    TODOS los grupos, ya ordenados (allocated_amount DESC, name ASC)."""
+    return frappe._dict({
+        "name": name,
+        "ref": ref,
+        "bank_account": "BA",
+        "company": "C",
+        "amount": amount,
+        "date": date,
+        "allocated_amount": allocated_amount,
+        "docstatus": 1,
+    })
+
+
 class TestCancelExactDuplicates(ReconBaseTestCase):
     """cancel_exact_duplicate_deposits: cancela el redundante SIN asignar de cada
     grupo de depósitos exactamente iguales; nunca toca uno asignado; conserva uno."""
@@ -497,9 +513,7 @@ class TestCancelExactDuplicates(ReconBaseTestCase):
         doc.docstatus = 1
         mock_get_doc.return_value = doc
         self.mock_db.sql.side_effect = [
-            [frappe._dict(ref="R1", bank_account="BA", company="C", amount=100.0)],  # grupos
-            [frappe._dict(name="A", allocated_amount=100.0, docstatus=1),            # miembros
-             frappe._dict(name="B", allocated_amount=0.0, docstatus=1)],
+            [_dup_member("A", 100.0), _dup_member("B", 0.0)],
         ]
         self.assertEqual(cancel_exact_duplicate_deposits(), 1)  # cancela B (sin asignar)
         doc.cancel.assert_called_once()
@@ -507,9 +521,7 @@ class TestCancelExactDuplicates(ReconBaseTestCase):
     @patch(f"{MODULE}.frappe.get_doc")
     def test_both_allocated_cancels_none(self, mock_get_doc):
         self.mock_db.sql.side_effect = [
-            [frappe._dict(ref="R1", bank_account="BA", company="C", amount=100.0)],
-            [frappe._dict(name="A", allocated_amount=100.0, docstatus=1),
-             frappe._dict(name="B", allocated_amount=100.0, docstatus=1)],
+            [_dup_member("A", 100.0), _dup_member("B", 100.0)],
         ]
         self.assertEqual(cancel_exact_duplicate_deposits(), 0)
         mock_get_doc.assert_not_called()
@@ -520,16 +532,74 @@ class TestCancelExactDuplicates(ReconBaseTestCase):
         doc.docstatus = 1
         mock_get_doc.return_value = doc
         self.mock_db.sql.side_effect = [
-            [frappe._dict(ref="R1", bank_account="BA", company="C", amount=100.0)],
-            [frappe._dict(name="A", allocated_amount=0.0, docstatus=1),
-             frappe._dict(name="B", allocated_amount=0.0, docstatus=1),
-             frappe._dict(name="C", allocated_amount=0.0, docstatus=1)],
+            [_dup_member("A", 0.0), _dup_member("B", 0.0), _dup_member("C", 0.0)],
         ]
         self.assertEqual(cancel_exact_duplicate_deposits(), 2)  # conserva 1, cancela 2
+
+    @patch(f"{MODULE}.frappe.get_doc")
+    def test_groups_are_independent(self, mock_get_doc):
+        """La query única trae los grupos concatenados: cada (ref, cuenta, empresa,
+        monto, fecha) conserva SU primer miembro, no solo el primero de la lista."""
+        doc = MagicMock()
+        doc.docstatus = 1
+        mock_get_doc.return_value = doc
+        self.mock_db.sql.side_effect = [
+            [_dup_member("A1", 0.0, ref="R1"), _dup_member("A2", 0.0, ref="R1"),
+             _dup_member("B1", 0.0, ref="R2"), _dup_member("B2", 0.0, ref="R2")],
+        ]
+        self.assertEqual(cancel_exact_duplicate_deposits(), 2)  # 1 por grupo
+
+    @patch(f"{MODULE}.frappe.get_doc")
+    def test_submitted_duplicate_is_cancelled_not_deleted(self, mock_get_doc):
+        """Un BT enviado se CANCELA, nunca se borra: el borrado chocaría con los
+        enlaces de auditoría (DB Bancaribe Log, amended_from)."""
+        doc = MagicMock()
+        doc.docstatus = 1
+        mock_get_doc.return_value = doc
+        self.mock_db.sql.side_effect = [
+            [_dup_member("A", 100.0), _dup_member("B", 0.0)],
+        ]
+        with patch(f"{MODULE}.frappe.delete_doc") as mock_delete:
+            self.assertEqual(cancel_exact_duplicate_deposits(), 1)
+        doc.cancel.assert_called_once()
+        mock_delete.assert_not_called()
 
     def test_no_groups(self):
         self.mock_db.sql.side_effect = [[]]
         self.assertEqual(cancel_exact_duplicate_deposits(), 0)
+
+
+class TestPrefixRefCandidates(ReconBaseTestCase):
+    """_prefix_ref_candidates: equivalencias de referencia de pasarela en AMBAS
+    direcciones, porque el orden de importación no está garantizado."""
+
+    def test_strips_configured_prefix(self):
+        self.assertEqual(
+            _prefix_ref_candidates("9412345678", "94"), ["9412345678", "12345678"]
+        )
+
+    def test_longest_prefix_wins(self):
+        """Con 94 y 094 configurados, '094…' debe quitar 094 (no 94) para no dejar
+        un '0' colgando."""
+        self.assertEqual(
+            _prefix_ref_candidates("09412345678", "94, 094"),
+            ["09412345678", "12345678"],
+        )
+
+    def test_base_ref_looks_for_prefixed_twin(self):
+        """Si llega la referencia base, el gemelo con prefijo pudo importarse antes."""
+        self.assertEqual(
+            _prefix_ref_candidates("12345678", "94, 094"),
+            ["12345678", "09412345678", "9412345678"],
+        )
+
+    def test_no_prefixes_configured(self):
+        self.assertEqual(_prefix_ref_candidates("12345678", None), ["12345678"])
+        self.assertEqual(_prefix_ref_candidates("12345678", " , "), ["12345678"])
+
+    def test_prefix_equal_to_whole_ref_is_not_stripped(self):
+        """Quitar el prefijo completo dejaría la referencia vacía: no aplica."""
+        self.assertEqual(_prefix_ref_candidates("94", "94"), ["94", "9494"])
 
 
 class TestApplyFormatRule(ReconBaseTestCase):
