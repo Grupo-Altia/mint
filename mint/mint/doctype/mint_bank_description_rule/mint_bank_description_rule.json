@@ -8,6 +8,7 @@
  "engine": "InnoDB",
  "field_order": [
   "description_text",
+  "ignore_transaction",
   "apply_prefix_rule",
   "prefixes_to_strip"
  ],
@@ -19,6 +20,13 @@
    "label": "Description Text",
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "default": "0",
+   "description": "Si est\u00e1 activo, el sistema omitir\u00e1 e ignorar\u00e1 por completo cualquier fila del extracto que coincida con esta descripci\u00f3n (\u00fatil para saldos iniciales, saldos finales, o encabezados extra).",
+   "fieldname": "ignore_transaction",
+   "fieldtype": "Check",
+   "label": "Ignorar Transacci\u00f3n"
   },
   {
    "default": "0",
