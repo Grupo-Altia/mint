@@ -15,10 +15,16 @@ import { useFrappeEventListener, useFrappePostCall } from 'frappe-react-sdk'
 import { toast } from 'sonner'
 import ErrorBanner from '@/components/ui/error-banner'
 import { useNavigate } from 'react-router-dom'
-import { useState, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { Progress } from '@/components/ui/progress'
 import { useSetAtom } from 'jotai'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+
+/** Serialización estable del mapeo de columnas: JSON.stringify respeta el orden de
+ *  inserción de las claves, así que el mismo mapeo con las claves en otro orden comparaba
+ *  distinto y dejaba "Aplicar" habilitado aunque no hubiera nada nuevo que aplicar. */
+const serializeMapping = (mapping: Record<string, number>) =>
+    JSON.stringify(Object.fromEntries(Object.entries(mapping).sort(([a], [b]) => a.localeCompare(b))))
 
 const AMOUNT_FORMAT_LABEL_MAP = {
     "separate_columns_for_withdrawal_and_deposit": _("Separate columns for withdrawal and deposit"),
@@ -65,6 +71,9 @@ type Props = {
 const StatementDetails = ({ data, bank, onBack, customMapping, setCustomMapping }: Props) => {
     const dateFormatMeta = parseDateFormat(data.date_format)
 
+    const skippedByRule = data.skipped_by_ignore_rule ?? 0
+    const skippedBeforeOpeningDate = data.skipped_before_opening_date ?? 0
+
     const { call, loading, error } = useFrappePostCall<{ message: { success: boolean, start_date: string, end_date: string } }>('mint.apis.statement_import.import_statement')
 
     const navigate = useNavigate()
@@ -96,6 +105,13 @@ const StatementDetails = ({ data, bank, onBack, customMapping, setCustomMapping 
     const [progress, setProgress] = useState(0)
     const [imgError, setImgError] = useState(false)
     const [localMapping, setLocalMapping] = useState<Record<string, number>>(data.column_mapping || {})
+
+    // useState solo toma el valor inicial: sin esto los selectores quedan mostrando el
+    // mapeo de la primera respuesta aunque el backend devuelva otro (al aplicar un mapeo,
+    // o al reabrir el importador con otro archivo).
+    useEffect(() => {
+        setLocalMapping(data.column_mapping || {})
+    }, [data.column_mapping])
 
     useFrappeEventListener("mint-statement-import-progress", (event) => {
         setProgress(event.progress)
@@ -208,6 +224,24 @@ const StatementDetails = ({ data, bank, onBack, customMapping, setCustomMapping 
                 </Table>
             </div>
 
+            {/* Filas que el archivo trae pero no se van a importar. Sin esto el usuario ve
+                menos filas en la vista previa y no tiene forma de saber si faltan 3 o 300. */}
+            {(skippedByRule > 0 || skippedBeforeOpeningDate > 0) && (
+                <div className='rounded-md border border-border bg-muted/40 p-3 flex flex-col gap-1'>
+                    <Paragraph className='text-sm font-medium'>{_("Filas omitidas del archivo")}</Paragraph>
+                    {skippedByRule > 0 && (
+                        <Paragraph className='text-sm'>
+                            {_("{0} por coincidir con una regla marcada como Ignorar Transacción.", [skippedByRule.toString()])}
+                        </Paragraph>
+                    )}
+                    {skippedBeforeOpeningDate > 0 && (
+                        <Paragraph className='text-sm'>
+                            {_("{0} por ser anteriores a la Fecha de Inicio de Operaciones de la cuenta.", [skippedBeforeOpeningDate.toString()])}
+                        </Paragraph>
+                    )}
+                </div>
+            )}
+
             <Separator />
             <div className='flex flex-col gap-4'>
                 <div 
@@ -269,8 +303,8 @@ const StatementDetails = ({ data, bank, onBack, customMapping, setCustomMapping 
                             <Button 
                                 size='sm' 
                                 variant='secondary' 
-                                onClick={() => setCustomMapping?.(JSON.stringify(localMapping))}
-                                disabled={JSON.stringify(localMapping) === customMapping || (!customMapping && JSON.stringify(localMapping) === JSON.stringify(data.column_mapping))}
+                                onClick={() => setCustomMapping?.(serializeMapping(localMapping))}
+                                disabled={serializeMapping(localMapping) === (customMapping ?? serializeMapping(data.column_mapping || {}))}
                             >
                                 {_("Aplicar y Refrescar Vista Previa")}
                             </Button>

@@ -1,5 +1,6 @@
 from mint.apis.mint_log import log_mint_error, log_mint_warning, log_mint_info
 import frappe
+import json
 import re
 from frappe.utils.csvutils import read_csv_content
 from frappe.utils.xlsxutils import (
@@ -39,6 +40,187 @@ def is_similar_reference(ref1, ref2):
             pass
             
     return False
+
+# Variables estándar con las que el importador indexa `column_mapping`. get_transaction_rows
+# busca EXACTAMENTE estas claves, así que cualquier mapeo que llegue de afuera (mapeo manual
+# del usuario, o el del DocType Bank) tiene que quedar expresado en estos términos.
+STANDARD_VARIABLES = {
+    "Date",
+    "Withdrawal",
+    "Deposit",
+    "Amount",
+    "Description",
+    "Reference",
+    "Transaction Type",
+    "Balance",
+}
+
+# `Bank Transaction Mapping.bank_transaction_field` guarda FIELDNAMES de Bank Transaction
+# (erpnext llena ese Select con `value.fieldname` en bank.js), no variables estándar del
+# importador. Sin traducir, column_mapping queda con claves tipo {"date": 0, "deposit": 4} y
+# get_transaction_rows no reconoce ninguna: descarta TODAS las filas y la importación
+# devuelve 0 transacciones sin un solo error.
+BANK_FIELD_TO_STANDARD_VARIABLE = {
+    "date": "Date",
+    "deposit": "Deposit",
+    "withdrawal": "Withdrawal",
+    "description": "Description",
+    "reference_number": "Reference",
+    "transaction_type": "Transaction Type",
+}
+
+
+def parse_custom_mapping(custom_mapping: str | None):
+    """Valida y normaliza el mapeo manual de columnas que manda el frontend.
+
+    Llega como JSON de un endpoint whitelisted, así que no se puede asumir nada: los
+    valores terminan usados como índices de lista en get_transaction_rows, donde un
+    índice fuera de rango es un IndexError (500 con traceback) y uno negativo lee en
+    silencio la columna equivocada. Se falla con un mensaje claro en vez de descartar el
+    mapeo sin avisar: el usuario apretó "Aplicar" y tiene que saber si no se aplicó.
+    """
+    if not custom_mapping:
+        return None
+
+    try:
+        parsed = json.loads(custom_mapping)
+    except Exception:
+        frappe.throw(_("El mapeo manual de columnas no es un JSON válido."))
+
+    if not isinstance(parsed, dict):
+        frappe.throw(_("El mapeo manual de columnas debe ser un objeto."))
+
+    unknown = sorted(set(parsed) - STANDARD_VARIABLES)
+    if unknown:
+        frappe.throw(
+            _("El mapeo manual de columnas tiene campos desconocidos: {0}").format(
+                ", ".join(unknown)
+            )
+        )
+
+    normalized = {}
+    for variable, index in parsed.items():
+        try:
+            index = int(index)
+        except (TypeError, ValueError):
+            frappe.throw(
+                _("La columna asignada a {0} no es un número: {1}").format(variable, index)
+            )
+        if index < 0:
+            frappe.throw(
+                _("La columna asignada a {0} no puede ser negativa: {1}").format(variable, index)
+            )
+        normalized[variable] = index
+
+    return normalized
+
+
+def get_mapping_from_bank(bank_account: str, header_row: list | None):
+    """Mapeo de columnas configurado en el DocType Bank del banco de la cuenta.
+
+    Traduce los fieldnames de Bank Transaction a las variables estándar del importador
+    (ver BANK_FIELD_TO_STANDARD_VARIABLE). `file_field` puede ser un índice de columna o
+    el texto del encabezado; en el segundo caso se busca primero coincidencia exacta y
+    después por contenido. Devuelve {} si el mapeo no alcanza para extraer fecha y monto,
+    para que el flujo caiga en la autodetección en vez de quedarse con una vista previa
+    vacía.
+    """
+    bank_name = frappe.get_cached_value("Bank Account", bank_account, "bank")
+    if not bank_name:
+        return {}
+
+    bank_doc = frappe.get_cached_doc("Bank", bank_name)
+    mapping_rows = getattr(bank_doc, "bank_transaction_mapping", None)
+    if not mapping_rows:
+        return {}
+
+    lowered_header = [str(cell).strip().lower() for cell in (header_row or [])]
+    mapping = {}
+
+    for row in mapping_rows:
+        if not row.bank_transaction_field or not row.file_field:
+            continue
+
+        variable = BANK_FIELD_TO_STANDARD_VARIABLE.get(row.bank_transaction_field)
+        if not variable and row.bank_transaction_field in STANDARD_VARIABLES:
+            # Ya venía expresado como variable estándar del importador.
+            variable = row.bank_transaction_field
+        if not variable:
+            # Campo de Bank Transaction sin equivalente en el importador (currency,
+            # bank_account, transaction_id...). No es un error de configuración.
+            continue
+
+        file_field = row.file_field.strip()
+        if file_field.isdigit():
+            mapping[variable] = int(file_field)
+            continue
+
+        if not lowered_header:
+            continue
+
+        wanted = file_field.lower()
+        if wanted in lowered_header:
+            mapping[variable] = lowered_header.index(wanted)
+        else:
+            for index, cell in enumerate(lowered_header):
+                if wanted in cell:
+                    mapping[variable] = index
+                    break
+
+    if mapping and not is_usable_column_mapping(mapping):
+        log_mint_warning(
+            title="Statement Import: mapeo del banco incompleto",
+            description=(
+                "El mapeo configurado en el Bank de {0} no permite ubicar fecha y monto "
+                "(quedó {1}); se usa la autodetección de columnas.".format(bank_name, mapping)
+            ),
+        )
+        return {}
+
+    return mapping
+
+
+def is_usable_column_mapping(column_mapping: dict) -> bool:
+    """Un mapeo sirve si get_transaction_rows puede sacar fecha y monto de él.
+
+    get_transaction_rows descarta la fila si no hay fecha, o si no hay ninguno de
+    Amount/Withdrawal/Deposit. Un mapeo que no cumpla esto no produce ni una
+    transacción, así que conviene detectarlo y caer en la autodetección antes de
+    quedarse con una vista previa vacía sin explicación.
+    """
+    return "Date" in column_mapping and bool(
+        {"Amount", "Withdrawal", "Deposit"} & set(column_mapping)
+    )
+
+
+def get_ignored_descriptions() -> list:
+    """Descripciones de reglas marcadas como "Ignorar Transacción"."""
+    return frappe.get_all(
+        "Mint Bank Description Rule",
+        filters={"ignore_transaction": 1},
+        pluck="description_text",
+    )
+
+
+def split_by_ignored_descriptions(transactions: list, ignored_descriptions: list):
+    """Separa las transacciones en (a_importar, omitidas) según las reglas de exclusión.
+
+    El match es exacto contra la descripción stripeada, igual que el resto de las reglas:
+    `Bank Transaction.description` guarda la categoría limpia del banco (p. ej.
+    "SALDO INICIAL"), no la línea libre del extracto.
+    """
+    if not ignored_descriptions:
+        return transactions, []
+
+    to_import, skipped = [], []
+    for tx in transactions:
+        if (tx.get("description") or "").strip() in ignored_descriptions:
+            skipped.append(tx)
+        else:
+            to_import.append(tx)
+
+    return to_import, skipped
+
 
 def get_mint_opening_date(bank_account: str):
     """Fecha de inicio de operaciones (Mint) de la cuenta, o None si no está definida."""
@@ -86,37 +268,12 @@ def get_statement_details(file_url: str, bank_account: str, custom_mapping: str 
 
     header_index, max_valid_columns = get_header_row_index(data)
     
-    import json
-    manual_mapping = None
-    if custom_mapping:
-        try:
-            manual_mapping = json.loads(custom_mapping)
-        except Exception:
-            pass
-            
+    manual_mapping = parse_custom_mapping(custom_mapping)
+
     if not manual_mapping:
-        # Check ERPNext Bank DocType
-        bank_name = frappe.get_value("Bank Account", bank_account, "bank")
-        if bank_name:
-            bank_doc = frappe.get_cached_doc("Bank", bank_name)
-            if hasattr(bank_doc, "bank_transaction_mapping") and bank_doc.bank_transaction_mapping:
-                manual_mapping = {}
-                for row in bank_doc.bank_transaction_mapping:
-                    if row.bank_transaction_field and row.file_field:
-                        val = row.file_field.strip()
-                        if val.isdigit():
-                            manual_mapping[row.bank_transaction_field] = int(val)
-                        else:
-                            if max_valid_columns >= 2:
-                                hr = [str(c).strip().lower() for c in data[header_index]]
-                                lower_val = val.lower()
-                                if lower_val in hr:
-                                    manual_mapping[row.bank_transaction_field] = hr.index(lower_val)
-                                else:
-                                    for i, c in enumerate(hr):
-                                        if lower_val in c:
-                                            manual_mapping[row.bank_transaction_field] = i
-                                            break
+        manual_mapping = get_mapping_from_bank(
+            bank_account, data[header_index] if max_valid_columns >= 2 else None
+        )
 
     if manual_mapping:
         column_mapping = manual_mapping
@@ -132,7 +289,21 @@ def get_statement_details(file_url: str, bank_account: str, custom_mapping: str 
             header_row = [f"Columna {i+1}" for i in range(len(first_data_row))]
         else:
             header_row = data[header_index]
-            
+
+        # Recién acá se conoce el ancho del encabezado: un índice fuera de rango es un
+        # IndexError en get_transaction_rows, así que se avisa en vez de reventar.
+        out_of_range = {
+            variable: index
+            for variable, index in column_mapping.items()
+            if int(index) >= len(header_row)
+        }
+        if out_of_range:
+            frappe.throw(
+                _("El mapeo de columnas apunta fuera del archivo, que tiene {0} columnas: {1}").format(
+                    len(header_row), out_of_range
+                )
+            )
+
         columns = []
         for idx, cell in enumerate(header_row):
             mapped_to = "Do not import"
@@ -203,25 +374,22 @@ def get_statement_details(file_url: str, bank_account: str, custom_mapping: str 
 
     final_transactions = get_final_transactions(transaction_rows, date_format, amount_format)
 
-    ignored_rules = frappe.get_all("Mint Bank Description Rule", filters={"ignore_transaction": 1}, pluck="description_text")
-    if ignored_rules:
-        final_transactions = [
-            tx for tx in final_transactions
-            if (tx.get("description") or "").strip() not in ignored_rules
-        ]
-
+    # Dos motivos para que una fila del extracto no se importe: una regla marcada como
+    # "Ignorar Transacción" (saldos iniciales/finales, encabezados intermedios) o ser
+    # anterior a la Fecha de Inicio de Operaciones de la cuenta.
+    final_transactions, skipped_by_rule = split_by_ignored_descriptions(
+        final_transactions, get_ignored_descriptions()
+    )
     final_transactions, skipped_by_opening_date = split_by_opening_date(
         final_transactions, get_mint_opening_date(bank_account)
     )
 
-    if skipped_by_opening_date:
+    if skipped_by_rule or skipped_by_opening_date:
         # Las fechas del extracto y los conflictos se calcularon arriba sobre TODAS las
         # filas, así que describirían un período que no se va a importar: el frontend usa
         # statement_start_date para mover el filtro de fechas de la conciliación y
         # terminaría apuntando a un rango vacío, y check_for_conflicts reportaría choques
         # de filas descartadas. Se recalculan sobre lo que sí se va a importar.
-        # closing_balance y statement_end_date no cambian: solo se descartan filas
-        # ANTERIORES a la fecha de inicio, nunca la última del extracto.
         # Las fechas se filtran porque split_by_opening_date deja pasar las filas sin
         # fecha a propósito, y min() sobre un None revienta.
         remaining_dates = [tx["date"] for tx in final_transactions if tx.get("date")]
@@ -232,6 +400,12 @@ def get_statement_details(file_url: str, bank_account: str, custom_mapping: str 
             )
         else:
             conflicting_transactions = []
+
+    # statement_end_date y closing_balance se dejan a propósito como salieron de TODAS
+    # las filas. El filtro por fecha de inicio solo descarta filas ANTERIORES, así que no
+    # los afecta; y la regla "Ignorar Transacción" existe justamente para filas tipo
+    # "SALDO FINAL", cuya columna de saldo ES el saldo de cierre del extracto: recalcular
+    # sobre las filas filtradas lo perdería.
 
     account = frappe.get_cached_value("Bank Account", bank_account, "account")
     account_currency = frappe.get_cached_value("Account", account, "account_currency")
@@ -258,6 +432,7 @@ def get_statement_details(file_url: str, bank_account: str, custom_mapping: str 
         # operaciones. Se expone para que la vista previa lo pueda avisar: descartar
         # filas de un extracto en silencio es cómo se produce un hueco que nadie nota.
         "skipped_before_opening_date": len(skipped_by_opening_date),
+        "skipped_by_ignore_rule": len(skipped_by_rule),
         "currency": account_currency,
     }
 
@@ -339,13 +514,22 @@ def process_statement_import_background(final_transactions, bank_account, curren
     errors = 0
 
     allowed_descriptions = frappe.get_all("Mint Bank Description Rule", filters={"ignore_transaction": 0}, pluck="description_text")
-    ignored_rules = frappe.get_all("Mint Bank Description Rule", filters={"ignore_transaction": 1}, pluck="description_text")
 
-    # Segunda pasada del filtro por fecha de inicio: get_statement_details ya lo aplicó,
-    # pero este job también se puede encolar con una lista armada por otra vía.
+    # Segunda pasada de los filtros: get_statement_details ya los aplicó, pero este job
+    # también se puede encolar con una lista armada por otra vía.
+    final_transactions, skipped_by_rule = split_by_ignored_descriptions(
+        final_transactions, get_ignored_descriptions()
+    )
     final_transactions, skipped_by_opening_date = split_by_opening_date(
         final_transactions, get_mint_opening_date(bank_account)
     )
+    if skipped_by_rule:
+        log_mint_info(
+            title="Statement Import: filas excluidas por regla",
+            description="Se omitieron {0} transacciones cuya descripción coincide con una regla marcada como Ignorar Transacción.".format(
+                len(skipped_by_rule)
+            ),
+        )
     if skipped_by_opening_date:
         log_mint_info(
             title="Statement Import: filas anteriores a la fecha de inicio",
@@ -366,10 +550,6 @@ def process_statement_import_background(final_transactions, bank_account, curren
             # Fecha obligatoria: una transacción sin fecha se escapa de los filtros por
             # fecha del barrido/saneo (el bug ×100 dejó BTs con date=None). Se omite.
             tx_date = transaction.get("date")
-            desc_clean = (transaction.get("description") or "").strip()
-
-            if desc_clean in ignored_rules or transaction.get("description") in ignored_rules:
-                continue
 
             if not tx_date:
                 errors += 1

@@ -14,6 +14,10 @@ export interface GetStatementDetailsResponse {
         maps_to: string
     }>,
     column_mapping: Record<string, number>,
+    /** Filas del archivo que no se van a importar: por regla "Ignorar Transacción" y por
+     *  ser anteriores a la Fecha de Inicio de Operaciones de la cuenta. */
+    skipped_by_ignore_rule?: number,
+    skipped_before_opening_date?: number,
     transaction_starting_index: number,
     transaction_ending_index: number,
     transaction_rows: Array<{
