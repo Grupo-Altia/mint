@@ -10,6 +10,7 @@ import { parse } from "chrono-node"
 import { Calendar } from '@/components/ui/calendar'
 import useFiscalYear from '@/hooks/useFiscalYear'
 import dayjs from 'dayjs'
+import type { DateRange } from 'react-day-picker'
 import _ from '@/lib/translate'
 
 const BankRecDateFilter = () => {
@@ -101,7 +102,7 @@ const BankRecDateFilter = () => {
     const [open, setOpen] = useState(false)
     const [value, setValue] = useState("")
     const [openCalendar, setOpenCalendar] = useState(false)
-    const [localDateRange, setLocalDateRange] = useState<{from?: Date, to?: Date} | undefined>()
+    const [localDateRange, setLocalDateRange] = useState<DateRange | undefined>()
     const [isSelecting, setIsSelecting] = useState(false)
 
     useEffect(() => {
@@ -181,15 +182,10 @@ const BankRecDateFilter = () => {
             </PopoverContent>
         </Popover>
 
-        <Popover open={openCalendar} onOpenChange={(open) => {
-            setOpenCalendar(open)
-            if (!open && localDateRange?.from) {
-                setBankRecDate({
-                    fromDate: formatDate(localDateRange.from, 'YYYY-MM-DD'),
-                    toDate: localDateRange.to ? formatDate(localDateRange.to, 'YYYY-MM-DD') : formatDate(localDateRange.from, 'YYYY-MM-DD')
-                })
-            }
-        }}>
+        {/* El rango se confirma SOLO con "Aplicar": cerrar el popover (clic afuera, Esc)
+            descarta la selección en curso. Si al cerrar se aplicara lo que haya, un clic
+            afuera a mitad de selección colapsaría el rango a un solo día en silencio. */}
+        <Popover open={openCalendar} onOpenChange={setOpenCalendar}>
             <PopoverTrigger asChild>
                 <Button variant={'outline'} className='rounded-l-none'>
                     {formatDate(bankRecDate.fromDate)} - {formatDate(bankRecDate.toDate)}
@@ -204,7 +200,7 @@ const BankRecDateFilter = () => {
                             captionLayout='dropdown'
                             selected={localDateRange}
                             defaultMonth={localDateRange?.from ?? dateObj.from}
-                            onSelect={(range: any, selectedDay: Date) => {
+                            onSelect={(_range: DateRange | undefined, selectedDay: Date) => {
                                 if (!isSelecting) {
                                     setLocalDateRange({ from: selectedDay, to: undefined })
                                     setIsSelecting(true)
