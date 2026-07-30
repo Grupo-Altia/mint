@@ -1118,7 +1118,7 @@ def get_header_row_index(data: list[list[str]]):
             if not isinstance(cell, str):
                 continue
 #buscamos todo el diccionario contable si es posible en español, ingles, chino
-            if any(keyword in cell.lower() for keyword in ["date", "amount", "description", "reference", "transaction", "type", "cr", "dr", "deposit", "withdrawal", "balance", "fecha", "concepto", "referencia", "débito", "debito", "crédito", "credito", "saldo", "cargo", "cargos", "abono", "abonos"]):
+            if any(keyword in cell.lower() for keyword in ["date", "amount", "description", "reference", "transaction", "type", "cr", "dr", "deposit", "withdrawal", "balance", "fecha", "concepto", "referencia", "débito", "debito", "crédito", "credito", "saldo", "cargo", "cargos", "abono", "abonos", "retiro", "retiros", "egreso", "egresos", "ingreso", "ingresos"]):
                 valid_columns += 1
         if valid_columns > max_valid_columns:
             max_valid_columns = valid_columns
@@ -1132,8 +1132,8 @@ def get_column_mapping(header_row: list[str]):
     """
     standard_variables = {
         "Date": ["date", "transaction date", "fecha"], 
-        "Withdrawal": ["withdrawal", "debit", "débito", "debito", "cargo", "cargos"],
-        "Deposit": ["deposit", "credit", "crédito", "credito", "abono", "abonos"],
+        "Withdrawal": ["withdrawal", "debit", "débito", "debito", "cargo", "cargos", "retiro", "retiros", "egreso", "egresos"],
+        "Deposit": ["deposit", "credit", "crédito", "credito", "abono", "abonos", "ingreso", "ingresos"],
         "Amount": ["amount", "monto", "importe", "$"], 
         "Description": ["description", "particulars", "remarks", "narration", "detail", "reference", "concepto", "descripción", "descripcion", "descripci"], 
         "Reference": ["reference", "ref", "tran id", "transaction id", "cheque", "check", "id", "chq", "referencia"], 
@@ -1440,7 +1440,7 @@ def get_file_properties(transactions: list):
             t_type = transaction.get("transaction_type", "").lower().strip()
             if "cr" in t_type or "dr" in t_type or t_type in ["c", "d"] or "credito" in t_type or "debito" in t_type or "crédito" in t_type or "débito" in t_type:
                 amount_format_frequency["cr_dr_in_transaction_type"] += 1
-            if "deposit" in t_type or "withdrawal" in t_type or "abono" in t_type or "cargo" in t_type:
+            if "deposit" in t_type or "withdrawal" in t_type or "abono" in t_type or "cargo" in t_type or "ingreso" in t_type or "egreso" in t_type or "retiro" in t_type:
                 amount_format_frequency["deposit_withdrawal_in_transaction_type"] += 1
             if "+" in t_type or "-" in t_type:
                 amount_format_frequency["positive_negative_in_transaction_type"] += 1
@@ -1513,7 +1513,9 @@ def get_final_transactions(transactions: list, date_format: str, amount_format: 
         """
 
         if amount_format == "separate_columns_for_withdrawal_and_deposit":
-            return get_float_amount(transaction_row.get("withdrawal")), get_float_amount(transaction_row.get("deposit"))
+            w = get_float_amount(transaction_row.get("withdrawal"))
+            d = get_float_amount(transaction_row.get("deposit"))
+            return abs(w) if w is not None else None, abs(d) if d is not None else None
         
         if amount_format == "dr_cr_in_amount":
             amount = transaction_row.get("amount")
@@ -1541,7 +1543,7 @@ def get_final_transactions(transactions: list, date_format: str, amount_format: 
         if amount_format == "deposit_withdrawal_in_transaction_type":
             transaction_type = transaction_row.get("transaction_type", "").lower().strip()
             amount = get_float_amount(transaction_row.get("amount", "0"))
-            if "deposit" in transaction_type or "abono" in transaction_type:
+            if "deposit" in transaction_type or "abono" in transaction_type or "ingreso" in transaction_type:
                 return 0, abs(amount)
             else:
                 return abs(amount), 0
