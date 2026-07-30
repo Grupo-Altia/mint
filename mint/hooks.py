@@ -198,7 +198,8 @@ scheduler_events = {
 		]
 	},
 	"daily": [
-		"mint.apis.reconciliation.daily_remove_exact_duplicates"
+		"mint.apis.reconciliation.daily_remove_exact_duplicates",
+		"mint.apis.reconciliation.cancel_prefix_duplicate_deposits"
 	],
 }
 
