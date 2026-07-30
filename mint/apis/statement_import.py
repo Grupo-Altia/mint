@@ -40,6 +40,34 @@ def is_similar_reference(ref1, ref2):
             
     return False
 
+def get_mint_opening_date(bank_account: str):
+    """Fecha de inicio de operaciones (Mint) de la cuenta, o None si no está definida."""
+    opening_date = frappe.get_cached_value("Bank Account", bank_account, "mint_opening_date")
+    return getdate(opening_date) if opening_date else None
+
+
+def split_by_opening_date(transactions: list, opening_date):
+    """Separa las transacciones en (a_importar, omitidas) según la fecha de inicio.
+
+    Espera las transacciones ya normalizadas por `get_final_transactions`, o sea con
+    `date` en ISO (YYYY-MM-DD): sobre la fecha cruda del extracto `getdate` sería
+    ambiguo entre dd/mm y mm/dd. Las que no tienen fecha NO se omiten acá; las rechaza
+    el flujo normal de importación, que además las cuenta como error y las loguea.
+    """
+    if not opening_date:
+        return transactions, []
+
+    to_import, skipped = [], []
+    for tx in transactions:
+        tx_date = tx.get("date")
+        if tx_date and getdate(tx_date) < opening_date:
+            skipped.append(tx)
+        else:
+            to_import.append(tx)
+
+    return to_import, skipped
+
+
 @frappe.whitelist(methods=["GET", "POST"])
 def get_statement_details(file_url: str, bank_account: str, custom_mapping: str = None):
     """
@@ -182,6 +210,29 @@ def get_statement_details(file_url: str, bank_account: str, custom_mapping: str 
             if (tx.get("description") or "").strip() not in ignored_rules
         ]
 
+    final_transactions, skipped_by_opening_date = split_by_opening_date(
+        final_transactions, get_mint_opening_date(bank_account)
+    )
+
+    if skipped_by_opening_date:
+        # Las fechas del extracto y los conflictos se calcularon arriba sobre TODAS las
+        # filas, así que describirían un período que no se va a importar: el frontend usa
+        # statement_start_date para mover el filtro de fechas de la conciliación y
+        # terminaría apuntando a un rango vacío, y check_for_conflicts reportaría choques
+        # de filas descartadas. Se recalculan sobre lo que sí se va a importar.
+        # closing_balance y statement_end_date no cambian: solo se descartan filas
+        # ANTERIORES a la fecha de inicio, nunca la última del extracto.
+        # Las fechas se filtran porque split_by_opening_date deja pasar las filas sin
+        # fecha a propósito, y min() sobre un None revienta.
+        remaining_dates = [tx["date"] for tx in final_transactions if tx.get("date")]
+        if remaining_dates:
+            statement_start_date = getdate(min(remaining_dates))
+            conflicting_transactions = check_for_conflicts(
+                bank_account, statement_start_date, statement_end_date
+            )
+        else:
+            conflicting_transactions = []
+
     account = frappe.get_cached_value("Bank Account", bank_account, "account")
     account_currency = frappe.get_cached_value("Account", account, "account_currency")
 
@@ -203,6 +254,10 @@ def get_statement_details(file_url: str, bank_account: str, custom_mapping: str 
         "closing_balance": closing_balance,
         "conflicting_transactions": conflicting_transactions,
         "final_transactions": final_transactions,
+        # Cuántas filas se descartaron por ser anteriores a la fecha de inicio de
+        # operaciones. Se expone para que la vista previa lo pueda avisar: descartar
+        # filas de un extracto en silencio es cómo se produce un hueco que nadie nota.
+        "skipped_before_opening_date": len(skipped_by_opening_date),
         "currency": account_currency,
     }
 
@@ -285,6 +340,19 @@ def process_statement_import_background(final_transactions, bank_account, curren
 
     allowed_descriptions = frappe.get_all("Mint Bank Description Rule", filters={"ignore_transaction": 0}, pluck="description_text")
     ignored_rules = frappe.get_all("Mint Bank Description Rule", filters={"ignore_transaction": 1}, pluck="description_text")
+
+    # Segunda pasada del filtro por fecha de inicio: get_statement_details ya lo aplicó,
+    # pero este job también se puede encolar con una lista armada por otra vía.
+    final_transactions, skipped_by_opening_date = split_by_opening_date(
+        final_transactions, get_mint_opening_date(bank_account)
+    )
+    if skipped_by_opening_date:
+        log_mint_info(
+            title="Statement Import: filas anteriores a la fecha de inicio",
+            description="Se omitieron {0} transacciones anteriores a la Fecha de Inicio de Operaciones de {1}.".format(
+                len(skipped_by_opening_date), bank_account
+            ),
+        )
 
     for current_index, transaction in enumerate(final_transactions):
         try:

@@ -1471,6 +1471,98 @@ def cancel_exact_duplicate_deposits() -> int:
     return cancelled
 
 
+def cancel_prefix_duplicate_deposits() -> int:
+    """Cancela depósitos duplicados por prefijo (p.ej. 9412345678 vs 12345678).
+    Lee dinámicamente las reglas de descripción bancaria activas con prefijos configurados.
+
+    NUNCA se toca un depósito con asignación (rompería un pago conciliado): si los dos
+    lados del par están asignados se deja el par intacto para revisión manual, y si solo
+    uno lo está se cancela el otro. Con los dos SIN asignar el empate se rompe por
+    antigüedad: se conserva el más antiguo, igual que `cancel_exact_duplicate_deposits`.
+    El desempate tiene que ser determinista porque MySQL no garantiza el orden de las
+    filas: sin `ORDER BY`, dos corridas podían cancelar lados distintos del mismo par.
+
+    Cada cancelación es atómica (commit por éxito; rollback + Error Log por fallo, sin
+    abortar el lote): un único commit al final significaría que el primer fallo a mitad
+    del lote descarta todas las cancelaciones anteriores de la corrida. Devuelve cuántas
+    se confirmaron realmente en la base.
+    """
+    rules = frappe.get_all(
+        'Mint Bank Description Rule',
+        filters={'apply_prefix_rule': 1},
+        fields=['name', 'prefixes_to_strip']
+    )
+
+    total_cancelled = 0
+    # Un mismo depósito puede caer en varios pares (y en varios prefijos): sin esto se
+    # reintentaría un doc ya cancelado y se contaría de nuevo sin tocar nada.
+    already_processed = set()
+
+    for rule in rules:
+        prefixes = [p.strip() for p in (rule.prefixes_to_strip or '').split(',') if p.strip()]
+        if not prefixes:
+            continue
+
+        for prefix in prefixes:
+            sql = """
+            SELECT
+                t1.name as name1, t1.allocated_amount as alloc1, t1.creation as creation1,
+                t2.name as name2, t2.allocated_amount as alloc2, t2.creation as creation2
+            FROM `tabBank Transaction` t1
+            INNER JOIN `tabBank Transaction` t2
+                ON t1.bank_account = t2.bank_account
+                AND t1.company = t2.company
+                AND t1.date = t2.date
+                AND ROUND(t1.deposit, 2) = ROUND(t2.deposit, 2)
+            WHERE t1.deposit > 0 AND t2.deposit > 0
+                AND t1.docstatus < 2 AND t2.docstatus < 2
+                AND t1.reference_number = CONCAT(%s, t2.reference_number)
+                AND t2.reference_number != ''
+            ORDER BY t1.date, t1.name, t2.name
+            """
+
+            duplicates = frappe.db.sql(sql, (prefix,), as_dict=True)
+
+            for dup in duplicates:
+                alloc1, alloc2 = flt(dup.alloc1), flt(dup.alloc2)
+
+                if alloc1 >= 0.01 and alloc2 >= 0.01:
+                    continue
+
+                if alloc1 >= 0.01:
+                    to_cancel = dup.name2
+                elif alloc2 >= 0.01:
+                    to_cancel = dup.name1
+                else:
+                    # Empate: se conserva el más antiguo.
+                    to_cancel = dup.name1 if dup.creation1 >= dup.creation2 else dup.name2
+
+                if to_cancel in already_processed:
+                    continue
+                already_processed.add(to_cancel)
+
+                try:
+                    doc = frappe.get_doc("Bank Transaction", to_cancel)
+                    if doc.docstatus == 1:
+                        doc.flags.ignore_permissions = True
+                        doc.cancel()
+                    elif doc.docstatus == 0:
+                        frappe.delete_doc("Bank Transaction", to_cancel, ignore_permissions=True)
+                    else:
+                        continue  # ya estaba cancelado: no hay nada que contar
+                    frappe.db.commit()
+                    total_cancelled += 1
+                except Exception:
+                    frappe.db.rollback()
+                    log_mint_error(
+                        title=_("Error cancelando depósito duplicado por prefijo {0} (auto)").format(to_cancel),
+                        message=frappe.get_traceback(),
+                    )
+
+    return total_cancelled
+
+
+
 def find_impossible_date_transactions() -> list:
     """Bank Transactions con fecha IMPOSIBLE: futura (> hoy) o NULL, no canceladas.
 
@@ -1983,7 +2075,7 @@ def reconcile_mint_bank_transfer(mbt_name: str) -> None:
         for cand in candidates:
             if abs(float(cand.deposit) - float(doc.amount)) < 1.0:
                 raw_ref = str(cand.reference_number or "").strip()
-                target_ref = str(doc.reference_number).strip()
+                target_ref = str(doc.destination_reference_number or doc.reference_number).strip()
                 match, _ = check_rules_match(rules_to_check, raw_ref, target_ref)
                 if match or (not rules_to_check and raw_ref == target_ref):
                     try:
@@ -2040,11 +2132,11 @@ def reconcile_mint_bank_transfer_from_bank_transaction(bank_transaction_name: st
         mbts = frappe.get_all(
             "Mint Bank Transfer",
             filters={"docstatus": 1, "destination_reconciled": 0, "to_bank_account": bt.bank_account, "company": bt.company},
-            fields=["name", "reference_number", "amount"]
+            fields=["name", "reference_number", "destination_reference_number", "amount"]
         )
         for mbt in mbts:
             if abs(float(mbt.amount) - float(bt.deposit)) < 1.0:
-                target_ref = str(mbt.reference_number).strip()
+                target_ref = str(mbt.destination_reference_number or mbt.reference_number).strip()
                 match, _ = check_rules_match(rules_to_check, raw_ref, target_ref)
                 if match or (not rules_to_check and raw_ref == target_ref):
                     try:

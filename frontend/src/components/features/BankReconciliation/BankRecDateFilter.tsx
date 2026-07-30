@@ -1,6 +1,6 @@
 import { useAtom } from 'jotai'
 import { bankRecDateAtom } from './bankRecAtoms'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect } from 'react'
 import { AVAILABLE_TIME_PERIODS, formatDate, getDatesForTimePeriod, TimePeriod } from '@/lib/date'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -10,6 +10,7 @@ import { parse } from "chrono-node"
 import { Calendar } from '@/components/ui/calendar'
 import useFiscalYear from '@/hooks/useFiscalYear'
 import dayjs from 'dayjs'
+import type { DateRange } from 'react-day-picker'
 import _ from '@/lib/translate'
 
 const BankRecDateFilter = () => {
@@ -100,6 +101,20 @@ const BankRecDateFilter = () => {
 
     const [open, setOpen] = useState(false)
     const [value, setValue] = useState("")
+    const [openCalendar, setOpenCalendar] = useState(false)
+    const [localDateRange, setLocalDateRange] = useState<DateRange | undefined>()
+    const [isSelecting, setIsSelecting] = useState(false)
+
+    useEffect(() => {
+        if (openCalendar) {
+            setLocalDateRange({
+                from: bankRecDate.fromDate ? dayjs(bankRecDate.fromDate).toDate() : undefined,
+                to: bankRecDate.toDate ? dayjs(bankRecDate.toDate).toDate() : undefined
+            })
+            setIsSelecting(false)
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [openCalendar])
 
     const timePeriod: TimePeriod | string = useMemo(() => {
         if (bankRecDate.fromDate && bankRecDate.toDate) {
@@ -122,8 +137,8 @@ const BankRecDateFilter = () => {
 
     const dateObj = useMemo(() => {
         return {
-            from: new Date(bankRecDate.fromDate),
-            to: new Date(bankRecDate.toDate)
+            from: dayjs(bankRecDate.fromDate).toDate(),
+            to: dayjs(bankRecDate.toDate).toDate()
         }
     }, [bankRecDate.fromDate, bankRecDate.toDate])
 
@@ -167,7 +182,10 @@ const BankRecDateFilter = () => {
             </PopoverContent>
         </Popover>
 
-        <Popover>
+        {/* El rango se confirma SOLO con "Aplicar": cerrar el popover (clic afuera, Esc)
+            descarta la selección en curso. Si al cerrar se aplicara lo que haya, un clic
+            afuera a mitad de selección colapsaría el rango a un solo día en silencio. */}
+        <Popover open={openCalendar} onOpenChange={setOpenCalendar}>
             <PopoverTrigger asChild>
                 <Button variant={'outline'} className='rounded-l-none'>
                     {formatDate(bankRecDate.fromDate)} - {formatDate(bankRecDate.toDate)}
@@ -175,33 +193,42 @@ const BankRecDateFilter = () => {
             </PopoverTrigger>
             <PopoverContent className='w-auto p-0' align='end'>
                 <div className='flex divide-x'>
-                    <div className='p-2'>
-                        <div className='text-center text-sm font-medium p-2 text-muted-foreground'>{_("Fecha Inicial")}</div>
+                    <div className='p-2 flex flex-col items-center'>
+                        <div className='text-center text-sm font-medium p-2 text-muted-foreground'>{_("Rango de Fechas")}</div>
                         <Calendar
-                            mode='single'
+                            mode='range'
                             captionLayout='dropdown'
-                            selected={dateObj.from}
-                            defaultMonth={dateObj.from}
-                            onSelect={(date) => {
-                                if (date) {
-                                    setBankRecDate({ fromDate: formatDate(date, 'YYYY-MM-DD'), toDate: bankRecDate.toDate })
+                            selected={localDateRange}
+                            defaultMonth={localDateRange?.from ?? dateObj.from}
+                            onSelect={(_range: DateRange | undefined, selectedDay: Date) => {
+                                if (!isSelecting) {
+                                    setLocalDateRange({ from: selectedDay, to: undefined })
+                                    setIsSelecting(true)
+                                } else {
+                                    const from = localDateRange?.from || selectedDay
+                                    const to = selectedDay
+                                    if (dayjs(to).isBefore(dayjs(from), 'day')) {
+                                        setLocalDateRange({ from: to, to: from })
+                                    } else {
+                                        setLocalDateRange({ from, to })
+                                    }
+                                    setIsSelecting(false)
                                 }
                             }}
                         />
-                    </div>
-                    <div className='p-2'>
-                        <div className='text-center text-sm font-medium p-2 text-muted-foreground'>{_("Fecha Final")}</div>
-                        <Calendar
-                            mode='single'
-                            captionLayout='dropdown'
-                            selected={dateObj.to}
-                            defaultMonth={dateObj.to}
-                            onSelect={(date) => {
-                                if (date) {
-                                    setBankRecDate({ fromDate: bankRecDate.fromDate, toDate: formatDate(date, 'YYYY-MM-DD') })
+                        <div className="flex w-full justify-end p-2 border-t mt-2">
+                            <Button size="sm" onClick={() => {
+                                if (localDateRange?.from) {
+                                    setBankRecDate({
+                                        fromDate: formatDate(localDateRange.from, 'YYYY-MM-DD'),
+                                        toDate: localDateRange.to ? formatDate(localDateRange.to, 'YYYY-MM-DD') : formatDate(localDateRange.from, 'YYYY-MM-DD')
+                                    })
                                 }
-                            }}
-                        />
+                                setOpenCalendar(false)
+                            }}>
+                                {_("Aplicar")}
+                            </Button>
+                        </div>
                     </div>
                 </div>
             </PopoverContent>
