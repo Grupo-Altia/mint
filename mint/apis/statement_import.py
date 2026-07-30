@@ -114,6 +114,14 @@ def get_statement_details(file_url: str, bank_account: str):
 
     final_transactions = get_final_transactions(transaction_rows, date_format, amount_format)
 
+    mint_opening_date = frappe.get_cached_value("Bank Account", bank_account, "mint_opening_date")
+    if mint_opening_date:
+        opening_date_obj = frappe.utils.getdate(mint_opening_date)
+        final_transactions = [
+            tx for tx in final_transactions
+            if frappe.utils.getdate(tx.get("date")) >= opening_date_obj
+        ]
+
     account = frappe.get_cached_value("Bank Account", bank_account, "account")
     account_currency = frappe.get_cached_value("Account", account, "account_currency")
 
@@ -216,6 +224,14 @@ def process_statement_import_background(final_transactions, bank_account, curren
     errors = 0
 
     allowed_descriptions = frappe.get_all("Mint Bank Description Rule", pluck="description_text")
+
+    mint_opening_date = frappe.get_cached_value("Bank Account", bank_account, "mint_opening_date")
+    if mint_opening_date:
+        opening_date_obj = frappe.utils.getdate(mint_opening_date)
+        final_transactions = [
+            tx for tx in final_transactions
+            if frappe.utils.getdate(tx.get("date")) >= opening_date_obj
+        ]
 
     for current_index, transaction in enumerate(final_transactions):
         try:
