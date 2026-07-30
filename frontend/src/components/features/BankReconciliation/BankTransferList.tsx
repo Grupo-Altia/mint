@@ -20,6 +20,7 @@ interface MintBankTransfer {
     from_bank_account: string
     to_bank_account: string
     reference_number: string
+    destination_reference_number?: string
     amount: number
     status: string
     reconciliation_status: string
@@ -44,7 +45,7 @@ const BankTransferList = () => {
     const { data, error, isLoading } = useFrappeGetDocList<MintBankTransfer>("Mint Bank Transfer", {
         fields: [
             "name", "date", "company", "from_bank_account",
-            "to_bank_account", "reference_number", "amount",
+            "to_bank_account", "reference_number", "destination_reference_number", "amount",
             "status", "reconciliation_status", "description", "docstatus"
         ],
         filters: companyID ? [["company", "=", companyID]] : [],
@@ -69,6 +70,7 @@ const BankTransferList = () => {
         return (
             row.name.toLowerCase().includes(searchLower) ||
             row.reference_number?.toLowerCase().includes(searchLower) ||
+            row.destination_reference_number?.toLowerCase().includes(searchLower) ||
             row.from_bank_account?.toLowerCase().includes(searchLower) ||
             row.to_bank_account?.toLowerCase().includes(searchLower) ||
             row.status?.toLowerCase().includes(searchLower) ||
@@ -135,7 +137,16 @@ const BankTransferList = () => {
                                 <TableCell>{formatDate(row.date)}</TableCell>
                                 <TableCell>{row.from_bank_account}</TableCell>
                                 <TableCell>{row.to_bank_account}</TableCell>
-                                <TableCell>{row.reference_number}</TableCell>
+                                <TableCell>
+                                    {row.reference_number}
+                                    {/* La referencia de destino solo se muestra cuando existe y difiere:
+                                        si está vacía, la conciliación del destino usa la de origen. */}
+                                    {row.destination_reference_number && row.destination_reference_number !== row.reference_number && (
+                                        <span className="block text-xs text-muted-foreground">
+                                            {_("Destino")}: {row.destination_reference_number}
+                                        </span>
+                                    )}
+                                </TableCell>
                                 <TableCell className="text-right">{formatCurrency(row.amount)}</TableCell>
                                 <TableCell>
                                     {row.status === "Submitted" ? (
