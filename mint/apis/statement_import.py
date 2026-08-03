@@ -14,7 +14,7 @@ from datetime import datetime
 from mint.apis.bank_account import set_closing_balance_as_per_statement
 from mint.apis.reconciliation import normalize_reference
 
-def is_similar_reference(ref1, ref2):
+def is_similar_reference(ref1, ref2, bank_rules=None):
     if not ref1 and not ref2:
         return True
     if not ref1 or not ref2:
@@ -23,6 +23,11 @@ def is_similar_reference(ref1, ref2):
     r1 = str(ref1).strip().upper().replace(",", ".")
     r2 = str(ref2).strip().upper().replace(",", ".")
     if r1 == r2:
+        return True
+        
+    c1 = r1.lstrip('0')
+    c2 = r2.lstrip('0')
+    if c1 and c1 == c2:
         return True
         
     has_sci1 = "E+" in r1 or "E-" in r1
@@ -37,6 +42,12 @@ def is_similar_reference(ref1, ref2):
                     return True
         except Exception:
             pass
+
+    if bank_rules:
+        from mint.apis.reconciliation import check_rules_match
+        matched, _ = check_rules_match(bank_rules, r1, r2)
+        if matched:
+            return True
             
     return False
 
@@ -264,13 +275,13 @@ def process_statement_import_background(final_transactions, bank_account, curren
                         "date": tx_date,
                         "deposit": [">", 0]
                     },
-                    fields=["reference_number", "deposit"]
+                    fields=["reference_number", "bancaribe_origin_reference", "deposit"]
                 )
                 
                 is_duplicate = False
                 for extx in existing_txs:
                     if abs(float(extx.deposit) - new_amount) < 0.005:
-                        if is_similar_reference(extx.reference_number, ref):
+                        if is_similar_reference(extx.reference_number, ref) or is_similar_reference(extx.bancaribe_origin_reference, ref):
                             is_duplicate = True
                             break
                             
@@ -288,13 +299,13 @@ def process_statement_import_background(final_transactions, bank_account, curren
                         "date": tx_date,
                         "withdrawal": [">", 0]
                     },
-                    fields=["reference_number", "withdrawal"]
+                    fields=["reference_number", "bancaribe_origin_reference", "withdrawal"]
                 )
                 
                 is_duplicate = False
                 for extx in existing_txs:
                     if abs(float(extx.withdrawal) - new_amount) < 0.005:
-                        if is_similar_reference(extx.reference_number, ref):
+                        if is_similar_reference(extx.reference_number, ref) or is_similar_reference(extx.bancaribe_origin_reference, ref):
                             is_duplicate = True
                             break
                             
