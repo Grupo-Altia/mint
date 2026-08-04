@@ -1,7 +1,7 @@
 import frappe
 from frappe.tests.utils import FrappeTestCase
 from frappe.utils import today, add_days
-from mint.apis.reconciliation import check_rules_match
+from mint.apis.reconciliation import check_rules_match, get_matching_description_rule
 from mint.apis.statement_import import is_similar_reference
 from mint.apis.clean_duplicate_transactions import (
     _are_references_matching,
@@ -10,6 +10,32 @@ from mint.apis.clean_duplicate_transactions import (
 
 
 class TestDuplicateAndBilateralFeatures(FrappeTestCase):
+
+    def test_starts_with_description_rule(self):
+        rule_name = "TRF TRANSFERENCIA REF"
+        if frappe.db.exists("Mint Bank Description Rule", rule_name):
+            frappe.delete_doc("Mint Bank Description Rule", rule_name, force=True, ignore_permissions=True)
+
+        doc = frappe.get_doc({
+            "doctype": "Mint Bank Description Rule",
+            "description_text": rule_name,
+            "match_type": "Starts With",
+            "apply_prefix_rule": 0
+        }).insert(ignore_permissions=True)
+        frappe.db.commit()
+
+        # Test matching description that starts with "TRF TRANSFERENCIA REF"
+        matched = get_matching_description_rule("TRF TRANSFERENCIA REF 00987654321")
+        self.assertIsNotNone(matched)
+        self.assertEqual(matched.description_text, rule_name)
+
+        # Test non-matching description
+        not_matched = get_matching_description_rule("PAGO DIRECTO NOMINA")
+        self.assertIsNone(not_matched)
+
+        # Cleanup
+        frappe.delete_doc("Mint Bank Description Rule", rule_name, force=True, ignore_permissions=True)
+        frappe.db.commit()
 
     def test_bilateral_rules_and_zero_stripping(self):
         # 1. Zero stripping >= 5 digits (0012345 vs 12345) -> matches, rule_name is None
@@ -121,6 +147,8 @@ class TestDuplicateAndBilateralFeatures(FrappeTestCase):
 
 def run():
     t = TestDuplicateAndBilateralFeatures()
+    t.test_starts_with_description_rule()
+    print("✓ test_starts_with_description_rule passed")
     t.test_bilateral_rules_and_zero_stripping()
     print("✓ test_bilateral_rules_and_zero_stripping passed")
     t.test_is_similar_reference_safeguards()

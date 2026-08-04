@@ -1224,22 +1224,44 @@ def on_change_payment_entry(doc, method=None) -> None:
 
 
 
-def get_bank_description_rules() -> dict:
-    """Reglas de Mint Bank Description Rule indexadas por descripción, cacheadas por
-    request: esto se consulta una vez por fila y la importación de un extracto inserta
-    miles de Bank Transactions de una sola pasada.
-    """
+def get_bank_description_rules() -> list:
+    """Reglas de Mint Bank Description Rule indexadas, cacheadas por request."""
     cached = getattr(frappe.local, "_mint_bank_description_rules", None)
     if cached is None:
-        cached = {
-            r.description_text: r
-            for r in frappe.get_all(
-                "Mint Bank Description Rule",
-                fields=["description_text", "apply_prefix_rule", "prefixes_to_strip"],
-            )
-        }
+        cached = frappe.get_all(
+            "Mint Bank Description Rule",
+            fields=["name", "description_text", "match_type", "apply_prefix_rule", "prefixes_to_strip"],
+        )
         frappe.local._mint_bank_description_rules = cached
     return cached
+
+
+def get_matching_description_rule(desc_text: str | None) -> frappe._dict | None:
+    """Busca una regla de descripción coincidente por valor exacto o prefijo ("Starts With")."""
+    if not desc_text:
+        return None
+    s_desc = str(desc_text).strip()
+    if not s_desc:
+        return None
+
+    rules = get_bank_description_rules()
+
+    # 1. Coincidencia exacta primero
+    for r in rules:
+        r_text = (r.description_text or "").strip()
+        if r_text.upper() == s_desc.upper():
+            return r
+
+    # 2. Coincidencia por inicio de texto ("Starts With")
+    for r in rules:
+        r_text = (r.description_text or "").strip()
+        if not r_text:
+            continue
+        match_type = r.get("match_type") or "Exact Match"
+        if match_type in ["Starts With", "Comienza Con"] and s_desc.upper().startswith(r_text.upper()):
+            return r
+
+    return None
 
 
 def _prefix_ref_candidates(ref: str, prefixes_to_strip: str | None) -> list:
@@ -1299,7 +1321,7 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
 
     allow_exact_duplicate = False
 
-    rule = get_bank_description_rules().get(doc.description) if doc.description else None
+    rule = get_matching_description_rule(doc.description)
     if rule:
         if rule.apply_prefix_rule:
             filters["reference_number"] = ["in", _prefix_ref_candidates(ref, rule.prefixes_to_strip)]
@@ -2149,13 +2171,15 @@ def get_duplicate_bank_transactions():
                 # El primero es el que tiene mayor asignación, ese se conserva
                 keep = group_members[0]
                 
-                # Si la descripción del que se conserva está ignorada, saltamos el grupo entero
-                if keep.description in ignored_descriptions:
+                # Si la descripción del que se conserva está ignorada por lista blanca, saltamos el grupo entero
+                rule_keep = get_matching_description_rule(keep.description)
+                if rule_keep and not rule_keep.apply_prefix_rule:
                     continue
                     
                 for dup in group_members[1:]:
-                    # Si la descripción del duplicado está ignorada, lo saltamos
-                    if dup.description in ignored_descriptions:
+                    # Si la descripción del duplicado está ignorada por lista blanca, lo saltamos
+                    rule_dup = get_matching_description_rule(dup.description)
+                    if rule_dup and not rule_dup.apply_prefix_rule:
                         continue
                         
                     # Si ambos tienen asignaciones, no sugerimos limpieza automática para evitar romper cosas

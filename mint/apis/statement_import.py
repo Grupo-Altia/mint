@@ -227,9 +227,7 @@ def process_statement_import_background(final_transactions, bank_account, curren
     success = 0
     errors = 0
 
-    allowed_descriptions = frappe.get_all("Mint Bank Description Rule", pluck="description_text")
-    
-    from mint.apis.reconciliation import get_bank_rules
+    from mint.apis.reconciliation import get_bank_rules, get_matching_description_rule
     bank_name = frappe.get_cached_value("Bank Account", bank_account, "bank")
     bank_rules = get_bank_rules(bank_name) if bank_name else []
 
@@ -266,7 +264,8 @@ def process_statement_import_background(final_transactions, bank_account, curren
 
             bypass_duplicate_check = False
             desc = transaction.get("description")
-            if desc and desc in allowed_descriptions:
+            matched_desc_rule = get_matching_description_rule(desc)
+            if matched_desc_rule and not matched_desc_rule.apply_prefix_rule:
                 if not is_part_of_reimport_sequence(transaction, current_index, final_transactions, bank_account):
                     bypass_duplicate_check = True
 
