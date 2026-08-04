@@ -101,13 +101,15 @@
    "fieldname": "reference_number",
    "fieldtype": "Data",
    "in_standard_filter": 1,
-   "label": "Referencia (Origen)",
+   "label": "Source Reference Number",
    "reqd": 1
   },
   {
+   "description": "Referencia con la que el banco destino registra el depósito, cuando es distinta de la de origen. Si se deja vacía, la conciliación del destino usa la Referencia de Origen.",
    "fieldname": "destination_reference_number",
    "fieldtype": "Data",
-   "label": "Referencia (Destino)"
+   "in_standard_filter": 1,
+   "label": "Destination Reference Number"
   },
   {
    "fieldname": "column_break_2",

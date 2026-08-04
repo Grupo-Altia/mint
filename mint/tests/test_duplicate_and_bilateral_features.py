@@ -24,6 +24,9 @@ class TestDuplicateAndBilateralFeatures(FrappeTestCase):
         }).insert(ignore_permissions=True)
         frappe.db.commit()
 
+        if hasattr(frappe.local, "_mint_bank_description_rules"):
+            delattr(frappe.local, "_mint_bank_description_rules")
+
         # Test matching description that starts with "TRF TRANSFERENCIA REF"
         matched = get_matching_description_rule("TRF TRANSFERENCIA REF 00987654321")
         self.assertIsNotNone(matched)

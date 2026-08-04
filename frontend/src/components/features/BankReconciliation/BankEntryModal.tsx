@@ -53,7 +53,7 @@ const RecordBankEntryModalContent = () => {
 
     const selectedTransaction = useAtomValue(bankRecSelectedTransactionAtom(selectedBankAccount?.name ?? ''))
 
-    if (!selectedTransaction || !selectedBankAccount) {
+    if (!selectedTransaction || !selectedBankAccount || selectedTransaction.length === 0) {
         return <div className='p-4'>
             <span className='text-center'>No transaction selected</span>
         </div>
@@ -527,6 +527,7 @@ const Entries = ({ company, isWithdrawal, currency }: { company: string, isWithd
         if (value) {
             if (partyMapRef.current[value]) {
                 setValue(`entries.${index}.account`, partyMapRef.current[value])
+                onAccountChange(partyMapRef.current[value], index)
             } else {
                 call.get('erpnext.accounts.party.get_party_account', {
                     party: value,
@@ -535,10 +536,12 @@ const Entries = ({ company, isWithdrawal, currency }: { company: string, isWithd
                 }).then((result: { message: string }) => {
                     setValue(`entries.${index}.account`, result.message)
                     partyMapRef.current[value] = result.message
+                    onAccountChange(result.message, index)
                 })
             }
         } else {
             setValue(`entries.${index}.account`, '')
+            onAccountChange('', index)
         }
     }
 
@@ -547,25 +550,16 @@ const Entries = ({ company, isWithdrawal, currency }: { company: string, isWithd
         if (value) {
             if (costCenterMapRef.current[value]) {
                 setValue(`entries.${index}.cost_center`, costCenterMapRef.current[value])
-                if (index === 1) {
-                    setValue(`entries.0.cost_center`, costCenterMapRef.current[value])
-                }
             } else {
                 call.get('mint.apis.bank_reconciliation.get_account_defaults', {
                     account: value
                 }).then((result: { message: string }) => {
                     costCenterMapRef.current[value] = result.message
                     setValue(`entries.${index}.cost_center`, result.message)
-                    if (index === 1) {
-                        setValue(`entries.0.cost_center`, result.message)
-                    }
                 })
             }
         } else {
             setValue(`entries.${index}.cost_center`, '')
-            if (index === 1) {
-                setValue(`entries.0.cost_center`, '')
-            }
         }
     }
 
@@ -738,14 +732,7 @@ const Entries = ({ company, isWithdrawal, currency }: { company: string, isWithd
                                 buttonClassName="min-w-48"
                                 hideLabel
                                 ignoreUserPermissions={true}
-                                rules={{
-                                    onChange: (event: any) => {
-                                        if (index === 1) {
-                                            const val = event?.target?.value ?? event;
-                                            setValue(`entries.0.cost_center`, val);
-                                        }
-                                    }
-                                }}
+                                limit={1000}
                             />
                         </TableCell>
                         <TableCell className="align-top">

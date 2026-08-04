@@ -1156,18 +1156,42 @@ def before_submit_receive_payment(doc, method=None) -> None:
     doc.flags.l10n_ve_matched_deposit = deposit.name
 
 
+def mark_cash_like_reconciled(doc) -> bool:
+    """Concilia un cobro en efectivo/pasarela. Devuelve True si lo dejó conciliado.
+
+    Estos cobros **no esperan depósito**: el efectivo se recibe en caja y la pasarela
+    (C2P, Biopago) acredita sin generar un movimiento que se importe como Bank
+    Transaction. Si igual aparece uno con su referencia, se enlaza --así el extracto
+    queda cuadrado--, pero su ausencia no puede dejar el cobro pendiente para siempre.
+
+    Se escribe **`clearance_date`**, no sólo el estado: `on_change_payment_entry` deriva
+    el estado visual de ese campo y devuelve a `RECON_PENDING` todo cobro sin fecha. Un
+    arreglo que tocara sólo `custom_reconciliation_status` se desharía en el siguiente
+    guardado del documento.
+
+    Sin depósito la fecha es la del cobro: es cuando el dinero entró de verdad.
+    """
+    if doc.get("custom_reconciliation_status") == RECON_DONE and doc.clearance_date:
+        return False
+
+    deposit = find_matching_deposit(doc)
+    if deposit:
+        _link_deposit_to_payment(deposit.name, doc.name)
+
+    clearance_date = deposit.date if deposit else doc.posting_date
+    doc.clearance_date = clearance_date
+    doc.custom_reconciliation_status = RECON_DONE
+    doc.db_set("clearance_date", clearance_date)
+    doc.db_set("custom_reconciliation_status", RECON_DONE)
+    return True
+
+
 def on_submit_receive_payment(doc, method=None) -> None:
     """Tras aprobar el cobro, enlazar su depósito bancario: el guardado del Bank
     Transaction dispara la conciliación y la activación por sus hooks."""
     if not _is_bank_receive(doc):
-        # Es CASH o GATEWAY. Intentar enlazar si el depósito ya existe.
-        deposit = find_matching_deposit(doc)
-        if deposit:
-            _link_deposit_to_payment(deposit.name, doc.name)
-            doc.clearance_date = deposit.date
-            doc.custom_reconciliation_status = RECON_DONE
-            doc.db_set("clearance_date", deposit.date)
-            doc.db_set("custom_reconciliation_status", RECON_DONE)
+        # Es CASH o GATEWAY: se concilia solo, no espera depósito.
+        mark_cash_like_reconciled(doc)
         return
 
     bt_name = doc.flags.get("l10n_ve_matched_deposit")
@@ -1224,10 +1248,10 @@ def on_change_payment_entry(doc, method=None) -> None:
 
 
 
-def get_bank_description_rules() -> list:
+def get_bank_description_rules(force_reload: bool = False) -> list:
     """Reglas de Mint Bank Description Rule indexadas, cacheadas por request."""
     cached = getattr(frappe.local, "_mint_bank_description_rules", None)
-    if cached is None:
+    if cached is None or force_reload:
         cached = frappe.get_all(
             "Mint Bank Description Rule",
             fields=["name", "description_text", "match_type", "apply_prefix_rule", "prefixes_to_strip"],
@@ -1424,13 +1448,9 @@ def _approve_drafts(names) -> int:
                 if result.get("reconciled"):
                     reconciled += 1
             elif doc.docstatus == 1 and not _is_bank_receive(doc) and doc.get("custom_reconciliation_status") != RECON_DONE:
-                deposit = find_matching_deposit(doc)
-                if deposit:
-                    _link_deposit_to_payment(deposit.name, doc.name)
-                    doc.clearance_date = deposit.date
-                    doc.custom_reconciliation_status = RECON_DONE
-                    doc.db_set("clearance_date", deposit.date)
-                    doc.db_set("custom_reconciliation_status", RECON_DONE)
+                # Rezagados: cobros en efectivo/pasarela aprobados antes de que esto
+                # se conciliara solo. Los nuevos ya salen conciliados de on_submit.
+                if mark_cash_like_reconciled(doc):
                     frappe.db.commit()
                     reconciled += 1
         except Exception:
@@ -1514,6 +1534,98 @@ def cancel_exact_duplicate_deposits() -> int:
                     message=frappe.get_traceback(),
                 )
     return cancelled
+
+
+def cancel_prefix_duplicate_deposits() -> int:
+    """Cancela depósitos duplicados por prefijo (p.ej. 9412345678 vs 12345678).
+    Lee dinámicamente las reglas de descripción bancaria activas con prefijos configurados.
+
+    NUNCA se toca un depósito con asignación (rompería un pago conciliado): si los dos
+    lados del par están asignados se deja el par intacto para revisión manual, y si solo
+    uno lo está se cancela el otro. Con los dos SIN asignar el empate se rompe por
+    antigüedad: se conserva el más antiguo, igual que `cancel_exact_duplicate_deposits`.
+    El desempate tiene que ser determinista porque MySQL no garantiza el orden de las
+    filas: sin `ORDER BY`, dos corridas podían cancelar lados distintos del mismo par.
+
+    Cada cancelación es atómica (commit por éxito; rollback + Error Log por fallo, sin
+    abortar el lote): un único commit al final significaría que el primer fallo a mitad
+    del lote descarta todas las cancelaciones anteriores de la corrida. Devuelve cuántas
+    se confirmaron realmente en la base.
+    """
+    rules = frappe.get_all(
+        'Mint Bank Description Rule',
+        filters={'apply_prefix_rule': 1},
+        fields=['name', 'prefixes_to_strip']
+    )
+
+    total_cancelled = 0
+    # Un mismo depósito puede caer en varios pares (y en varios prefijos): sin esto se
+    # reintentaría un doc ya cancelado y se contaría de nuevo sin tocar nada.
+    already_processed = set()
+
+    for rule in rules:
+        prefixes = [p.strip() for p in (rule.prefixes_to_strip or '').split(',') if p.strip()]
+        if not prefixes:
+            continue
+
+        for prefix in prefixes:
+            sql = """
+            SELECT
+                t1.name as name1, t1.allocated_amount as alloc1, t1.creation as creation1,
+                t2.name as name2, t2.allocated_amount as alloc2, t2.creation as creation2
+            FROM `tabBank Transaction` t1
+            INNER JOIN `tabBank Transaction` t2
+                ON t1.bank_account = t2.bank_account
+                AND t1.company = t2.company
+                AND t1.date = t2.date
+                AND ROUND(t1.deposit, 2) = ROUND(t2.deposit, 2)
+            WHERE t1.deposit > 0 AND t2.deposit > 0
+                AND t1.docstatus < 2 AND t2.docstatus < 2
+                AND t1.reference_number = CONCAT(%s, t2.reference_number)
+                AND t2.reference_number != ''
+            ORDER BY t1.date, t1.name, t2.name
+            """
+
+            duplicates = frappe.db.sql(sql, (prefix,), as_dict=True)
+
+            for dup in duplicates:
+                alloc1, alloc2 = flt(dup.alloc1), flt(dup.alloc2)
+
+                if alloc1 >= 0.01 and alloc2 >= 0.01:
+                    continue
+
+                if alloc1 >= 0.01:
+                    to_cancel = dup.name2
+                elif alloc2 >= 0.01:
+                    to_cancel = dup.name1
+                else:
+                    # Empate: se conserva el más antiguo.
+                    to_cancel = dup.name1 if dup.creation1 >= dup.creation2 else dup.name2
+
+                if to_cancel in already_processed:
+                    continue
+                already_processed.add(to_cancel)
+
+                try:
+                    doc = frappe.get_doc("Bank Transaction", to_cancel)
+                    if doc.docstatus == 1:
+                        doc.flags.ignore_permissions = True
+                        doc.cancel()
+                    elif doc.docstatus == 0:
+                        frappe.delete_doc("Bank Transaction", to_cancel, ignore_permissions=True)
+                    else:
+                        continue  # ya estaba cancelado: no hay nada que contar
+                    frappe.db.commit()
+                    total_cancelled += 1
+                except Exception:
+                    frappe.db.rollback()
+                    log_mint_error(
+                        title=_("Error cancelando depósito duplicado por prefijo {0} (auto)").format(to_cancel),
+                        message=frappe.get_traceback(),
+                    )
+
+    return total_cancelled
+
 
 
 def find_impossible_date_transactions() -> list:

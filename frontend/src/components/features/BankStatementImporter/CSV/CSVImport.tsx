@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useGetStatementDetails } from '../import_utils'
 import CSVRawDataPreview from './CSVRawDataPreview'
 import StatementDetails from './StatementDetails'
@@ -9,7 +10,8 @@ import _ from '@/lib/translate'
 
 const CSVImport = ({ bank, fileURL, onBack }: { bank: SelectedBank, fileURL: string, onBack: () => void }) => {
 
-    const { data, error } = useGetStatementDetails(fileURL, bank.name)
+    const [customMapping, setCustomMapping] = useState<string | undefined>(undefined)
+    const { data, error } = useGetStatementDetails(fileURL, bank.name, customMapping)
 
     if (error) {
         return <div className='flex flex-col gap-4 px-4'>
@@ -29,7 +31,7 @@ const CSVImport = ({ bank, fileURL, onBack }: { bank: SelectedBank, fileURL: str
     return (
         <div className="w-full flex">
             <div className="w-[50%] p-4 h-[calc(100vh-72px)] overflow-scroll">
-                <StatementDetails data={data.message} bank={bank} onBack={onBack} />
+                <StatementDetails data={data.message} bank={bank} onBack={onBack} customMapping={customMapping} setCustomMapping={setCustomMapping} />
             </div>
             <div className="w-[50%] border-l border-t pr-1 pl-0 border-border h-[calc(100vh-72px)] overflow-scroll">
                 <CSVRawDataPreview data={data.message} />

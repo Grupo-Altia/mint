@@ -169,5 +169,12 @@ def after_migrate():
     
     from mint.custom_fields import create_mint_custom_fields
     create_mint_custom_fields()
+
+    # Ejecutar barrido de duplicados por prefijo tras la migración
+    try:
+        from mint.apis.reconciliation import cancel_prefix_duplicate_deposits
+        cancel_prefix_duplicate_deposits()
+    except Exception as e:
+        print(f"Error ejecutando barrido de prefijos: {e}")
     
     frappe.db.commit()

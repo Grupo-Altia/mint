@@ -49,7 +49,13 @@ def get_columns():
 		},
 		{
 			"fieldname": "reference_number",
-			"label": _("Reference Number"),
+			"label": _("Source Reference Number"),
+			"fieldtype": "Data",
+			"width": 130,
+		},
+		{
+			"fieldname": "destination_reference_number",
+			"label": _("Destination Reference Number"),
 			"fieldtype": "Data",
 			"width": 130,
 		},
@@ -86,6 +92,7 @@ def get_data(filters):
 			"from_bank_account",
 			"to_bank_account",
 			"reference_number",
+			"destination_reference_number",
 			"amount",
 			"status",
 			"journal_entry",

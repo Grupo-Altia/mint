@@ -1,0 +1,33 @@
+proxyOptions.ts(8,20): error TS7006: Parameter 'req' implicitly has an 'any' type.
+src/components/features/BankReconciliation/BankEntryModal.tsx(315,13): error TS2322: Type '"Bank Entry" | "Credit Card Entry"' is not assignable to type '"Journal Entry" | "Exchange Rate Revaluation" | "Inter Company Journal Entry" | "Registro de Banco" | "Cash Entry" | "Credit Card Entry" | "Debit Note" | "Credit Note" | ... 8 more ... | undefined'.
+src/components/features/BankReconciliation/BankEntryModal.tsx(418,43): error TS2345: Argument of type '(data: BankEntryFormData) => void' is not assignable to parameter of type 'SubmitHandler<TFieldValues>'.
+src/components/features/BankReconciliation/BankEntryModal.tsx(74,59): error TS18048: 't.deposit' is possibly 'undefined'.
+src/components/features/BankReconciliation/BankRecDateFilter.tsx(205,29): error TS2322: Type '{ from?: Date | undefined; to?: Date | undefined; } | undefined' is not assignable to type 'DateRange | undefined'.
+src/components/features/BankReconciliation/BankRecDateFilter.tsx(207,40): error TS6133: 'range' is declared but its value is never read.
+src/components/features/BankReconciliation/BankTransactionList.tsx(6,10): error TS6133: 'Table' is declared but its value is never read.
+src/components/features/BankReconciliation/BankTransactionList.tsx(6,17): error TS6133: 'TableBody' is declared but its value is never read.
+src/components/features/BankReconciliation/BankTransferList.tsx(56,9): error TS2353: Object literal may only specify known properties, and 'limit_page_length' does not exist in type 'GetDocListArgs<FrappeDoc<MintBankTransfer>>'.
+src/components/features/BankReconciliation/MatchAndReconcile.tsx(423,13): error TS6133: 'setTransferModalOpen' is declared but its value is never read.
+src/components/features/BankReconciliation/MatchAndReconcile.tsx(423,35): error TS6133: 'setRecordPaymentModalOpen' is declared but its value is never read.
+src/components/features/BankReconciliation/MatchAndReconcile.tsx(477,13): error TS6133: 'setTransferModalOpen' is declared but its value is never read.
+src/components/features/BankReconciliation/MatchAndReconcile.tsx(477,35): error TS6133: 'setRecordPaymentModalOpen' is declared but its value is never read.
+src/components/features/BankReconciliation/MatchAndReconcile.tsx(528,18): error TS2678: Type '"Transfer"' is not comparable to type '"Bank Entry" | "Payment Entry"'.
+src/components/features/BankReconciliation/MatchAndReconcile.tsx(537,18): error TS2678: Type '"Registro de Banco"' is not comparable to type '"Bank Entry" | "Payment Entry"'.
+src/components/features/BankReconciliation/MatchAndReconcile.tsx(551,18): error TS2678: Type '"Transfer"' is not comparable to type '"Bank Entry" | "Payment Entry"'.
+src/components/features/BankReconciliation/MatchAndReconcile.tsx(576,18): error TS2678: Type '"Transfer"' is not comparable to type '"Bank Entry" | "Payment Entry"'.
+src/components/features/BankReconciliation/MatchAndReconcile.tsx(588,18): error TS2678: Type '"Transfer"' is not comparable to type '"Bank Entry" | "Payment Entry"'.
+src/components/features/BankReconciliation/MatchAndReconcile.tsx(8,1): error TS6133: 'Fuse' is declared but its value is never read.
+src/components/features/BankReconciliation/RecordPaymentModal.tsx(311,13): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+src/components/features/BankReconciliation/RecordPaymentModal.tsx(316,13): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+src/components/features/BankReconciliation/RecordPaymentModal.tsx(318,13): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+src/components/features/BankReconciliation/RecordPaymentModal.tsx(320,13): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+src/components/features/BankReconciliation/RecordPaymentModal.tsx(321,13): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+src/components/features/BankReconciliation/RecordPaymentModal.tsx(322,13): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+src/components/features/BankReconciliation/RecordPaymentModal.tsx(323,13): error TS2322: Type 'number | undefined' is not assignable to type 'number'.
+src/components/features/BankReconciliation/RecordPaymentModal.tsx(326,13): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+src/components/features/BankReconciliation/RecordPaymentModal.tsx(436,43): error TS2345: Argument of type '(data: PaymentEntry) => void' is not assignable to parameter of type 'SubmitHandler<TFieldValues>'.
+src/components/features/BankReconciliation/RecordPaymentModal.tsx(703,9): error TS2322: Type '{ name: string; label: string; doctype: string; query: (() => { filters: { name: any[]; }; }) | undefined; }' is not assignable to type 'IntrinsicAttributes & LinkFormFieldProps'.
+src/components/features/BankReconciliation/Rules/RuleForm.tsx(18,109): error TS6133: 'ReceiptIcon' is declared but its value is never read.
+src/components/features/BankReconciliation/Rules/RuleForm.tsx(18,39): error TS6133: 'ArrowRightLeftIcon' is declared but its value is never read.
+src/components/features/BankReconciliation/Rules/RuleForm.tsx(239,13): error TS2367: This comparison appears to be unintentional because the types '"Bank Entry"' and '"Transfer"' have no overlap.
+src/components/features/BankReconciliation/utils.ts(17,1): error TS6133: 'Fuse' is declared but its value is never read.
