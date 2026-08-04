@@ -1133,18 +1133,42 @@ def before_submit_receive_payment(doc, method=None) -> None:
     doc.flags.l10n_ve_matched_deposit = deposit.name
 
 
+def mark_cash_like_reconciled(doc) -> bool:
+    """Concilia un cobro en efectivo/pasarela. Devuelve True si lo dejó conciliado.
+
+    Estos cobros **no esperan depósito**: el efectivo se recibe en caja y la pasarela
+    (C2P, Biopago) acredita sin generar un movimiento que se importe como Bank
+    Transaction. Si igual aparece uno con su referencia, se enlaza --así el extracto
+    queda cuadrado--, pero su ausencia no puede dejar el cobro pendiente para siempre.
+
+    Se escribe **`clearance_date`**, no sólo el estado: `on_change_payment_entry` deriva
+    el estado visual de ese campo y devuelve a `RECON_PENDING` todo cobro sin fecha. Un
+    arreglo que tocara sólo `custom_reconciliation_status` se desharía en el siguiente
+    guardado del documento.
+
+    Sin depósito la fecha es la del cobro: es cuando el dinero entró de verdad.
+    """
+    if doc.get("custom_reconciliation_status") == RECON_DONE and doc.clearance_date:
+        return False
+
+    deposit = find_matching_deposit(doc)
+    if deposit:
+        _link_deposit_to_payment(deposit.name, doc.name)
+
+    clearance_date = deposit.date if deposit else doc.posting_date
+    doc.clearance_date = clearance_date
+    doc.custom_reconciliation_status = RECON_DONE
+    doc.db_set("clearance_date", clearance_date)
+    doc.db_set("custom_reconciliation_status", RECON_DONE)
+    return True
+
+
 def on_submit_receive_payment(doc, method=None) -> None:
     """Tras aprobar el cobro, enlazar su depósito bancario: el guardado del Bank
     Transaction dispara la conciliación y la activación por sus hooks."""
     if not _is_bank_receive(doc):
-        # Es CASH o GATEWAY. Intentar enlazar si el depósito ya existe.
-        deposit = find_matching_deposit(doc)
-        if deposit:
-            _link_deposit_to_payment(deposit.name, doc.name)
-            doc.clearance_date = deposit.date
-            doc.custom_reconciliation_status = RECON_DONE
-            doc.db_set("clearance_date", deposit.date)
-            doc.db_set("custom_reconciliation_status", RECON_DONE)
+        # Es CASH o GATEWAY: se concilia solo, no espera depósito.
+        mark_cash_like_reconciled(doc)
         return
 
     bt_name = doc.flags.get("l10n_ve_matched_deposit")
@@ -1379,13 +1403,9 @@ def _approve_drafts(names) -> int:
                 if result.get("reconciled"):
                     reconciled += 1
             elif doc.docstatus == 1 and not _is_bank_receive(doc) and doc.get("custom_reconciliation_status") != RECON_DONE:
-                deposit = find_matching_deposit(doc)
-                if deposit:
-                    _link_deposit_to_payment(deposit.name, doc.name)
-                    doc.clearance_date = deposit.date
-                    doc.custom_reconciliation_status = RECON_DONE
-                    doc.db_set("clearance_date", deposit.date)
-                    doc.db_set("custom_reconciliation_status", RECON_DONE)
+                # Rezagados: cobros en efectivo/pasarela aprobados antes de que esto
+                # se conciliara solo. Los nuevos ya salen conciliados de on_submit.
+                if mark_cash_like_reconciled(doc):
                     frappe.db.commit()
                     reconciled += 1
         except Exception:
