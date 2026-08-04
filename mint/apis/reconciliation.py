@@ -509,6 +509,13 @@ def _first_deposit(filters: dict) -> frappe._dict | None:
 import itertools
 
 def check_rules_match(rules, raw_ref, target_ref):
+    """Compara dos referencias de forma bilateral (depósito ↔ cobro) usando reglas de formato de Mint.
+    
+    Semántica Bilateral:
+    Aplica la regla tanto al extracto (hacia adelante: depósito → cobro) como al cobro (inversa:
+    cobro → depósito) como heurística de coincidencia. Si la ref despojada de ceros tiene ≥ 5
+    dígitos, también se considera coincidencia directa sin asignar un nombre de regla pseudo-fantasma.
+    """
     raw_s = str(raw_ref or "").strip()
     target_s = str(target_ref or "").strip()
     if raw_s == target_s:
@@ -516,8 +523,9 @@ def check_rules_match(rules, raw_ref, target_ref):
         
     raw_clean = raw_s.lstrip('0')
     target_clean = target_s.lstrip('0')
-    if raw_clean and raw_clean == target_clean:
-        return True, "Zero-Stripping Match"
+    has_valid_clean = len(raw_clean) >= 5 and len(target_clean) >= 5
+    if has_valid_clean and raw_clean == target_clean:
+        return True, None
 
     # Single rules (Bilateral matching: extracto -> cobro OR cobro -> extracto)
     for rule in rules:
@@ -525,23 +533,34 @@ def check_rules_match(rules, raw_ref, target_ref):
         res_target = apply_format_rule(rule, target_s)
         if res_raw == target_s or res_target == raw_s:
             return True, rule
-        if raw_clean and (res_raw.lstrip('0') == target_clean or res_target.lstrip('0') == raw_clean):
+        if has_valid_clean and (res_raw.lstrip('0') == target_clean or res_target.lstrip('0') == raw_clean):
             return True, rule
             
     # Combinations (pipeline en cualquier orden) — ACOTADO: permutations es factorial
+    # y con las reglas de TODO el sistema (cobro sin source_bank) explota (ver
+    # MAX_PIPELINE_ATTEMPTS). Truncar solo omite pipelines exóticos, no falsea matches.
     if len(rules) > 1:
         attempts = 0
         for r_len in range(2, len(rules) + 1):
             for perm in itertools.permutations(rules, r_len):
                 attempts += 1
                 if attempts > MAX_PIPELINE_ATTEMPTS:
+                    # La truncación es el resultado ESPERADO para refs que NO matchean con muchas
+                    # reglas (los pipelines crecen factorialmente; con 8 reglas casi toda comparación
+                    # sin match la alcanza). Loguear un Warning por comparación inundaba la cola
+                    # `short` — cada log_mint_warning encola un job — con ~1500 jobs/5min que clavaban
+                    # los workers al 99% de CPU en la conciliación nocturna de prod. Se rate-limita a
+                    # ~1 aviso cada 10 min (SETNX en Redis, mismo patrón que _try_acquire_lock en
+                    # domina_isp/tasks.py): la señal se preserva, la avalancha no. Truncar NO falsea
+                    # matches (solo omite pipelines exóticos), así que no se pierde precisión.
                     try:
                         _warn_key = frappe.cache().make_key("mint_pipeline_trunc_warned")
                         if frappe.cache().set(_warn_key, "1", nx=True, ex=600):
                             log_mint_warning(
                                 "Warning",
                                 "check_rules_match: %s reglas; pipelines truncados en %s intentos "
-                                "(ref destino %s)." % (
+                                "(ref destino %s). Aviso rate-limitado a 1/10min: la truncación es "
+                                "esperada y no falsea matches." % (
                                     len(rules), MAX_PIPELINE_ATTEMPTS, target_ref
                                 )
                             )
@@ -555,7 +574,7 @@ def check_rules_match(rules, raw_ref, target_ref):
                     p_target = apply_format_rule(r, p_target)
                 if p_raw == target_s or p_target == raw_s:
                     return True, " + ".join(perm)
-                if raw_clean and (p_raw.lstrip('0') == target_clean or p_target.lstrip('0') == raw_clean):
+                if has_valid_clean and (p_raw.lstrip('0') == target_clean or p_target.lstrip('0') == raw_clean):
                     return True, " + ".join(perm)
 
     return False, None
@@ -1630,11 +1649,12 @@ def _tag_existing_matches_by_rule(matches, original_ref, banks_with_rules):
             mod_ref_inverse = apply_format_rule(b.bank_reference_rule, pe_ref)
             clean_orig = str(original_ref).strip().lstrip('0')
             clean_pe = str(pe_ref).strip().lstrip('0')
+            has_clean = len(clean_orig) >= 5 and len(clean_pe) >= 5
             
             if (mod_ref_forward == pe_ref or 
                 mod_ref_inverse == original_ref or 
-                (clean_orig and clean_orig == clean_pe) or
-                (clean_orig and mod_ref_forward.lstrip('0') == clean_pe)):
+                (has_clean and clean_orig == clean_pe) or
+                (has_clean and mod_ref_forward.lstrip('0') == clean_pe)):
                 if isinstance(match, dict):
                     match["matched_by_rule"] = True
                 else:

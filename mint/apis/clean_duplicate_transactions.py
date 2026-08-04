@@ -1,36 +1,43 @@
 import frappe
 from frappe import _
-from frappe.utils import flt
+from frappe.utils import flt, add_days, today, sbool
 
 
 def _are_references_matching(ref1: str, ref2: str, orig_ref1: str = "", orig_ref2: str = "", bank_rules: list = None) -> bool:
-    """Verifica si dos referencias corresponden a la misma transacción física."""
+    """Verifica si dos referencias corresponden a la misma transacción física.
+    
+    C1 FIX: Transacciones sin referencia NUNCA se consideran duplicadas entre sí
+    para evitar borrar comisiones o cargos idénticos sin referencia del mismo día.
+    """
     r1 = str(ref1 or "").strip()
     r2 = str(ref2 or "").strip()
     o1 = str(orig_ref1 or "").strip()
     o2 = str(orig_ref2 or "").strip()
 
+    # Si ambas están sin referencia/origen, NUNCA considerar duplicadas
     if not r1 and not r2 and not o1 and not o2:
-        return True  # Ambas sin referencia en la misma fecha y monto
+        return False
 
-    # Coincidencia exacta
+    # Coincidencia exacta de referencia u origen
     if r1 and (r1 == r2 or r1 == o2):
         return True
     if r2 and (r2 == r1 or r2 == o1):
         return True
 
-    # Coincidencia sin ceros a la izquierda
+    # Coincidencia sin ceros a la izquierda (requiere longitud despojada >= 5 dígitos)
     c1 = r1.lstrip('0')
     c2 = r2.lstrip('0')
     co1 = o1.lstrip('0')
     co2 = o2.lstrip('0')
 
-    if c1 and (c1 == c2 or c1 == co2):
+    if len(c1) >= 5 and len(c2) >= 5 and c1 == c2:
         return True
-    if c2 and (c2 == c1 or c2 == co1):
+    if len(c1) >= 5 and len(co2) >= 5 and c1 == co2:
+        return True
+    if len(c2) >= 5 and len(co1) >= 5 and c2 == co1:
         return True
 
-    # Reglas de referencia
+    # Reglas de referencia de Mint
     if bank_rules:
         from mint.apis.reconciliation import check_rules_match
         if r1 and r2 and check_rules_match(bank_rules, r1, r2)[0]:
@@ -44,18 +51,40 @@ def _are_references_matching(ref1: str, ref2: str, orig_ref1: str = "", orig_ref
 
 
 @frappe.whitelist()
-def clean_unreconciled_duplicates(bank_account: str = None, company: str = None, dry_run: bool = False) -> dict:
+def clean_unreconciled_duplicates(
+    bank_account: str = None,
+    company: str = None,
+    from_date: str = None,
+    to_date: str = None,
+    dry_run: bool = True,
+) -> dict:
     """
-    Busca y elimina transacciones bancarias duplicadas verdaderas.
+    Busca y cancela transacciones bancarias duplicadas verdaderas.
     
-    Solo se consideran duplicadas si comparten:
-    - Misma cuenta bancaria, fecha y monto.
-    - Y coinciden en referencia (exacta, sin ceros iniciales o por reglas).
-    
-    Transacciones del mismo monto y fecha pero con referencias distintas pertenecen a distintos
-    clientes y NO se eliminan.
+    C2 FIX: Permisos estrictos ("Accounts Manager", "System Manager"), dry_run=True por defecto,
+    uso de sbool() y exigencia de alcance (bank_account o company).
+    A1 FIX: Cancela (docstatus=2) en vez de borrar para preservar rastro forense y evitar bucle de reimportación.
     """
-    filters = {"docstatus": ["!=", 2]}
+    # C2 FIX: Guarda de permisos de rol
+    frappe.only_for(["Accounts Manager", "System Manager"])
+
+    # C2 FIX: Garantizar que dry_run sea booleano (interpretando "0", "false", etc.)
+    dry_run_bool = sbool(dry_run) if dry_run is not None else True
+
+    # C2 FIX: Exigir parámetro de alcance
+    if not bank_account and not company:
+        frappe.throw(_("Debe especificar al menos 'bank_account' o 'company' para limitar la búsqueda de duplicados."))
+
+    # Acotación por ventana temporal (por defecto últimos 60 días)
+    if not from_date:
+        from_date = add_days(today(), -60)
+    if not to_date:
+        to_date = today()
+
+    filters = {
+        "docstatus": ["!=", 2],
+        "date": ["between", [from_date, to_date]],
+    }
     if bank_account:
         filters["bank_account"] = bank_account
     if company:
@@ -84,7 +113,8 @@ def clean_unreconciled_duplicates(bank_account: str = None, company: str = None,
 
     from mint.apis.reconciliation import get_bank_rules
 
-    deleted_count = 0
+    bank_rules_cache = {}
+    cancelled_count = 0
     scanned_groups = 0
     details = []
 
@@ -92,10 +122,14 @@ def clean_unreconciled_duplicates(bank_account: str = None, company: str = None,
         if len(group) <= 1:
             continue
 
-        bank_name = frappe.get_cached_value("Bank Account", key[0], "bank")
-        bank_rules = get_bank_rules(bank_name) if bank_name else []
+        bank_acc_name = key[0]
+        if bank_acc_name not in bank_rules_cache:
+            bank_name = frappe.get_cached_value("Bank Account", bank_acc_name, "bank")
+            bank_rules_cache[bank_acc_name] = get_bank_rules(bank_name) if bank_name else []
 
-        # Sub-agrupar solo aquellas que coincidan en referencia
+        bank_rules = bank_rules_cache[bank_acc_name]
+
+        # Sub-agrupar solo aquellas que coincidan en referencia (C1 FIX)
         sub_groups = []
         for tx in group:
             matched_sg = None
@@ -130,16 +164,16 @@ def clean_unreconciled_duplicates(bank_account: str = None, company: str = None,
                 else:
                     unreconciled.append(tx)
 
-            to_delete = []
+            to_cancel = []
 
             if reconciled and unreconciled:
-                to_delete = unreconciled
+                to_cancel = unreconciled
             elif len(unreconciled) > 1 and not reconciled:
-                to_delete = unreconciled[1:]
+                to_cancel = unreconciled[1:]
 
-            for target in to_delete:
+            for target in to_cancel:
                 details.append({
-                    "deleted_transaction": target.name,
+                    "cancelled_transaction": target.name,
                     "bank_account": target.bank_account,
                     "date": str(target.date),
                     "deposit": target.deposit,
@@ -148,26 +182,32 @@ def clean_unreconciled_duplicates(bank_account: str = None, company: str = None,
                     "status": target.status
                 })
 
-                if not dry_run:
+                if not dry_run_bool:
                     try:
                         doc = frappe.get_doc("Bank Transaction", target.name)
                         if doc.docstatus == 1:
+                            # A1 FIX: Cancelar en lugar de borrar
                             doc.cancel()
-                        frappe.delete_doc("Bank Transaction", target.name, force=True, ignore_permissions=True)
-                        deleted_count += 1
+                            cancelled_count += 1
+                        elif doc.docstatus == 0:
+                            # Para borradores (docstatus=0), eliminar sin force
+                            frappe.delete_doc("Bank Transaction", target.name, force=False, ignore_permissions=False)
+                            cancelled_count += 1
                     except Exception:
                         frappe.log_error(
-                            title=f"Error eliminando duplicado Bank Transaction {target.name}",
+                            title=f"Error cancelando duplicado Bank Transaction {target.name}",
                             message=frappe.get_traceback()
                         )
 
-    if not dry_run and deleted_count > 0:
+    if not dry_run_bool and cancelled_count > 0:
         frappe.db.commit()
 
     return {
         "status": "success",
         "scanned_duplicate_groups": scanned_groups,
-        "deleted_count": deleted_count if not dry_run else len(details),
-        "dry_run": dry_run,
+        "cancelled_count": cancelled_count if not dry_run_bool else len(details),
+        "dry_run": dry_run_bool,
+        "from_date": str(from_date),
+        "to_date": str(to_date),
         "details": details
     }

@@ -15,19 +15,20 @@ from mint.apis.bank_account import set_closing_balance_as_per_statement
 from mint.apis.reconciliation import normalize_reference
 
 def is_similar_reference(ref1, ref2, bank_rules=None):
-    if not ref1 and not ref2:
-        return True
     if not ref1 or not ref2:
         return False
     
     r1 = str(ref1).strip().upper().replace(",", ".")
     r2 = str(ref2).strip().upper().replace(",", ".")
+    if not r1 or not r2:
+        return False
+
     if r1 == r2:
         return True
         
     c1 = r1.lstrip('0')
     c2 = r2.lstrip('0')
-    if c1 and c1 == c2:
+    if len(c1) >= 5 and len(c2) >= 5 and c1 == c2:
         return True
         
     has_sci1 = "E+" in r1 or "E-" in r1
@@ -227,6 +228,10 @@ def process_statement_import_background(final_transactions, bank_account, curren
     errors = 0
 
     allowed_descriptions = frappe.get_all("Mint Bank Description Rule", pluck="description_text")
+    
+    from mint.apis.reconciliation import get_bank_rules
+    bank_name = frappe.get_cached_value("Bank Account", bank_account, "bank")
+    bank_rules = get_bank_rules(bank_name) if bank_name else []
 
     for current_index, transaction in enumerate(final_transactions):
         try:
@@ -281,7 +286,8 @@ def process_statement_import_background(final_transactions, bank_account, curren
                 is_duplicate = False
                 for extx in existing_txs:
                     if abs(float(extx.deposit) - new_amount) < 0.005:
-                        if is_similar_reference(extx.reference_number, ref) or is_similar_reference(extx.bancaribe_origin_reference, ref):
+                        if (extx.reference_number and is_similar_reference(extx.reference_number, ref, bank_rules)) or \
+                           (extx.bancaribe_origin_reference and is_similar_reference(extx.bancaribe_origin_reference, ref, bank_rules)):
                             is_duplicate = True
                             break
                             
@@ -305,7 +311,8 @@ def process_statement_import_background(final_transactions, bank_account, curren
                 is_duplicate = False
                 for extx in existing_txs:
                     if abs(float(extx.withdrawal) - new_amount) < 0.005:
-                        if is_similar_reference(extx.reference_number, ref) or is_similar_reference(extx.bancaribe_origin_reference, ref):
+                        if (extx.reference_number and is_similar_reference(extx.reference_number, ref, bank_rules)) or \
+                           (extx.bancaribe_origin_reference and is_similar_reference(extx.bancaribe_origin_reference, ref, bank_rules)):
                             is_duplicate = True
                             break
                             
