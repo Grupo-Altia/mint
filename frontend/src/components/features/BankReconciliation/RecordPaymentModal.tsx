@@ -81,7 +81,6 @@ const RecordPaymentModalContent = () => {
 
 const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTransaction[] }) => {
 
-
     const setIsOpen = useSetAtom(bankRecRecordPaymentModalAtom)
  
     const form = useForm<{
@@ -90,8 +89,10 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
         party_name: PaymentEntry['party_name'],
         /** GL account that's paid from or paid to */
         account: string
+        cost_center: string
         mode_of_payment: PaymentEntry['mode_of_payment']
         paid_on_currency: string
+        source_bank?: string
     }>()
 
     const { call: createPaymentEntry, loading, error } = useFrappePostCall<{ message: { transaction: BankTransaction, payment_entry: PaymentEntry }[] }>('mint.apis.bank_reconciliation.create_bulk_payment_entry_and_reconcile')
@@ -100,13 +101,14 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
 
     const addToActionLog = useUpdateActionLog()
 
-    const onSubmit = (data: { party_type: PaymentEntry['party_type'], party: PaymentEntry['party'], account: string, mode_of_payment: PaymentEntry['mode_of_payment'], paid_on_currency: string }) => {
+    const onSubmit = (data: { party_type: PaymentEntry['party_type'], party: PaymentEntry['party'], account: string, cost_center: string, mode_of_payment: PaymentEntry['mode_of_payment'], paid_on_currency: string }) => {
 
         createPaymentEntry({
             bank_transaction_names: transactions.map((transaction) => transaction.name),
             party_type: data.party_type,
             party: data.party,
             account: data.account,
+            cost_center: data.cost_center,
             mode_of_payment: data.mode_of_payment,
             paid_on_currency: data.paid_on_currency
         }).then(({ message }) => {
@@ -162,6 +164,20 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
     const currentCompany = useCurrentCompany()
 
     const company = transactions && transactions.length > 0 ? transactions[0].company : (currentCompany ?? '')
+
+    const bankAccount = transactions && transactions.length > 0 ? transactions[0].bank_account : ''
+
+    useEffect(() => {
+        if (bankAccount) {
+            call.get('mint.apis.bank_reconciliation.get_bank_account_branch_details', {
+                bank_account: bankAccount
+            }).then((res) => {
+                if (res && res.message && res.message.cost_center) {
+                    form.setValue('cost_center', res.message.cost_center)
+                }
+            })
+        }
+    }, [bankAccount, call, form])
 
     const onPartyChange = (event: ChangeEvent<HTMLInputElement>) => {
         // Fetch the party and account
@@ -238,7 +254,7 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
                     <div className="col-span-2">
                         <AccountFormField
                             name='account'
-                            label={_("Account")}
+                            label={_("Cuenta")}
                             isRequired
                             rules={{
                                 required: _('Account is required')
@@ -251,6 +267,22 @@ const BulkPaymentEntryForm = ({ transactions }: { transactions: UnreconciledTran
                                     return acc.account_type === 'Receivable'
                                 }
                                 return true
+                            }}
+                        />
+                    </div>
+
+                    <div className="col-span-2">
+                        <LinkFormField
+                            name="cost_center"
+                            label={_("Centro de Costos")}
+                            doctype="Cost Center"
+                            isRequired
+                            filters={[
+                                ["company", "=", company],
+                                ["is_group", "=", 0]
+                            ]}
+                            rules={{
+                                required: _("Centro de Costos es requerido")
                             }}
                         />
                     </div>

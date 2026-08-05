@@ -10,7 +10,8 @@
   "description_text",
   "ignore_transaction",
   "apply_prefix_rule",
-  "prefixes_to_strip"
+  "prefixes_to_strip",
+  "match_type"
  ],
  "fields": [
   {
@@ -20,6 +21,15 @@
    "label": "Description Text",
    "reqd": 1,
    "unique": 1
+  },
+  {
+   "default": "Exact Match",
+   "description": "Indica si la descripci\u00f3n debe coincidir de forma exacta o si aplica a cualquier descripci\u00f3n que comience por este texto.",
+   "fieldname": "match_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Tipo de Coincidencia",
+   "options": "Exact Match\nStarts With"
   },
   {
    "default": "0",
@@ -46,7 +56,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-28 15:34:08.558107",
+ "modified": "2026-08-04 14:13:38.468084",
  "modified_by": "Administrator",
  "module": "Mint",
  "name": "Mint Bank Description Rule",
