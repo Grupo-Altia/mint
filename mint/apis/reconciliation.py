@@ -1309,6 +1309,48 @@ def _prefix_ref_candidates(ref: str, prefixes_to_strip: str | None) -> list:
     return [ref] + [prefix + ref for prefix in prefixes]
 
 
+def _first_duplicate_by_canonical_reference(filters: dict, ref_candidates: list) -> str | None:
+    """Primer Bank Transaction que casa por referencia CANÓNICA.
+
+    Se compara con ``_CANONICAL_REF_SQL`` en vez de igualdad directa porque el
+    mismo movimiento llega por dos vías con distinto relleno de ceros: el
+    webhook guarda '0001768329729' y el extracto importado '1768329729'. Una
+    igualdad exacta los da por distintos y deja pasar el duplicado (caso medido
+    en producción). Es la MISMA normalización que ya usa la conciliación, así
+    que el guard y el matcher dejan de contradecirse.
+
+    Los prefijos siguen resolviéndose antes, en ``_prefix_ref_candidates``: acá
+    solo se canonicaliza cada candidato. Un candidato que se vuelve vacío al
+    quitarle los ceros ('0', '000') se descarta — casaría contra cualquier cosa.
+    """
+    canonicos = {c for c in (_canonical_reference(r) for r in ref_candidates) if c}
+    if not canonicos:
+        return None
+
+    condiciones: list = []
+    valores: dict = {}
+    for campo, valor in filters.items():
+        if valor is None:
+            condiciones.append(f"`{campo}` IS NULL")
+        elif isinstance(valor, (list, tuple)):
+            operador, operando = valor
+            condiciones.append(f"`{campo}` {operador} %({campo})s")
+            valores[campo] = operando
+        else:
+            condiciones.append(f"`{campo}` = %({campo})s")
+            valores[campo] = valor
+    valores["refs"] = tuple(canonicos)
+
+    fila = frappe.db.sql(
+        f"""SELECT name FROM `tabBank Transaction`
+            WHERE {" AND ".join(condiciones)}
+              AND {_CANONICAL_REF_SQL} IN %(refs)s
+            LIMIT 1""",
+        valores,
+    )
+    return fila[0][0] if fila else None
+
+
 def validate_bank_transaction_duplicate(doc, method=None) -> None:
     """No permite dos depósitos con la misma referencia en la misma cuenta
     bancaria y empresa.
@@ -1344,25 +1386,23 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
     }
 
     allow_exact_duplicate = False
+    ref_candidates = [ref]
 
     rule = get_matching_description_rule(doc.description)
     if rule:
         if rule.apply_prefix_rule:
-            filters["reference_number"] = ["in", _prefix_ref_candidates(ref, rule.prefixes_to_strip)]
+            ref_candidates = _prefix_ref_candidates(ref, rule.prefixes_to_strip)
         else:
             # Lista blanca: el banco agrupa pagos distintos bajo la misma referencia
             # genérica (p. ej. "PAGOS A PROVEEDORES" con referencia "0").
             allow_exact_duplicate = True
-
-    if "reference_number" not in filters:
-        filters["reference_number"] = ref
 
     if is_dep:
         filters["deposit"] = [">", 0]
     else:
         filters["withdrawal"] = [">", 0]
 
-    duplicate = frappe.db.exists("Bank Transaction", filters)
+    duplicate = _first_duplicate_by_canonical_reference(filters, ref_candidates)
     if duplicate:
         if allow_exact_duplicate:
             return
