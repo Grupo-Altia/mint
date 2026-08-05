@@ -1,0 +1,16 @@
+name: Back-merge automático
+
+# Devuelve `main` a `development` despues de cada release, para que un merge con
+# squash no deje las dos ramas divergidas y el proximo release no entre en
+# conflicto en CHANGELOG.md e __init__.py. Es no-op cuando no hay divergencia;
+# ante conflicto abre un PR y no resuelve nada a ciegas.
+
+on:
+  push:
+    branches:
+      - 'main'
+
+jobs:
+  call-backmerge-workflow:
+    uses: Grupo-Altia/shared-actions/.github/workflows/backmerge-reusable.yml@main
+    secrets: inherit
