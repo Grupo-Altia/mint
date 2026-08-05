@@ -4,7 +4,6 @@ from frappe import _
 from frappe.utils import flt
 import json
 import datetime
-from erpnext.accounts.doctype.bank_reconciliation_tool.bank_reconciliation_tool import create_payment_entry_bts, create_journal_entry_bts
 from erpnext.accounts.party import get_party_account
 from erpnext import get_default_cost_center
 from mint.apis.reconciliation import check_payment_entry_overallocation
@@ -313,7 +312,7 @@ def create_internal_transfer(bank_transaction_name: str|int,
         "payment_entry": pe,
     }
 
-def _create_bulk_bank_entry_and_reconcile(bank_transactions: list, account: str, user: str = None):
+def _create_bulk_bank_entry_and_reconcile(bank_transactions: list, account: str, cost_center: str = None, user: str = None):
     """
      Create bank entries for all transactions and reconcile them
     """
@@ -336,6 +335,12 @@ def _create_bulk_bank_entry_and_reconcile(bank_transactions: list, account: str,
 
             gl_account = frappe.get_cached_value("Bank Account", transactions_details.bank_account, "account")
 
+            tx_cost_center = cost_center
+            if not tx_cost_center:
+                branch_code = frappe.get_cached_value("Bank Account", transactions_details.bank_account, "branch_code")
+                if branch_code:
+                    tx_cost_center = frappe.get_cached_value("VE Branch", branch_code, "cost_center")
+
             if is_withdrawal:
                 entries.append({
                     "account": gl_account,
@@ -344,12 +349,14 @@ def _create_bulk_bank_entry_and_reconcile(bank_transactions: list, account: str,
                     "credit": transactions_details.unallocated_amount,
                     "debit_in_account_currency": 0,
                     "debit": 0,
+                    "cost_center": tx_cost_center,
                 })
 
                 entries.append({
                     "account": account,
                     "credit": 0,
                     "debit": transactions_details.unallocated_amount,
+                    "cost_center": tx_cost_center,
                 })
             else:
                 entries.append({
@@ -359,12 +366,14 @@ def _create_bulk_bank_entry_and_reconcile(bank_transactions: list, account: str,
                     "debit": transactions_details.unallocated_amount,
                     "credit_in_account_currency": 0,
                     "credit": 0,
+                    "cost_center": tx_cost_center,
                 })
 
                 entries.append({
                     "account": account,
                     "debit": 0,
                     "credit": transactions_details.unallocated_amount,
+                    "cost_center": tx_cost_center,
                 })
 
             final_transaction = create_bank_entry_and_reconcile(bank_transaction_name=bank_transaction,
@@ -400,13 +409,13 @@ def _create_bulk_bank_entry_and_reconcile(bank_transactions: list, account: str,
     return output
 
 @frappe.whitelist(methods=['POST'])
-def create_bulk_bank_entry_and_reconcile(bank_transactions, account: str):
+def create_bulk_bank_entry_and_reconcile(bank_transactions, account: str, cost_center: str = None):
     import json
     if isinstance(bank_transactions, str):
         bank_transactions = json.loads(bank_transactions)
         
     if len(bank_transactions) <= 2:
-        return _create_bulk_bank_entry_and_reconcile(bank_transactions, account)
+        return _create_bulk_bank_entry_and_reconcile(bank_transactions, account, cost_center=cost_center)
         
     frappe.enqueue(
         "mint.apis.bank_reconciliation._create_bulk_bank_entry_and_reconcile",
@@ -414,6 +423,7 @@ def create_bulk_bank_entry_and_reconcile(bank_transactions, account: str):
         timeout=1500,
         bank_transactions=bank_transactions,
         account=account,
+        cost_center=cost_center,
         user=frappe.session.user
     )
     return []
@@ -502,12 +512,35 @@ def create_bank_entry_and_reconcile(bank_transaction_name: str | int,
         "journal_entry": bank_entry,
     }
 
+@frappe.whitelist(methods=["GET"])
+def get_bank_account_branch_details(bank_account: str):
+    """Obtiene información de la sucursal y centro de costos predeterminado de una cuenta bancaria."""
+    if not bank_account:
+        return {}
+
+    branch_code = frappe.get_cached_value("Bank Account", bank_account, "branch_code")
+    company = frappe.get_cached_value("Bank Account", bank_account, "company")
+
+    cost_center = None
+    if branch_code:
+        cost_center = frappe.get_cached_value("VE Branch", branch_code, "cost_center")
+    if not cost_center and company:
+        cost_center = frappe.get_cached_value("Company", company, "cost_center")
+
+    return {
+        "branch_code": branch_code,
+        "cost_center": cost_center,
+        "company": company
+    }
+
+
 def _create_bulk_payment_entry_and_reconcile(bank_transaction_names: list, 
                                             party_type: str, 
                                             party: str, 
                                             account: str,
                                             paid_on_currency: str = None,
                                             mode_of_payment: str = None,
+                                            cost_center: str = None,
                                             user: str = None):
     """
         Create a payment entry and reconcile it with the bank transaction
@@ -530,6 +563,14 @@ def _create_bulk_payment_entry_and_reconcile(bank_transaction_names: list,
             else:
                 paid_from = account
                 paid_to = transaction_account
+
+            tx_cost_center = cost_center
+            if not tx_cost_center:
+                branch_code = frappe.get_cached_value("Bank Account", bank_transaction.bank_account, "branch_code")
+                if branch_code:
+                    tx_cost_center = frappe.get_cached_value("VE Branch", branch_code, "cost_center")
+            if not tx_cost_center:
+                tx_cost_center = frappe.get_cached_value("Company", bank_transaction.company, "cost_center")
             
             payment_entry_doc = frappe.get_doc({
                 "doctype": "Payment Entry",
@@ -541,6 +582,7 @@ def _create_bulk_payment_entry_and_reconcile(bank_transaction_names: list,
                 "party": party,
                 "paid_from": paid_from,
                 "paid_to": paid_to,
+                "cost_center": tx_cost_center,
                 "paid_from_account_currency": paid_on_currency,
                 "paid_to_account_currency": paid_on_currency,
                 "paid_on_currency": paid_on_currency,
@@ -604,14 +646,15 @@ def create_bulk_payment_entry_and_reconcile(bank_transaction_names,
                                             party: str, 
                                             account: str,
                                             paid_on_currency: str = None,
-                                            mode_of_payment: str = None):
+                                            mode_of_payment: str = None,
+                                            cost_center: str = None):
     import json
     if isinstance(bank_transaction_names, str):
         bank_transaction_names = json.loads(bank_transaction_names)
         
     if len(bank_transaction_names) <= 2:
         return _create_bulk_payment_entry_and_reconcile(
-            bank_transaction_names, party_type, party, account, paid_on_currency, mode_of_payment
+            bank_transaction_names, party_type, party, account, paid_on_currency, mode_of_payment, cost_center=cost_center
         )
         
     frappe.enqueue(
@@ -624,6 +667,7 @@ def create_bulk_payment_entry_and_reconcile(bank_transaction_names,
         account=account,
         paid_on_currency=paid_on_currency,
         mode_of_payment=mode_of_payment,
+        cost_center=cost_center,
         user=frappe.session.user
     )
     return []

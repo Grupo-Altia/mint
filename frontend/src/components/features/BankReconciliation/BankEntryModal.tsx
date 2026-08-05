@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button"
 import SelectedTransactionDetails from "./SelectedTransactionDetails"
 import { AccountFormField, CurrencyFormField, DataField, DateField, LinkFormField, PartyTypeFormField, SmallTextField } from "@/components/ui/form-elements"
 import { Form } from "@/components/ui/form"
-import { useCallback, useContext, useMemo, useRef, useState } from "react"
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ArrowDownRight, ArrowUpRight, Plus, Trash2 } from "lucide-react"
@@ -26,6 +26,7 @@ import { BankTransaction } from "@/types/Accounts/BankTransaction"
 import FileUploadBanner from "@/components/common/FileUploadBanner"
 import { Label } from "@/components/ui/label"
 import { FileDropzone } from "@/components/ui/file-dropzone"
+import { useCurrentCompany } from "@/hooks/useCurrentCompany"
 
 const BankEntryModal = () => {
 
@@ -92,9 +93,11 @@ const BulkBankEntryForm = ({ selectedTransactions }: { selectedTransactions: Unr
 
     const form = useForm<{
         account: string
+        cost_center: string
     }>({
         defaultValues: {
-            account: ''
+            account: '',
+            cost_center: ''
         }
     })
 
@@ -105,11 +108,29 @@ const BulkBankEntryForm = ({ selectedTransactions }: { selectedTransactions: Unr
 
     const setIsOpen = useSetAtom(bankRecRecordJournalEntryModalAtom)
 
-    const onSubmit = (data: { account: string }) => {
+    const { call: fetchCall } = useContext(FrappeContext) as FrappeConfig
+    const currentCompany = useCurrentCompany()
+    const company = selectedTransactions && selectedTransactions.length > 0 ? selectedTransactions[0].company : (currentCompany ?? '')
+    const bankAccount = selectedTransactions && selectedTransactions.length > 0 ? selectedTransactions[0].bank_account : ''
+
+    useEffect(() => {
+        if (bankAccount) {
+            fetchCall.get('mint.apis.bank_reconciliation.get_bank_account_branch_details', {
+                bank_account: bankAccount
+            }).then((res) => {
+                if (res && res.message && res.message.cost_center) {
+                    form.setValue('cost_center', res.message.cost_center)
+                }
+            })
+        }
+    }, [bankAccount, fetchCall, form])
+
+    const onSubmit = (data: { account: string, cost_center: string }) => {
 
         call({
             bank_transactions: selectedTransactions.map(transaction => transaction.name),
-            account: data.account
+            account: data.account,
+            cost_center: data.cost_center
         }).then(({ message }) => {
 
             if (message && message.length > 0) {
@@ -152,17 +173,31 @@ const BulkBankEntryForm = ({ selectedTransactions }: { selectedTransactions: Unr
                 {error && <ErrorBanner error={error} />}
                 <SelectedTransactionsTable />
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                     <AccountFormField
                         name='account'
                         filterFunction={(acc) => {
                             // Do not allow payable and receivable accounts
                             return acc.account_type !== 'Payable' && acc.account_type !== 'Receivable'
                         }}
-                        label={_('Account')}
+                        label={_('Cuenta')}
                         rules={{ required: _("Account is required") }}
                         isRequired
                         ignoreUserPermissions={true}
+                    />
+
+                    <LinkFormField
+                        name="cost_center"
+                        label={_("Centro de Costos")}
+                        doctype="Cost Center"
+                        isRequired
+                        filters={[
+                            ["company", "=", company],
+                            ["is_group", "=", 0]
+                        ]}
+                        rules={{
+                            required: _("Centro de Costos es requerido")
+                        }}
                     />
                 </div>
 

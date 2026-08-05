@@ -509,12 +509,31 @@ def _first_deposit(filters: dict) -> frappe._dict | None:
 import itertools
 
 def check_rules_match(rules, raw_ref, target_ref):
-    if raw_ref == target_ref:
+    """Compara dos referencias de forma bilateral (depósito ↔ cobro) usando reglas de formato de Mint.
+    
+    Semántica Bilateral:
+    Aplica la regla tanto al extracto (hacia adelante: depósito → cobro) como al cobro (inversa:
+    cobro → depósito) como heurística de coincidencia. Si la ref despojada de ceros tiene ≥ 5
+    dígitos, también se considera coincidencia directa sin asignar un nombre de regla pseudo-fantasma.
+    """
+    raw_s = str(raw_ref or "").strip()
+    target_s = str(target_ref or "").strip()
+    if raw_s == target_s:
         return True, None
         
-    # Single rules
+    raw_clean = raw_s.lstrip('0')
+    target_clean = target_s.lstrip('0')
+    has_valid_clean = len(raw_clean) >= 5 and len(target_clean) >= 5
+    if has_valid_clean and raw_clean == target_clean:
+        return True, None
+
+    # Single rules (Bilateral matching: extracto -> cobro OR cobro -> extracto)
     for rule in rules:
-        if apply_format_rule(rule, raw_ref) == target_ref:
+        res_raw = apply_format_rule(rule, raw_s)
+        res_target = apply_format_rule(rule, target_s)
+        if res_raw == target_s or res_target == raw_s:
+            return True, rule
+        if has_valid_clean and (res_raw.lstrip('0') == target_clean or res_target.lstrip('0') == raw_clean):
             return True, rule
             
     # Combinations (pipeline en cualquier orden) — ACOTADO: permutations es factorial
@@ -548,10 +567,14 @@ def check_rules_match(rules, raw_ref, target_ref):
                     except Exception:
                         pass  # fail-open: el logging nunca debe romper la conciliación
                     return False, None
-                p_ref = raw_ref
+                p_raw = raw_s
+                p_target = target_s
                 for r in perm:
-                    p_ref = apply_format_rule(r, p_ref)
-                if p_ref == target_ref:
+                    p_raw = apply_format_rule(r, p_raw)
+                    p_target = apply_format_rule(r, p_target)
+                if p_raw == target_s or p_target == raw_s:
+                    return True, " + ".join(perm)
+                if has_valid_clean and (p_raw.lstrip('0') == target_clean or p_target.lstrip('0') == raw_clean):
                     return True, " + ".join(perm)
 
     return False, None
@@ -1225,22 +1248,44 @@ def on_change_payment_entry(doc, method=None) -> None:
 
 
 
-def get_bank_description_rules() -> dict:
-    """Reglas de Mint Bank Description Rule indexadas por descripción, cacheadas por
-    request: esto se consulta una vez por fila y la importación de un extracto inserta
-    miles de Bank Transactions de una sola pasada.
-    """
+def get_bank_description_rules(force_reload: bool = False) -> list:
+    """Reglas de Mint Bank Description Rule indexadas, cacheadas por request."""
     cached = getattr(frappe.local, "_mint_bank_description_rules", None)
-    if cached is None:
-        cached = {
-            r.description_text: r
-            for r in frappe.get_all(
-                "Mint Bank Description Rule",
-                fields=["description_text", "apply_prefix_rule", "prefixes_to_strip"],
-            )
-        }
+    if cached is None or force_reload:
+        cached = frappe.get_all(
+            "Mint Bank Description Rule",
+            fields=["name", "description_text", "match_type", "apply_prefix_rule", "prefixes_to_strip"],
+        )
         frappe.local._mint_bank_description_rules = cached
     return cached
+
+
+def get_matching_description_rule(desc_text: str | None) -> frappe._dict | None:
+    """Busca una regla de descripción coincidente por valor exacto o prefijo ("Starts With")."""
+    if not desc_text:
+        return None
+    s_desc = str(desc_text).strip()
+    if not s_desc:
+        return None
+
+    rules = get_bank_description_rules()
+
+    # 1. Coincidencia exacta primero
+    for r in rules:
+        r_text = (r.description_text or "").strip()
+        if r_text.upper() == s_desc.upper():
+            return r
+
+    # 2. Coincidencia por inicio de texto ("Starts With")
+    for r in rules:
+        r_text = (r.description_text or "").strip()
+        if not r_text:
+            continue
+        match_type = r.get("match_type") or "Exact Match"
+        if match_type in ["Starts With", "Comienza Con"] and s_desc.upper().startswith(r_text.upper()):
+            return r
+
+    return None
 
 
 def _prefix_ref_candidates(ref: str, prefixes_to_strip: str | None) -> list:
@@ -1300,7 +1345,7 @@ def validate_bank_transaction_duplicate(doc, method=None) -> None:
 
     allow_exact_duplicate = False
 
-    rule = get_bank_description_rules().get(doc.description) if doc.description else None
+    rule = get_matching_description_rule(doc.description)
     if rule:
         if rule.apply_prefix_rule:
             filters["reference_number"] = ["in", _prefix_ref_candidates(ref, rule.prefixes_to_strip)]
@@ -1734,8 +1779,16 @@ def _tag_existing_matches_by_rule(matches, original_ref, banks_with_rules):
         for b in banks_with_rules:
             if source_bank != b.parent:
                 continue
-            mod_ref = apply_format_rule(b.bank_reference_rule, original_ref)
-            if mod_ref == pe_ref:
+            mod_ref_forward = apply_format_rule(b.bank_reference_rule, original_ref)
+            mod_ref_inverse = apply_format_rule(b.bank_reference_rule, pe_ref)
+            clean_orig = str(original_ref).strip().lstrip('0')
+            clean_pe = str(pe_ref).strip().lstrip('0')
+            has_clean = len(clean_orig) >= 5 and len(clean_pe) >= 5
+            
+            if (mod_ref_forward == pe_ref or 
+                mod_ref_inverse == original_ref or 
+                (has_clean and clean_orig == clean_pe) or
+                (has_clean and mod_ref_forward.lstrip('0') == clean_pe)):
                 if isinstance(match, dict):
                     match["matched_by_rule"] = True
                 else:
@@ -2230,13 +2283,15 @@ def get_duplicate_bank_transactions():
                 # El primero es el que tiene mayor asignación, ese se conserva
                 keep = group_members[0]
                 
-                # Si la descripción del que se conserva está ignorada, saltamos el grupo entero
-                if keep.description in ignored_descriptions:
+                # Si la descripción del que se conserva está ignorada por lista blanca, saltamos el grupo entero
+                rule_keep = get_matching_description_rule(keep.description)
+                if rule_keep and not rule_keep.apply_prefix_rule:
                     continue
                     
                 for dup in group_members[1:]:
-                    # Si la descripción del duplicado está ignorada, lo saltamos
-                    if dup.description in ignored_descriptions:
+                    # Si la descripción del duplicado está ignorada por lista blanca, lo saltamos
+                    rule_dup = get_matching_description_rule(dup.description)
+                    if rule_dup and not rule_dup.apply_prefix_rule:
                         continue
                         
                     # Si ambos tienen asignaciones, no sugerimos limpieza automática para evitar romper cosas
