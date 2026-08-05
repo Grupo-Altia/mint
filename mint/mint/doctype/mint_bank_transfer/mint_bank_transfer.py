@@ -1,7 +1,7 @@
 # Copyright (c) 2026, The Commit Company (Algocode Technologies Pvt. Ltd.) and contributors
 # For license information, please see license.txt
 
-# import frappe
+import frappe
 from frappe import _
 from frappe.model.document import Document
 
@@ -73,8 +73,10 @@ class MintBankTransfer(Document):
 
 		gl_entries = []
 
-		from_account = frappe.db.get_value("Bank Account", self.from_bank_account, "account", ignore_permissions=True)
-		to_account = frappe.db.get_value("Bank Account", self.to_bank_account, "account", ignore_permissions=True)
+		# frappe.db.get_value es SQL directo: no aplica User Permissions y no acepta
+		# ignore_permissions (su firma no tiene **kwargs → TypeError en on_submit).
+		from_account = frappe.db.get_value("Bank Account", self.from_bank_account, "account")
+		to_account = frappe.db.get_value("Bank Account", self.to_bank_account, "account")
 
 		if not from_account:
 			frappe.throw(_("Bank Account '{0}' does not have a linked GL Account.").format(self.from_bank_account))
@@ -126,12 +128,50 @@ class MintBankTransfer(Document):
 		return gl_entries
 
 
+def _allowed_branches(user=None):
+	"""Sucursales del usuario según l10n_ve. Devuelve None si el motor de sucursales
+	no está disponible (app no instalada) o si el usuario es admin: en ambos casos
+	este DocType no debe filtrarse."""
+	try:
+		from l10n_ve.permissions import get_allowed_branches, is_admin_user
+	except ImportError:
+		return None
+
+	user = user or frappe.session.user
+	if is_admin_user(user):
+		return None
+	return get_allowed_branches(user, include_ancestors=False)
+
+
 def get_permission_query_conditions(user=None):
-	"""En transferencias bancarias internas, no se aplican filtros restrictivos de sucursal."""
-	return ""
+	"""Una transferencia interna es visible si el usuario participa en CUALQUIERA de
+	sus dos puntas (origen o destino): por naturaleza involucra dos sucursales y el
+	filtro genérico de sucursal la ocultaría a ambos lados."""
+	allowed = _allowed_branches(user)
+	if allowed is None:
+		return ""
+	if not allowed:
+		return "1=0"
+
+	branches = ", ".join(frappe.db.escape(b) for b in allowed)
+	return (
+		"(`tabMint Bank Transfer`.`from_branch` in ({0})"
+		" or `tabMint Bank Transfer`.`to_branch` in ({0}))".format(branches)
+	)
 
 
 def has_permission(doc, ptype="read", user=None):
-	"""Permite leer, crear, modificar y aprobar transferencias bancarias internas independientemente de las sucursales involucradas."""
-	return True
+	"""Permite operar la transferencia si el usuario participa en alguna de sus dos
+	sucursales, aunque la otra punta le sea ajena (caso legítimo: mover fondos entre
+	cuentas propias de la empresa).
+
+	Devuelve None ("sin opinión") en el resto de los casos: los controller hooks solo
+	pueden denegar, nunca otorgar permisos que el usuario no tenga, así que dejamos
+	decidir a los demás hooks (p. ej. el de sucursal de l10n_ve)."""
+	allowed = _allowed_branches(user)
+	if allowed is None:
+		return True
+	if doc.get("from_branch") in allowed or doc.get("to_branch") in allowed:
+		return True
+	return None
 
