@@ -73,8 +73,8 @@ class MintBankTransfer(Document):
 
 		gl_entries = []
 
-		from_account = frappe.db.get_value("Bank Account", self.from_bank_account, "account")
-		to_account = frappe.db.get_value("Bank Account", self.to_bank_account, "account")
+		from_account = frappe.db.get_value("Bank Account", self.from_bank_account, "account", ignore_permissions=True)
+		to_account = frappe.db.get_value("Bank Account", self.to_bank_account, "account", ignore_permissions=True)
 
 		if not from_account:
 			frappe.throw(_("Bank Account '{0}' does not have a linked GL Account.").format(self.from_bank_account))
@@ -124,3 +124,14 @@ class MintBankTransfer(Document):
 		)
 
 		return gl_entries
+
+
+def get_permission_query_conditions(user=None):
+	"""En transferencias bancarias internas, no se aplican filtros restrictivos de sucursal."""
+	return ""
+
+
+def has_permission(doc, ptype="read", user=None):
+	"""Permite leer, crear, modificar y aprobar transferencias bancarias internas independientemente de las sucursales involucradas."""
+	return True
+

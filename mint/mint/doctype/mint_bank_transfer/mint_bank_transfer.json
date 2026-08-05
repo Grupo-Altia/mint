@@ -54,6 +54,7 @@
   {
    "fieldname": "from_bank_account",
    "fieldtype": "Link",
+   "ignore_user_permissions": 1,
    "in_list_view": 1,
    "label": "From Bank Account",
    "options": "Bank Account",
@@ -72,6 +73,7 @@
    "fieldname": "from_branch",
    "fieldtype": "Link",
    "hidden": 1,
+   "ignore_user_permissions": 1,
    "label": "From Branch",
    "options": "VE Branch",
    "fetch_from": "from_bank_account.branch_code",
@@ -81,6 +83,7 @@
    "fieldname": "to_branch",
    "fieldtype": "Link",
    "hidden": 1,
+   "ignore_user_permissions": 1,
    "label": "To Branch",
    "options": "VE Branch",
    "fetch_from": "to_bank_account.branch_code",
