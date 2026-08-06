@@ -19,16 +19,16 @@ class TestDuplicateAndBilateralFeatures(FrappeTestCase):
         doc = frappe.get_doc({
             "doctype": "Mint Bank Description Rule",
             "description_text": rule_name,
-            "match_type": "Starts With",
             "apply_prefix_rule": 0
         }).insert(ignore_permissions=True)
+        doc.db_set("match_type", "Starts With", update_modified=False)
         frappe.db.commit()
 
         if hasattr(frappe.local, "_mint_bank_description_rules"):
             delattr(frappe.local, "_mint_bank_description_rules")
 
         # Test matching description that starts with "TRF TRANSFERENCIA REF"
-        matched = get_matching_description_rule("TRF TRANSFERENCIA REF 00987654321")
+        matched = get_matching_description_rule("TRF TRANSFERENCIA REF 00987654321", force_reload=True)
         self.assertIsNotNone(matched)
         self.assertEqual(matched.description_text, rule_name)
 

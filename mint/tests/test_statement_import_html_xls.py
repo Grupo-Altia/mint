@@ -84,7 +84,8 @@ class ParseHtmlAsTableTests(unittest.TestCase):
         # La estructura devuelta debe ser compatible con la detección de
         # encabezados existente: la fila con Fecha/Referencia/Concepto/Saldo.
         data = _parse_html_as_table(BANCAMIGA_HTML)
-        self.assertEqual(get_header_row_index(data), 3)
+        header_idx = get_header_row_index(data)[0] if isinstance(get_header_row_index(data), tuple) else get_header_row_index(data)
+        self.assertEqual(header_idx, 3)
 
     def test_html_without_table_raises_controlled(self):
         with patch(

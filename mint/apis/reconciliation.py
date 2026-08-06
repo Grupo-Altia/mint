@@ -1260,7 +1260,7 @@ def get_bank_description_rules(force_reload: bool = False) -> list:
     return cached
 
 
-def get_matching_description_rule(desc_text: str | None) -> frappe._dict | None:
+def get_matching_description_rule(desc_text: str | None, force_reload: bool = False) -> frappe._dict | None:
     """Busca una regla de descripción coincidente por valor exacto o prefijo ("Starts With")."""
     if not desc_text:
         return None
@@ -1268,7 +1268,7 @@ def get_matching_description_rule(desc_text: str | None) -> frappe._dict | None:
     if not s_desc:
         return None
 
-    rules = get_bank_description_rules()
+    rules = get_bank_description_rules(force_reload=force_reload)
 
     # 1. Coincidencia exacta primero
     for r in rules:
@@ -1284,6 +1284,9 @@ def get_matching_description_rule(desc_text: str | None) -> frappe._dict | None:
         match_type = r.get("match_type") or "Exact Match"
         if match_type in ["Starts With", "Comienza Con"] and s_desc.upper().startswith(r_text.upper()):
             return r
+
+    if not force_reload:
+        return get_matching_description_rule(desc_text, force_reload=True)
 
     return None
 
