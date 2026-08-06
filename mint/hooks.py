@@ -189,10 +189,25 @@ scheduler_events = {
 		"mint.apis.statement_import.cleanup_old_imports"
 	],
 	"cron": {
-		# 22:00 (10 pm) hora del site: barrido de reintento de conciliación de los
-		# cobros en borrador pendientes (cierra el hueco de los que se crean después
-		# de que su depósito ya se importó — la auto-conciliación solo dispara desde
-		# el lado del depósito).
+		# Cada hora de 07:00 a 21:00: reintento de conciliación de los cobros en
+		# borrador pendientes (cierra el hueco de los que se crean DESPUÉS de que su
+		# depósito ya se importó — la auto-conciliación sólo dispara desde el lado
+		# del depósito).
+		#
+		# La franja no es arbitraria: medido sobre 7 días de producción, los
+		# depósitos entran entre las 08:00 y las 20:00 (pico de 1.232 a las 08:00),
+		# y en toda la franja 22:00-07:00 apenas 47. Arranca a las 07:00 para llegar
+		# antes del pico.
+		"0 7-21 * * *": [
+			"mint.apis.reconciliation.retry_pending_reconciliations"
+		],
+		# 22:00: el barrido COMPLETO, una vez al día. Suma lo que no conviene repetir
+		# cada hora: la cancelación de depósitos duplicados (cancela documentos) y el
+		# chequeo de fechas imposibles.
+		#
+		# La hora la fija una dependencia, no la costumbre: la cadena de arreglos de
+		# domina_isp corre a las 23:00 y su cruce de cobros exige `clearance_date` en
+		# TODAS las líneas del IPE, que es lo que pone este barrido.
 		"0 22 * * *": [
 			"mint.apis.reconciliation.reconcile_pending_drafts_nightly"
 		]
