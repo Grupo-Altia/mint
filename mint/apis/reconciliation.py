@@ -1729,7 +1729,8 @@ def _get_pending_receipts(reference: str = None, source_bank: str = None) -> lis
 def retry_pending_reconciliations() -> int:
     """Reintento de conciliación, cada hora entre las 07:00 y las 21:00.
 
-    Es la parte LIVIANA del barrido nocturno: sólo reintenta, no cancela nada.
+    Es la parte del barrido nocturno que destraba cobros: deduplica y reintenta. Lo
+    que NO sube de frecuencia es el chequeo de fechas imposibles, que sólo reporta.
 
     Por qué existe separada. Los depósitos no llegan de noche: medido sobre los
     últimos 7 días de producción, entre las 08:00 y las 20:00 entran ~6.500 y en la
@@ -1749,6 +1750,20 @@ def retry_pending_reconciliations() -> int:
 
     Devuelve cuántos quedaron conciliados.
     """
+    # El dedup va PRIMERO y por eso vive acá dentro, no en su propia entrada de
+    # scheduler: un deposito exactamente duplicado BLOQUEA la conciliacion --
+    # `before_submit_receive_payment` se niega a elegir a dedo cuando encuentra mas de
+    # uno con la misma referencia-- asi que reintentar sin haber deduplicado no puede
+    # destrabar esos casos. Medido el 2026-08-06 en produccion: de 328 cobros en
+    # borrador, 313 esperan al banco, 6 tienen su deposito y **9 estaban bloqueados
+    # por duplicado**, esperando hasta 24 h a que corriera el barrido nocturno.
+    #
+    # Se sube sabiendo que CANCELA documentos. Se acota a los exactamente duplicados
+    # --misma cuenta, misma fecha, mismo monto, misma referencia--, que es el caso
+    # donde no hay nada que decidir, y es codigo con rodaje: ya corria dos veces por
+    # dia. El chequeo de fechas imposibles NO sube: solo reporta, no destraba nada.
+    deduped = cancel_exact_duplicate_deposits()
+
     names = _get_pending_receipts()
     if not names:
         return 0
@@ -1758,10 +1773,11 @@ def retry_pending_reconciliations() -> int:
     # Silencioso cuando no hubo nada que hacer: son quince corridas por día y un log
     # por cada una convierte el registro en ruido. El barrido de las 22:00 sí deja
     # su resumen siempre.
-    if reconciled:
+    if reconciled or deduped:
         log_mint_info(
             "Info",
-            "Reintento horario: %s/%s cobros conciliados." % (reconciled, len(names)),
+            "Reintento horario: %s duplicados cancelados; %s/%s cobros conciliados."
+            % (deduped, reconciled, len(names)),
         )
     return reconciled
 
