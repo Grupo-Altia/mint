@@ -114,6 +114,13 @@ nunca contra la BD y dejaría estados fantasma. Hay un test de paridad que lo vi
 
 ## Convenciones generales
 
+- **Código y comentarios en inglés.** Identificadores (funciones, variables, clases,
+  tests), nombres de archivo y carpeta —incluidos los `name` de Report, Workspace,
+  Number Card, Dashboard y Print Format, que al exportarse se vuelven rutas en disco—
+  y también **comentarios y docstrings**. En español va **sólo lo que lee el usuario
+  final**: labels, mensajes de error, títulos y descripciones visibles. Buena parte del
+  código existente tiene los comentarios en español: es deuda, no precedente. (Los
+  mensajes de commit sí van en español.)
 - **Los tests corren SIN site**, con `frappe.local.db` bindeado a un `MagicMock` y las
   dependencias del módulo parcheadas. Seguí ese patrón: son milisegundos y no piden
   fixtures.
