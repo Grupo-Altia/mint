@@ -1726,9 +1726,55 @@ def _get_pending_receipts(reference: str = None, source_bank: str = None) -> lis
     return names
 
 
+def retry_pending_reconciliations() -> int:
+    """Reintento de conciliación, cada hora entre las 07:00 y las 21:00.
+
+    Es la parte LIVIANA del barrido nocturno: sólo reintenta, no cancela nada.
+
+    Por qué existe separada. Los depósitos no llegan de noche: medido sobre los
+    últimos 7 días de producción, entre las 08:00 y las 20:00 entran ~6.500 y en la
+    franja 22:00-07:00 apenas 47. El barrido corría a las 22:00 --con 17 depósitos
+    en toda la semana en esa hora--, así que los 1.232 del pico de las 08:00
+    esperaban catorce horas a que alguien los mirara.
+
+    Y por qué no se movió el barrido entero a cada hora: su primer paso
+    ``cancel_exact_duplicate_deposits()`` CANCELA documentos. Multiplicar por
+    quince la exposición de una cancelación automática, para ganar latencia en un
+    reintento, es un mal negocio -- y además la deduplicación ya tiene su propio
+    cron ``daily``. Acá sólo se reintenta: si el depósito no llegó, no pasa nada y
+    se vuelve a intentar dentro de una hora.
+
+    El lote es chico (~409 cobros) y la mayoría corta rápido en "no se encontró el
+    depósito", así que quince corridas al día no pesan.
+
+    Devuelve cuántos quedaron conciliados.
+    """
+    names = _get_pending_receipts()
+    if not names:
+        return 0
+
+    reconciled = _approve_drafts(names)
+
+    # Silencioso cuando no hubo nada que hacer: son quince corridas por día y un log
+    # por cada una convierte el registro en ruido. El barrido de las 22:00 sí deja
+    # su resumen siempre.
+    if reconciled:
+        log_mint_info(
+            "Info",
+            "Reintento horario: %s/%s cobros conciliados." % (reconciled, len(names)),
+        )
+    return reconciled
+
+
 def reconcile_pending_drafts_nightly() -> None:
-    """Barrido nocturno (cron 22:00 hora del site): sanea duplicados exactos y luego
-    reintenta conciliar TODOS los cobros en borrador con referencia pendientes.
+    """Barrido nocturno COMPLETO (cron 22:00 hora del site): sanea duplicados exactos
+    y luego reintenta conciliar TODOS los cobros en borrador con referencia pendientes.
+
+    El reintento a secas corre además cada hora de 07:00 a 21:00 en
+    :func:`retry_pending_reconciliations`. Acá se conserva porque los dos pasos
+    exclusivos de esta corrida --la deduplicación y el chequeo de fechas
+    imposibles-- se hacen una vez al día, y porque la cadena de arreglos de
+    ``domina_isp`` (23:00) necesita que el `clearance_date` ya esté puesto.
 
     Dos pasos en una sola corrida:
       1) cancel_exact_duplicate_deposits(): cancela los depósitos exactamente
