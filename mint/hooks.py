@@ -123,13 +123,18 @@ after_install = "mint.setup.install.after_install"
 # -----------
 # Permissions evaluated in scripted ways
 
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+# Mint Bank Transfer se excluye del filtro genérico de sucursal de l10n_ve (que lo
+# registra automáticamente por tener campos Link a VE Branch): una transferencia
+# interna involucra DOS sucursales por naturaleza, y el filtro genérico exige que
+# TODAS sean del usuario, ocultándola a los operadores de ambas puntas. Aquí se
+# sustituye por la regla correcta: basta participar en una de las dos.
+permission_query_conditions = {
+	"Mint Bank Transfer": "mint.mint.doctype.mint_bank_transfer.mint_bank_transfer.get_permission_query_conditions",
+}
+
+has_permission = {
+	"Mint Bank Transfer": "mint.mint.doctype.mint_bank_transfer.mint_bank_transfer.has_permission",
+}
 
 # DocType Class
 # ---------------
