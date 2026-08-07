@@ -455,6 +455,7 @@ def _deposit_base_filters(doc) -> dict | None:
         "docstatus": 1,
         "deposit": [">", 0],
         "unallocated_amount": [">", 0.001],
+        "_doc": doc,
     }
     paid_currency = (doc.paid_on_currency or "").strip()
     if paid_currency:
@@ -463,7 +464,9 @@ def _deposit_base_filters(doc) -> dict | None:
 
 
 def _first_deposit(filters: dict) -> frappe._dict | None:
-    """Primer depósito que cumple los filtros, prefiriendo el de MENOR monto.
+    """Primer depósito que cumple los filtros, prefiriendo el de MENOR monto,
+    salvo que haya múltiples candidatos y uno de ellos coincida exactamente
+    con el importe esperado en el cobro.
 
     Si por la referencia coexisten varios Bank Transaction (p. ej. un gemelo x100
     por error de parseo del extracto bancario), se concilia contra el de menor
@@ -499,11 +502,45 @@ def _first_deposit(filters: dict) -> frappe._dict | None:
     rows = frappe.db.sql(
         "SELECT name, deposit, unallocated_amount, currency, bank_account, date "
         "FROM `tabBank Transaction` WHERE " + " AND ".join(conds) +
-        " ORDER BY deposit ASC LIMIT 1",
+        " ORDER BY deposit ASC",
         params,
         as_dict=True,
     )
-    return rows[0] if rows else None
+    if not rows:
+        return None
+
+    # Desempate por importe si hay colisión: si hay múltiples candidatos,
+    # verificamos si exactamente uno coincide con lo que el cobro espera.
+    doc = filters.get("_doc")
+    if len(rows) > 1 and doc:
+        expected_amounts = [
+            flt(doc.paid_amount),
+            flt(doc.base_paid_amount),
+            flt(doc.received_amount),
+        ]
+        if doc.get("paid_currency_amount"):
+            expected_amounts.append(flt(doc.paid_currency_amount))
+
+        expected_amounts = [amt for amt in expected_amounts if amt > 0.001]
+
+        if expected_amounts:
+            tolerance = 1.0
+            matching_rows = []
+            for r in rows:
+                cand_amt_1 = flt(r.deposit)
+                cand_amt_2 = flt(r.unallocated_amount)
+                for exp_amt in expected_amounts:
+                    if abs(cand_amt_1 - exp_amt) <= tolerance or abs(cand_amt_2 - exp_amt) <= tolerance:
+                        matching_rows.append(r)
+                        break
+            # Si exactamente uno de los candidatos de la colisión coincide con el monto
+            # esperado del cobro, lo preferimos para no equivocarnos de gemelo.
+            if len(matching_rows) == 1:
+                return matching_rows[0]
+            if matching_rows:
+                return matching_rows[0]
+
+    return rows[0]
 
 
 import itertools
@@ -773,35 +810,25 @@ def find_unsubmitted_deposit(doc) -> frappe._dict | None:
 
 def find_duplicate_deposits(doc) -> list:
     """Depósitos NO cancelados que comparten la referencia del cobro en SU MISMA
-    cuenta bancaria, empresa y **mismo mes-año**. Si la lista trae más de uno es una
-    COLISIÓN real: la referencia está duplicada dentro del mismo período y la
-    conciliación debe DETENERSE hasta que se borre o cancele el depósito incorrecto.
+    cuenta bancaria y empresa. Si la lista trae más de uno es una COLISIÓN: la
+    referencia está duplicada y la conciliación debe DETENERSE hasta que se borre o
+    cancele el depósito incorrecto — no se elige "el más chico" a dedo (esa heurística
+    anti-x100 era justo la que colapsaba el cobro al gemelo equivocado).
 
-    Filtro de mes-año: BANCARIBE (y otros bancos venezolanos) reutiliza rangos de
-    referencia entre períodos — una referencia "21300001" de julio y la misma de agosto
-    son movimientos bancarios distintos de clientes distintos. Limitar la búsqueda al
-    mismo YEAR(date) + MONTH(date) que el posting_date del cobro evita ese falso
-    positivo sin sacrificar la detección de gemelos reales (los x100 duplicados siempre
-    ocurren en la misma ventana horaria, no en meses distintos).
-
-    Resto de criterios se mantienen igual que el patch de saneo
-    cleanup_duplicate_x100_deposits: TRIM(reference_number) + bank_account + company,
-    deposit>0, docstatus<2. El TRIM cubre referencias LEGACY con espacios/saltos
-    pegados. docstatus<2 excluye cancelados: por eso CANCELAR el duplicado ya libera
-    la conciliación.
+    Desempate por importe:
+    Si hay más de un depósito candidato en la cuenta bancaria, pero tienen importes
+    distintos y solo uno de ellos coincide con el monto declarado en el cobro (dentro
+    de la tolerancia permitida), entonces no hay ambigüedad real. Devolvemos solo ese
+    depósito, evitando falsos positivos por reutilización de referencias.
+    Si hay múltiples candidatos que coinciden con el importe esperado (como en los
+    casos de x100 o gemelos reales), o si ninguno coincide, se conservan todos para
+    que la guardia detenga la conciliación y requiera revisión manual.
     """
     ref = _canonical_reference(doc.reference_no)
     bank_account = _cobro_bank_account(doc)
     if not ref or not bank_account:
         return []
-
-    # Ancla de período: usamos el posting_date del cobro para determinar en qué
-    # mes-año buscar duplicados. Dos depósitos con la misma referencia en meses
-    # distintos son transacciones legítimamente distintas (BANCARIBE reutiliza rangos).
-    # Si el cobro no tiene fecha (borrador sin fecha aún), caemos al mes actual.
-    cobro_date = getdate(doc.posting_date or frappe.utils.nowdate())
-
-    return frappe.db.sql(
+    candidates = frappe.db.sql(
         f"""
         SELECT name, deposit, unallocated_amount, status, docstatus
         FROM `tabBank Transaction`
@@ -810,19 +837,39 @@ def find_duplicate_deposits(doc) -> list:
           AND company = %(company)s
           AND deposit > 0
           AND docstatus < 2
-          AND YEAR(date) = %(year)s
-          AND MONTH(date) = %(month)s
         ORDER BY deposit ASC
         """,
-        {
-            "ref": ref,
-            "bank_account": bank_account,
-            "company": doc.company,
-            "year": cobro_date.year,
-            "month": cobro_date.month,
-        },
+        {"ref": ref, "bank_account": bank_account, "company": doc.company},
         as_dict=True,
     )
+
+    if len(candidates) > 1:
+        expected_amounts = [
+            flt(doc.paid_amount),
+            flt(doc.base_paid_amount),
+            flt(doc.received_amount),
+        ]
+        if doc.get("paid_currency_amount"):
+            expected_amounts.append(flt(doc.paid_currency_amount))
+
+        expected_amounts = [amt for amt in expected_amounts if amt > 0.001]
+
+        if expected_amounts:
+            tolerance = 1.0
+            matching_candidates = []
+            for cand in candidates:
+                cand_amt_1 = flt(cand.deposit)
+                cand_amt_2 = flt(cand.unallocated_amount)
+                for exp_amt in expected_amounts:
+                    if abs(cand_amt_1 - exp_amt) <= tolerance or abs(cand_amt_2 - exp_amt) <= tolerance:
+                        matching_candidates.append(cand)
+                        break
+            # Si exactamente un candidato coincide por monto, resolvemos la colisión
+            # devolviendo únicamente ese para que la guardia no detenga el proceso.
+            if len(matching_candidates) == 1:
+                return matching_candidates
+
+    return candidates
 
 
 def _apply_deposit_amount(doc, deposit: frappe._dict) -> None:
