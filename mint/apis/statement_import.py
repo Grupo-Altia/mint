@@ -1472,6 +1472,117 @@ def get_file_properties(transactions: list):
     return most_common_date_format, most_common_amount_format
 
 
+def get_inverted_date_format(date_format: str) -> str | None:
+    """Devuelve el formato de fecha invertido (DMA ↔ MDA) si aplica."""
+    if not date_format or date_format.startswith(("%Y", "%y")):
+        return None
+    if "%d/%m" in date_format:
+        return date_format.replace("%d/%m", "%m/%d")
+    if "%m/%d" in date_format:
+        return date_format.replace("%m/%d", "%d/%m")
+    if "%d-%m" in date_format:
+        return date_format.replace("%d-%m", "%m-%d")
+    if "%m-%d" in date_format:
+        return date_format.replace("%m-%d", "%d-%m")
+    if "%d.%m" in date_format:
+        return date_format.replace("%d.%m", "%m.%d")
+    if "%m.%d" in date_format:
+        return date_format.replace("%m.%d", "%d.%m")
+    return None
+
+
+def determine_statement_dominant_month(transactions: list, date_format: str) -> tuple[int | None, int | None]:
+    """Determina el mes y año dominantes esperados para el extracto bancario a partir de sus filas."""
+    month_counts = {}
+    year_counts = {}
+    inverted_fmt = get_inverted_date_format(date_format)
+
+    for tx in transactions:
+        d = tx.get("date")
+        if not d:
+            continue
+        dt = None
+        if isinstance(d, datetime):
+            dt = d
+        elif isinstance(d, str):
+            d_str = d.strip()
+            if not d_str:
+                continue
+            try:
+                dt = datetime.strptime(d_str, date_format)
+            except ValueError:
+                if inverted_fmt:
+                    try:
+                        dt = datetime.strptime(d_str, inverted_fmt)
+                    except ValueError:
+                        pass
+        if dt:
+            month_counts[dt.month] = month_counts.get(dt.month, 0) + 1
+            year_counts[dt.year] = year_counts.get(dt.year, 0) + 1
+
+    dominant_month = max(month_counts, key=month_counts.get) if month_counts else None
+    dominant_year = max(year_counts, key=year_counts.get) if year_counts else None
+    return dominant_month, dominant_year
+
+
+def parse_and_correct_transaction_date(date_val, date_format: str, expected_month: int | None = None) -> datetime | None:
+    """Parsea la fecha de una fila de extracto bancario con auto-corrección de formato invertido (DMA ↔ MDA).
+
+    Detecta si el banco cambió el formato a mitad de extracto (ej. de 8/7/2026 a 7/8/2026).
+    Si el mes del registro difiere del mes dominante del extracto (es anterior o posterior), e invirtiendo
+    el día y el mes la fecha resultante retoma el mes esperado del extracto, invierte la fecha automáticamente.
+    """
+    if not date_val:
+        return None
+
+    dt = None
+    inverted_fmt = get_inverted_date_format(date_format)
+
+    if isinstance(date_val, datetime):
+        dt = date_val
+    elif isinstance(date_val, str):
+        date_str = date_val.strip()
+        if not date_str:
+            return None
+        try:
+            dt = datetime.strptime(date_str, date_format)
+        except ValueError:
+            if inverted_fmt:
+                try:
+                    dt = datetime.strptime(date_str, inverted_fmt)
+                except ValueError:
+                    return None
+            else:
+                return None
+
+    if dt is None:
+        return None
+
+    if expected_month is None or dt.month == expected_month:
+        return dt
+
+    # El mes cambió a uno anterior o posterior: verificar si invirtiendo día y mes se retoma el mes esperado
+    curr_day = dt.day
+    curr_month = dt.month
+
+    if curr_day == expected_month:
+        try:
+            corrected_dt = datetime(dt.year, curr_day, curr_month, dt.hour, dt.minute, dt.second)
+            return corrected_dt
+        except ValueError:
+            pass
+
+    if inverted_fmt and isinstance(date_val, str):
+        try:
+            dt_inv = datetime.strptime(date_val.strip(), inverted_fmt)
+            if dt_inv.month == expected_month:
+                return dt_inv
+        except ValueError:
+            pass
+
+    return dt
+
+
 def get_closing_balance(transactions: list, date_format: str):
     """
     Given the transactions and date format, try to get the statement start date, end date and closing balance
@@ -1480,16 +1591,16 @@ def get_closing_balance(transactions: list, date_format: str):
     statement_start_date = None
     statement_end_date = None
     closing_balance = None
+    expected_month, _ = determine_statement_dominant_month(transactions, date_format)
 
     for transaction in transactions:
         date = transaction.get("date")
         if not date:
             continue
 
-        if isinstance(date, datetime):
-            tx_date = date
-        else:
-            tx_date = datetime.strptime(date, date_format)
+        tx_date = parse_and_correct_transaction_date(date, date_format, expected_month)
+        if not tx_date:
+            continue
 
         if statement_start_date is None or tx_date < statement_start_date:
             statement_start_date = tx_date
@@ -1523,6 +1634,7 @@ def get_final_transactions(transactions: list, date_format: str, amount_format: 
     """
 
     final_transactions = []
+    expected_month, _ = determine_statement_dominant_month(transactions, date_format)
 
     def parse_amount(transaction_row: dict):
         """
@@ -1576,16 +1688,16 @@ def get_final_transactions(transactions: list, date_format: str, amount_format: 
         return 0, 0
     
     for transaction in transactions:
-        date = transaction.get("date")
-
-        if isinstance(date, datetime):
-            date = date.strftime("%Y-%m-%d")
+        date_val = transaction.get("date")
+        tx_dt = parse_and_correct_transaction_date(date_val, date_format, expected_month)
+        if tx_dt:
+            date_str = tx_dt.strftime("%Y-%m-%d")
         else:
-            date = datetime.strptime(date, date_format).strftime("%Y-%m-%d")
+            date_str = None
 
         withdrawal, deposit = parse_amount(transaction)
         final_transactions.append({
-            "date": date,
+            "date": date_str,
             "withdrawal": withdrawal,
             "deposit": deposit,
             "description": transaction.get("description"),
