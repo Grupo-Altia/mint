@@ -773,26 +773,34 @@ def find_unsubmitted_deposit(doc) -> frappe._dict | None:
 
 def find_duplicate_deposits(doc) -> list:
     """Depósitos NO cancelados que comparten la referencia del cobro en SU MISMA
-    cuenta bancaria y empresa. Si la lista trae más de uno es una COLISIÓN: la
-    referencia está duplicada y la conciliación debe DETENERSE hasta que se borre o
-    cancele el depósito incorrecto — no se elige "el más chico" a dedo (esa heurística
-    anti-x100 era justo la que colapsaba el cobro al gemelo equivocado).
+    cuenta bancaria, empresa y **mismo mes-año**. Si la lista trae más de uno es una
+    COLISIÓN real: la referencia está duplicada dentro del mismo período y la
+    conciliación debe DETENERSE hasta que se borre o cancele el depósito incorrecto.
 
-    Mismo criterio que el patch de saneo cleanup_duplicate_x100_deposits
-    (TRIM(reference_number) + bank_account + company, deposit>0, docstatus<2) para que
-    la guardia en vivo y la limpieza por lote cuenten lo mismo. El TRIM cubre las
-    referencias LEGACY con espacios/saltos pegados (el import actual ya las normaliza a
-    solo-dígitos en bank_statement_import, así que la data nueva entra limpia); un match
-    exacto dejaría escapar esas legacy. El TRIM impide usar el índice de
-    reference_number, pero la consulta queda acotada por bank_account (indexado), así
-    que el costo es bajo; se podrá soltar el TRIM cuando se normalicen las legacy.
-    docstatus<2 excluye los cancelados (status 'Cancelled'): por eso CANCELAR el
-    duplicado —no solo borrarlo— ya libera la conciliación.
+    Filtro de mes-año: BANCARIBE (y otros bancos venezolanos) reutiliza rangos de
+    referencia entre períodos — una referencia "21300001" de julio y la misma de agosto
+    son movimientos bancarios distintos de clientes distintos. Limitar la búsqueda al
+    mismo YEAR(date) + MONTH(date) que el posting_date del cobro evita ese falso
+    positivo sin sacrificar la detección de gemelos reales (los x100 duplicados siempre
+    ocurren en la misma ventana horaria, no en meses distintos).
+
+    Resto de criterios se mantienen igual que el patch de saneo
+    cleanup_duplicate_x100_deposits: TRIM(reference_number) + bank_account + company,
+    deposit>0, docstatus<2. El TRIM cubre referencias LEGACY con espacios/saltos
+    pegados. docstatus<2 excluye cancelados: por eso CANCELAR el duplicado ya libera
+    la conciliación.
     """
     ref = _canonical_reference(doc.reference_no)
     bank_account = _cobro_bank_account(doc)
     if not ref or not bank_account:
         return []
+
+    # Ancla de período: usamos el posting_date del cobro para determinar en qué
+    # mes-año buscar duplicados. Dos depósitos con la misma referencia en meses
+    # distintos son transacciones legítimamente distintas (BANCARIBE reutiliza rangos).
+    # Si el cobro no tiene fecha (borrador sin fecha aún), caemos al mes actual.
+    cobro_date = getdate(doc.posting_date or frappe.utils.nowdate())
+
     return frappe.db.sql(
         f"""
         SELECT name, deposit, unallocated_amount, status, docstatus
@@ -802,9 +810,17 @@ def find_duplicate_deposits(doc) -> list:
           AND company = %(company)s
           AND deposit > 0
           AND docstatus < 2
+          AND YEAR(date) = %(year)s
+          AND MONTH(date) = %(month)s
         ORDER BY deposit ASC
         """,
-        {"ref": ref, "bank_account": bank_account, "company": doc.company},
+        {
+            "ref": ref,
+            "bank_account": bank_account,
+            "company": doc.company,
+            "year": cobro_date.year,
+            "month": cobro_date.month,
+        },
         as_dict=True,
     )
 
