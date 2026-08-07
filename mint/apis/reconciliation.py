@@ -773,26 +773,34 @@ def find_unsubmitted_deposit(doc) -> frappe._dict | None:
 
 def find_duplicate_deposits(doc) -> list:
     """Depósitos NO cancelados que comparten la referencia del cobro en SU MISMA
-    cuenta bancaria y empresa. Si la lista trae más de uno es una COLISIÓN: la
-    referencia está duplicada y la conciliación debe DETENERSE hasta que se borre o
-    cancele el depósito incorrecto — no se elige "el más chico" a dedo (esa heurística
-    anti-x100 era justo la que colapsaba el cobro al gemelo equivocado).
+    cuenta bancaria, empresa y **mismo mes-año**. Si la lista trae más de uno es una
+    COLISIÓN real: la referencia está duplicada dentro del mismo período y la
+    conciliación debe DETENERSE hasta que se borre o cancele el depósito incorrecto.
 
-    Mismo criterio que el patch de saneo cleanup_duplicate_x100_deposits
-    (TRIM(reference_number) + bank_account + company, deposit>0, docstatus<2) para que
-    la guardia en vivo y la limpieza por lote cuenten lo mismo. El TRIM cubre las
-    referencias LEGACY con espacios/saltos pegados (el import actual ya las normaliza a
-    solo-dígitos en bank_statement_import, así que la data nueva entra limpia); un match
-    exacto dejaría escapar esas legacy. El TRIM impide usar el índice de
-    reference_number, pero la consulta queda acotada por bank_account (indexado), así
-    que el costo es bajo; se podrá soltar el TRIM cuando se normalicen las legacy.
-    docstatus<2 excluye los cancelados (status 'Cancelled'): por eso CANCELAR el
-    duplicado —no solo borrarlo— ya libera la conciliación.
+    Filtro de mes-año: BANCARIBE (y otros bancos venezolanos) reutiliza rangos de
+    referencia entre períodos — una referencia "21300001" de julio y la misma de agosto
+    son movimientos bancarios distintos de clientes distintos. Limitar la búsqueda al
+    mismo YEAR(date) + MONTH(date) que el posting_date del cobro evita ese falso
+    positivo sin sacrificar la detección de gemelos reales (los x100 duplicados siempre
+    ocurren en la misma ventana horaria, no en meses distintos).
+
+    Resto de criterios se mantienen igual que el patch de saneo
+    cleanup_duplicate_x100_deposits: TRIM(reference_number) + bank_account + company,
+    deposit>0, docstatus<2. El TRIM cubre referencias LEGACY con espacios/saltos
+    pegados. docstatus<2 excluye cancelados: por eso CANCELAR el duplicado ya libera
+    la conciliación.
     """
     ref = _canonical_reference(doc.reference_no)
     bank_account = _cobro_bank_account(doc)
     if not ref or not bank_account:
         return []
+
+    # Ancla de período: usamos el posting_date del cobro para determinar en qué
+    # mes-año buscar duplicados. Dos depósitos con la misma referencia en meses
+    # distintos son transacciones legítimamente distintas (BANCARIBE reutiliza rangos).
+    # Si el cobro no tiene fecha (borrador sin fecha aún), caemos al mes actual.
+    cobro_date = getdate(doc.posting_date or frappe.utils.nowdate())
+
     return frappe.db.sql(
         f"""
         SELECT name, deposit, unallocated_amount, status, docstatus
@@ -802,9 +810,17 @@ def find_duplicate_deposits(doc) -> list:
           AND company = %(company)s
           AND deposit > 0
           AND docstatus < 2
+          AND YEAR(date) = %(year)s
+          AND MONTH(date) = %(month)s
         ORDER BY deposit ASC
         """,
-        {"ref": ref, "bank_account": bank_account, "company": doc.company},
+        {
+            "ref": ref,
+            "bank_account": bank_account,
+            "company": doc.company,
+            "year": cobro_date.year,
+            "month": cobro_date.month,
+        },
         as_dict=True,
     )
 
@@ -1576,16 +1592,105 @@ def cancel_exact_duplicate_deposits() -> int:
     return cancelled
 
 
-def cancel_prefix_duplicate_deposits() -> int:
-    """Cancela depósitos duplicados por prefijo (p.ej. 9412345678 vs 12345678).
-    Lee dinámicamente las reglas de descripción bancaria activas con prefijos configurados.
+def _cancel_prefix_duplicates_by_field(
+    prefixes: list[str],
+    amount_field: str,
+    already_processed: set,
+) -> int:
+    """Detecta y cancela pares de Bank Transaction donde una referencia es prefijo de la otra.
 
-    NUNCA se toca un depósito con asignación (rompería un pago conciliado): si los dos
+    Procesa el campo de monto indicado (``deposit`` o ``withdrawal``): ambos lados del par
+    deben tener ese campo > 0 para ser candidatos. La lógica de desempate y cancelación
+    atómica es idéntica en ambos casos, de ahí el helper compartido.
+
+    Args:
+        prefixes: Lista de prefijos a evaluar (p.ej. ['940', '398']).
+        amount_field: Campo de monto a comparar, 'deposit' o 'withdrawal'.
+        already_processed: Conjunto de nombres ya procesados en esta corrida; se actualiza
+            in-place para evitar reintento en prefijos/reglas solapados.
+
+    Returns:
+        Número de cancelaciones confirmadas (con commit) en esta llamada.
+    """
+    total_cancelled = 0
+    error_label = "depósito" if amount_field == "deposit" else "retiro"
+
+    for prefix in prefixes:
+        sql = f"""
+        SELECT
+            t1.name as name1, t1.allocated_amount as alloc1, t1.creation as creation1,
+            t2.name as name2, t2.allocated_amount as alloc2, t2.creation as creation2
+        FROM `tabBank Transaction` t1
+        INNER JOIN `tabBank Transaction` t2
+            ON t1.bank_account = t2.bank_account
+            AND t1.company = t2.company
+            AND t1.date = t2.date
+            AND ROUND(t1.{amount_field}, 2) = ROUND(t2.{amount_field}, 2)
+        WHERE t1.{amount_field} > 0 AND t2.{amount_field} > 0
+            AND t1.docstatus < 2 AND t2.docstatus < 2
+            AND t1.reference_number = CONCAT(%s, t2.reference_number)
+            AND t2.reference_number != ''
+        ORDER BY t1.date, t1.name, t2.name
+        """
+
+        duplicates = frappe.db.sql(sql, (prefix,), as_dict=True)
+
+        for dup in duplicates:
+            alloc1, alloc2 = flt(dup.alloc1), flt(dup.alloc2)
+
+            # Ambos conciliados: se deja para revisión manual.
+            if alloc1 >= 0.01 and alloc2 >= 0.01:
+                continue
+
+            if alloc1 >= 0.01:
+                to_cancel = dup.name2
+            elif alloc2 >= 0.01:
+                to_cancel = dup.name1
+            else:
+                # Empate: se conserva el más antiguo.
+                to_cancel = dup.name1 if dup.creation1 >= dup.creation2 else dup.name2
+
+            if to_cancel in already_processed:
+                continue
+            already_processed.add(to_cancel)
+
+            try:
+                doc = frappe.get_doc("Bank Transaction", to_cancel)
+                if doc.docstatus == 1:
+                    doc.flags.ignore_permissions = True
+                    doc.cancel()
+                elif doc.docstatus == 0:
+                    frappe.delete_doc("Bank Transaction", to_cancel, ignore_permissions=True)
+                else:
+                    continue  # ya estaba cancelado: no hay nada que contar
+                frappe.db.commit()
+                total_cancelled += 1
+            except Exception:
+                frappe.db.rollback()
+                log_mint_error(
+                    title=_(
+                        "Error cancelando {0} duplicado por prefijo {1} (auto)"
+                    ).format(error_label, to_cancel),
+                    message=frappe.get_traceback(),
+                )
+
+    return total_cancelled
+
+
+def cancel_prefix_duplicate_deposits() -> int:
+    """Cancela transacciones bancarias duplicadas por prefijo (depósitos y retiros).
+
+    Aplica la regla de prefijos configurada en ``Mint Bank Description Rule`` tanto a
+    depósitos (``deposit > 0``) como a retiros (``withdrawal > 0``). Ejemplo típico:
+    un pago móvil genera dos registros con la misma referencia base, uno de ellos con el
+    prefijo '940' o '398' añadido por el banco — el registro sin prefijo se cancela.
+
+    NUNCA se toca una transacción con asignación (rompería un pago conciliado): si los dos
     lados del par están asignados se deja el par intacto para revisión manual, y si solo
     uno lo está se cancela el otro. Con los dos SIN asignar el empate se rompe por
-    antigüedad: se conserva el más antiguo, igual que `cancel_exact_duplicate_deposits`.
+    antigüedad: se conserva el más antiguo, igual que ``cancel_exact_duplicate_deposits``.
     El desempate tiene que ser determinista porque MySQL no garantiza el orden de las
-    filas: sin `ORDER BY`, dos corridas podían cancelar lados distintos del mismo par.
+    filas: sin ``ORDER BY``, dos corridas podían cancelar lados distintos del mismo par.
 
     Cada cancelación es atómica (commit por éxito; rollback + Error Log por fallo, sin
     abortar el lote): un único commit al final significaría que el primer fallo a mitad
@@ -1598,71 +1703,23 @@ def cancel_prefix_duplicate_deposits() -> int:
         fields=['name', 'prefixes_to_strip']
     )
 
-    total_cancelled = 0
-    # Un mismo depósito puede caer en varios pares (y en varios prefijos): sin esto se
+    # Un mismo doc puede caer en varios pares (y en varios prefijos): sin esto se
     # reintentaría un doc ya cancelado y se contaría de nuevo sin tocar nada.
-    already_processed = set()
+    already_processed: set = set()
+    total_cancelled = 0
 
     for rule in rules:
         prefixes = [p.strip() for p in (rule.prefixes_to_strip or '').split(',') if p.strip()]
         if not prefixes:
             continue
 
-        for prefix in prefixes:
-            sql = """
-            SELECT
-                t1.name as name1, t1.allocated_amount as alloc1, t1.creation as creation1,
-                t2.name as name2, t2.allocated_amount as alloc2, t2.creation as creation2
-            FROM `tabBank Transaction` t1
-            INNER JOIN `tabBank Transaction` t2
-                ON t1.bank_account = t2.bank_account
-                AND t1.company = t2.company
-                AND t1.date = t2.date
-                AND ROUND(t1.deposit, 2) = ROUND(t2.deposit, 2)
-            WHERE t1.deposit > 0 AND t2.deposit > 0
-                AND t1.docstatus < 2 AND t2.docstatus < 2
-                AND t1.reference_number = CONCAT(%s, t2.reference_number)
-                AND t2.reference_number != ''
-            ORDER BY t1.date, t1.name, t2.name
-            """
-
-            duplicates = frappe.db.sql(sql, (prefix,), as_dict=True)
-
-            for dup in duplicates:
-                alloc1, alloc2 = flt(dup.alloc1), flt(dup.alloc2)
-
-                if alloc1 >= 0.01 and alloc2 >= 0.01:
-                    continue
-
-                if alloc1 >= 0.01:
-                    to_cancel = dup.name2
-                elif alloc2 >= 0.01:
-                    to_cancel = dup.name1
-                else:
-                    # Empate: se conserva el más antiguo.
-                    to_cancel = dup.name1 if dup.creation1 >= dup.creation2 else dup.name2
-
-                if to_cancel in already_processed:
-                    continue
-                already_processed.add(to_cancel)
-
-                try:
-                    doc = frappe.get_doc("Bank Transaction", to_cancel)
-                    if doc.docstatus == 1:
-                        doc.flags.ignore_permissions = True
-                        doc.cancel()
-                    elif doc.docstatus == 0:
-                        frappe.delete_doc("Bank Transaction", to_cancel, ignore_permissions=True)
-                    else:
-                        continue  # ya estaba cancelado: no hay nada que contar
-                    frappe.db.commit()
-                    total_cancelled += 1
-                except Exception:
-                    frappe.db.rollback()
-                    log_mint_error(
-                        title=_("Error cancelando depósito duplicado por prefijo {0} (auto)").format(to_cancel),
-                        message=frappe.get_traceback(),
-                    )
+        # Procesa depósitos y retiros con la misma lógica de prefijos.
+        for amount_field in ('deposit', 'withdrawal'):
+            total_cancelled += _cancel_prefix_duplicates_by_field(
+                prefixes=prefixes,
+                amount_field=amount_field,
+                already_processed=already_processed,
+            )
 
     return total_cancelled
 
