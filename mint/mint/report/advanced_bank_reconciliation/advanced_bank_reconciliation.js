@@ -62,6 +62,12 @@ frappe.query_reports["Advanced Bank Reconciliation"] = {
             "fieldtype": "Select",
             "options": "Unreconciled\nReconciled\nAll",
             "default": "Unreconciled"
+        },
+        {
+            "fieldname": "include_cancelled",
+            "label": __("Incluir Cancelados"),
+            "fieldtype": "Check",
+            "default": 0
         }
     ],
     
