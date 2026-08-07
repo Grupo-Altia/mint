@@ -109,6 +109,12 @@ def get_columns():
             'label': _('Fecha Liquidación'),
             'fieldtype': 'Date',
             'width': 120
+        },
+        {
+            'fieldname': 'cost_center',
+            'label': _('Centro de Costo'),
+            'fieldtype': 'Data',
+            'width': 160
         }
     ]
 
@@ -177,7 +183,29 @@ def get_data_and_summary(filters):
                     doc_dict.clearance_date = frappe.get_cached_value(doctype, name, 'clearance_date')
                 if meta.has_field('custom_reconciliation_status'):
                     doc_dict.custom_reconciliation_status = frappe.get_cached_value(doctype, name, 'custom_reconciliation_status')
-                
+
+                # Centro de costo: Payment Entry tiene un campo directo;
+                # Journal Entry lo tiene en sus líneas (concatenar sin duplicados).
+                if doctype == 'Payment Entry' and meta.has_field('cost_center'):
+                    doc_dict.cost_center = frappe.get_cached_value(doctype, name, 'cost_center') or ''
+                elif doctype == 'Journal Entry':
+                    cc_rows = frappe.db.sql(
+                        """
+                        SELECT cost_center
+                        FROM `tabJournal Entry Account`
+                        WHERE parent = %s
+                          AND cost_center IS NOT NULL
+                          AND cost_center != ''
+                        ORDER BY idx ASC
+                        """,
+                        name,
+                        pluck=True,
+                    )
+                    # dict.fromkeys preserva el orden y elimina duplicados
+                    doc_dict.cost_center = " / ".join(dict.fromkeys(cc_rows))
+                else:
+                    doc_dict.cost_center = ''
+
                 doc_data_cache[f"{doctype}-{name}"] = doc_dict
 
     # 4. Procesar y clasificar cada transacción
@@ -229,7 +257,11 @@ def get_bank_transactions(filters):
         "bt.bank_account IN %(accounts)s",
         "bt.date BETWEEN %(from_date)s AND %(to_date)s"
     ]
-    
+
+    # Excluir cancelados salvo que el filtro lo permita explícitamente
+    if not filters.get('include_cancelled'):
+        conditions.append("bt.docstatus < 2")
+
     status_filter = filters.get('status', 'Unreconciled')
     if status_filter == 'Unreconciled':
         conditions.append("bt.status != 'Reconciled'")
@@ -354,7 +386,8 @@ def process_bank_transaction(bt, filters, payments_dict=None, doc_data_cache=Non
         'payment_document_display': '',
         'payment_entry': '',
         'clearance_date': '',
-        'classification': ''
+        'classification': '',
+        'cost_center': ''
     }
     
     # Obtener Payment Entries vinculados (usando prefetch si está disponible)
@@ -378,6 +411,8 @@ def process_bank_transaction(bt, filters, payments_dict=None, doc_data_cache=Non
                 row['clearance_date'] = doc_data.clearance_date
             if doc_data.get('custom_reconciliation_status') == 'Conciliado':
                 is_mint_reconciled = True
+            if doc_data.get('cost_center'):
+                row['cost_center'] = doc_data.cost_center
         
         # Clasificación
         if bt.status == 'Reconciled' or row['clearance_date'] or is_mint_reconciled:
